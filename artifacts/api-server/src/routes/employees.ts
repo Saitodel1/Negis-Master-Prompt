@@ -8,14 +8,32 @@ router.get("/admin/employees", async (req, res) => {
   const { clinic_id } = req.query as { clinic_id?: string };
   if (!clinic_id) { res.status(400).json({ error: "clinic_id required" }); return; }
 
-  const { data, error } = await supabaseAdmin
+  const { data: agents, error } = await supabaseAdmin
     .from("agents")
-    .select("id, name, email, hourly_rate, weekly_target, user_id, user_roles(role)")
+    .select("id, name, email, hourly_rate, weekly_target, user_id")
     .eq("clinic_id", clinic_id)
     .order("created_at");
 
   if (error) { res.status(500).json({ error: error.message }); return; }
-  res.json(data ?? []);
+
+  const userIds = (agents ?? []).map((a) => a.user_id).filter(Boolean);
+  let rolesMap: Record<string, string> = {};
+
+  if (userIds.length > 0) {
+    const { data: roleRows } = await supabaseAdmin
+      .from("user_roles")
+      .select("user_id, role")
+      .in("user_id", userIds)
+      .eq("clinic_id", clinic_id);
+    rolesMap = Object.fromEntries((roleRows ?? []).map((r) => [r.user_id, r.role]));
+  }
+
+  const result = (agents ?? []).map((a) => ({
+    ...a,
+    user_roles: a.user_id ? [{ role: rolesMap[a.user_id] ?? "agent" }] : [],
+  }));
+
+  res.json(result);
 });
 
 /* ── Create employee ── */
