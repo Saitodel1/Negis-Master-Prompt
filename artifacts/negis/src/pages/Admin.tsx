@@ -765,18 +765,6 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
               </div>
               <div className="h-6 w-6 rounded-full border border-border/30" style={{ background: sColor }} />
             </div>
-            {showModal === 'booking' && (
-              <label className="flex items-center gap-3 cursor-pointer">
-                <div
-                  className={`h-5 w-5 rounded flex items-center justify-center transition-all ${sConfirmed ? 'bg-[#10B981]' : 'neu-pressed-sm'}`}
-                  onClick={() => setSConfirmed(v => !v)}
-                  data-testid="toggle-confirmed"
-                >
-                  {sConfirmed && <Check size={12} color="white" />}
-                </div>
-                <span className="text-sm">Подтверждено (отображать у ресепшна)</span>
-              </label>
-            )}
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowModal(null)} className="neu-btn flex-1">Отмена</button>
               <button onClick={save} disabled={saving} className="neu-btn-primary flex-1 justify-center" data-testid="button-save-status">
