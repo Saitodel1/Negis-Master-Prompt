@@ -102,14 +102,15 @@ export default function Booking() {
   };
 
   const saveBooking = async () => {
-    if (!form.name.trim()) { toast.error('Введите имя клиента'); return; }
+    const nameVal = (form.name ?? '').trim();
+    if (!nameVal) { toast.error('Введите имя клиента'); return; }
     if (!modal) return;
     setSaving(true);
     const { error } = await supabase.from('bookings').insert({
       clinic_id: clinicId,
-      name: form.name.trim(),
-      phone: form.phone.trim() || null,
-      age: form.age ? Number(form.age) : null,
+      name: nameVal,
+      phone: (form.phone ?? '').trim() || null,
+      age: (form.age ?? '') ? Number(form.age) : null,
       service_id: form.service_id || null,
       agent_id: form.agent_id || null,
       time: slotLabel(modal.hour),
