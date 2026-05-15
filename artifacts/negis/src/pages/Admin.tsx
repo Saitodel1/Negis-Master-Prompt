@@ -169,6 +169,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
   };
 
   const save = async () => {
+    if (!clinicId) { toast.error('ID клиники не определён. Перезайдите в систему.'); return; }
     if (!name.trim()) { toast.error('Введите имя'); return; }
     if (!editing && !email.trim()) { toast.error('Введите email'); return; }
     if (!editing && password.length < 6) { toast.error('Пароль: минимум 6 символов'); return; }
