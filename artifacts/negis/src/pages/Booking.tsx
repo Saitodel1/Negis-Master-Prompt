@@ -100,6 +100,9 @@ export default function Booking() {
   const saveBooking = async () => {
     const nameVal = (form.patient_name ?? '').trim();
     if (!nameVal) { toast.error('Введите имя клиента'); return; }
+    const phoneVal = (form.patient_phone ?? '').trim();
+    if (!phoneVal) { toast.error('Введите телефон клиента'); return; }
+    if (services.length > 0 && !form.service_id) { toast.error('Выберите услугу'); return; }
     if (!modal) return;
     setSaving(true);
     const { error } = await supabase.from('bookings').insert({
