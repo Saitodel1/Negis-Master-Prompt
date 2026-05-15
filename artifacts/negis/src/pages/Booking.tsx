@@ -35,10 +35,11 @@ const slotLabel = (h: number) => `${String(h).padStart(2, '0')}:00`;
 export default function Booking() {
   const { clinicId } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [agents,   setAgents]   = useState<Agent[]>([]);
-  const [loading, setLoading]   = useState(false);
+  const [bookings, setBookings]         = useState<Booking[]>([]);
+  const [services, setServices]         = useState<Service[]>([]);
+  const [agents,   setAgents]           = useState<Agent[]>([]);
+  const [defaultStatusId, setDefaultStatusId] = useState<string | null>(null);
+  const [loading, setLoading]           = useState(false);
   const [now, setNow]             = useState<Date>(new Date());
 
   /* Sync clock every minute so past-slot detection stays fresh */
@@ -78,12 +79,14 @@ export default function Booking() {
   };
 
   const loadMeta = async () => {
-    const [s, a] = await Promise.all([
+    const [s, a, st] = await Promise.all([
       supabase.from('services').select('id, name, price').eq('clinic_id', clinicId),
       supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
+      supabase.from('booking_statuses').select('id, position').eq('clinic_id', clinicId).order('position'),
     ]);
     setServices(s.data || []);
     setAgents(a.data || []);
+    if (st.data && st.data.length > 0) setDefaultStatusId(st.data[0].id);
   };
 
   const slotBookings = (h: number) => bookings.filter(b => parseInt(b.time) === h);
@@ -112,6 +115,7 @@ export default function Booking() {
       age: (form.age ?? '') ? Number(form.age) : null,
       service_id: form.service_id || null,
       agent_id: form.agent_id || null,
+      status_id: defaultStatusId,
       time: slotLabel(modal.hour),
       date: fmtDate(selectedDate),
     });
