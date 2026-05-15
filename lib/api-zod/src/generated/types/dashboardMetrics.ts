@@ -6,5 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export * from './dashboardMetrics';
-export * from './healthStatus';
+export interface DashboardMetrics {
+  bookingsToday: number;
+  loadPercent: number;
+  revenueToday: number;
+  visitedToday: number;
+}
