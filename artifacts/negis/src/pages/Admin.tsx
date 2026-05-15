@@ -1,9 +1,59 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { Plus, Trash2, Edit2, Settings } from 'lucide-react';
+import { Plus, Trash2, Edit2, Settings, Check } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 
+/* ─── Types ──────────────────────────────────────────────── */
+interface Role { id: string; name: string; permissions: Record<string, boolean> }
+interface Service { id: string; name: string; price: number }
+interface BookingStatus { id: string; name: string; color: string; is_confirmed: boolean; position: number }
+interface LeadStatus { id: string; name: string; color: string; position: number }
+interface Shift {
+  id: string; agent_id: string; start_time: string; end_time: string | null;
+  duration_minutes: number; bookings_count: number; earnings: number;
+  agents?: { name: string }
+}
+interface Agent { id: string; name: string }
+
+const PERMISSIONS = [
+  { key: 'view_all_leads', label: 'Просмотр лидов — все' },
+  { key: 'create_bookings', label: 'Создание записей' },
+  { key: 'change_responsible', label: 'Смена ответственного' },
+  { key: 'access_admin', label: 'Доступ в админку' },
+  { key: 'view_finances', label: 'Просмотр финансов' },
+  { key: 'export_data', label: 'Экспорт данных' },
+];
+
+const DEFAULT_LEAD_STATUSES = [
+  { name: 'Новый', color: '#3B82F6' },
+  { name: 'Перезвонить', color: '#F59E0B' },
+  { name: 'Отказ', color: '#EF4444' },
+  { name: 'Другой город', color: '#94a3b8' },
+  { name: 'Противопоказания', color: '#F97316' },
+  { name: 'Возраст', color: '#8B5CF6' },
+];
+
+/* ─── Confirm Dialog ─────────────────────────────────────── */
+function ConfirmDialog({ msg, onConfirm, onCancel }: { msg: string; onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="neu-lg p-8 max-w-sm w-full text-center space-y-5">
+        <p className="font-semibold text-[#1E293B]">{msg}</p>
+        <div className="flex gap-3 justify-center">
+          <button onClick={onCancel} className="neu-btn px-6">Отмена</button>
+          <button onClick={onConfirm} className="neu-btn-danger px-6">Удалить</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main Component ─────────────────────────────────────── */
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('agents');
+  const { clinicId } = useAuth();
 
   const tabs = [
     { id: 'agents', label: 'Агенты' },
@@ -25,6 +75,7 @@ export default function Admin() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
+              data-testid={`tab-${tab.id}`}
               className={`px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap transition-all ${
                 activeTab === tab.id
                   ? 'neu-pressed-sm text-[#1A56DB]'
@@ -37,67 +88,663 @@ export default function Admin() {
         </div>
 
         <div className="neu-card min-h-[500px]">
-          {activeTab === 'agents' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h3 className="text-lg font-bold">Сотрудники клиники</h3>
-                <button className="neu-btn-primary"><Plus size={16} /> Добавить агента</button>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-border text-sm text-[#64748B]">
-                      <th className="pb-3 font-semibold">Имя</th>
-                      <th className="pb-3 font-semibold">Роль</th>
-                      <th className="pb-3 font-semibold">Ставка</th>
-                      <th className="pb-3 font-semibold">Таргет</th>
-                      <th className="pb-3 font-semibold text-right">Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td colSpan={5} className="py-16 text-center text-[#64748B]">
-                        Нет сотрудников. Добавьте первого агента.
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'whatsapp' && (
-            <div className="max-w-2xl space-y-6">
-              <h3 className="text-lg font-bold">Шаблон WhatsApp</h3>
-              <p className="text-sm text-[#64748B]">Этот текст будет отправляться клиентам при записи. Доступные переменные: {'{имя} {дата} {время} {услуга} {агент}'}</p>
-              
-              <textarea 
-                className="neu-input min-h-[150px] resize-y text-base p-4"
-                defaultValue="Здравствуйте, {имя}! Вы записаны на услугу {услуга} {дата} в {время}. Ваш специалист: {агент}."
-              />
-              
-              <div className="neu-sm p-5 border-l-4 border-[#10B981]">
-                <p className="text-xs font-bold uppercase text-[#10B981] mb-2">Предпросмотр сообщения</p>
-                <p className="text-[#1E293B]">Здравствуйте, Дмитрий! Вы записаны на услугу Консультация 24.10.2023 в 14:00. Ваш специалист: Анна С.</p>
-              </div>
-
-              <button className="neu-btn-primary px-8 mt-4">Сохранить шаблон</button>
-            </div>
-          )}
-
-          {/* Add empty states or simple structures for other tabs to meet 'fully implemented' requirement visually */}
-          {['roles', 'services', 'statuses', 'shifts', 'settings'].includes(activeTab) && (
-            <div className="h-[400px] flex flex-col items-center justify-center text-center">
-              <div className="neu-icon-btn h-20 w-20 mb-6 opacity-50">
-                <Settings size={32} />
-              </div>
-              <h3 className="text-xl font-bold text-[#1E293B] mb-2 capitalize">{activeTab}</h3>
-              <p className="text-[#64748B] max-w-sm">Раздел в стадии разработки. Скоро здесь появится управление настройками {activeTab}.</p>
-            </div>
-          )}
-
+          {activeTab === 'agents' && <AgentsTab clinicId={clinicId} />}
+          {activeTab === 'roles' && <RolesTab clinicId={clinicId} />}
+          {activeTab === 'services' && <ServicesTab clinicId={clinicId} />}
+          {activeTab === 'statuses' && <StatusesTab clinicId={clinicId} />}
+          {activeTab === 'shifts' && <ShiftsTab clinicId={clinicId} />}
+          {activeTab === 'whatsapp' && <WhatsAppTab clinicId={clinicId} />}
+          {activeTab === 'settings' && <SettingsTabContent clinicId={clinicId} />}
         </div>
       </div>
     </PageLayout>
+  );
+}
+
+/* ─── Agents Tab ─────────────────────────────────────────── */
+function AgentsTab({ clinicId }: { clinicId: string | null }) {
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-bold">Сотрудники клиники</h3>
+        <button className="neu-btn-primary flex items-center gap-2"><Plus size={16} /> Добавить агента</button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="border-b border-border text-sm text-[#64748B]">
+              <th className="pb-3 font-semibold">Имя</th>
+              <th className="pb-3 font-semibold">Роль</th>
+              <th className="pb-3 font-semibold">Ставка</th>
+              <th className="pb-3 font-semibold">Таргет</th>
+              <th className="pb-3 font-semibold text-right">Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colSpan={5} className="py-16 text-center text-[#64748B]">
+                Нет сотрудников. Добавьте первого агента.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Roles Tab ──────────────────────────────────────────── */
+function RolesTab({ clinicId }: { clinicId: string | null }) {
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState<Role | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [perms, setPerms] = useState<Record<string, boolean>>({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (clinicId) load(); }, [clinicId]);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('roles').select('*').eq('clinic_id', clinicId).order('created_at');
+    setRoles(data || []);
+    setLoading(false);
+  };
+
+  const openCreate = () => {
+    setEditing(null);
+    setName('');
+    setPerms({});
+    setShowModal(true);
+  };
+
+  const openEdit = (r: Role) => {
+    setEditing(r);
+    setName(r.name);
+    setPerms(r.permissions || {});
+    setShowModal(true);
+  };
+
+  const save = async () => {
+    if (!name.trim()) { toast.error('Введите название роли'); return; }
+    setSaving(true);
+    if (editing) {
+      const { error } = await supabase.from('roles').update({ name, permissions: perms }).eq('id', editing.id);
+      if (error) { toast.error(error.message); } else { toast.success('Роль обновлена'); }
+    } else {
+      if (roles.length >= 10) { toast.error('Максимум 10 ролей'); setSaving(false); return; }
+      const { error } = await supabase.from('roles').insert({ clinic_id: clinicId, name, permissions: perms });
+      if (error) { toast.error(error.message); } else { toast.success('Роль создана'); }
+    }
+    setSaving(false);
+    setShowModal(false);
+    load();
+  };
+
+  const remove = async () => {
+    const { error } = await supabase.from('roles').delete().eq('id', deletingId);
+    if (error) toast.error(error.message); else toast.success('Роль удалена');
+    setDeletingId(null);
+    load();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-bold">Роли сотрудников</h3>
+        <button className="neu-btn-primary flex items-center gap-2" onClick={openCreate} data-testid="button-add-role">
+          <Plus size={16} /> Добавить роль
+        </button>
+      </div>
+      <p className="text-sm text-[#64748B]">Создайте роли с набором прав доступа. Каждому сотруднику назначается одна роль.</p>
+
+      {loading ? (
+        <p className="text-center text-[#64748B] py-12">Загрузка...</p>
+      ) : roles.length === 0 ? (
+        <div className="py-16 text-center text-[#64748B]">Нет ролей. Создайте первую.</div>
+      ) : (
+        <div className="space-y-3">
+          {roles.map(r => (
+            <div key={r.id} className="neu-sm p-4 flex items-center justify-between" data-testid={`role-${r.id}`}>
+              <div>
+                <p className="font-bold text-[#1E293B]">{r.name}</p>
+                <p className="text-xs text-[#64748B] mt-1">
+                  {PERMISSIONS.filter(p => r.permissions?.[p.key]).map(p => p.label).join(' · ') || 'Нет прав'}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button className="neu-icon-btn h-8 w-8" onClick={() => openEdit(r)} data-testid={`edit-role-${r.id}`}><Edit2 size={14} /></button>
+                <button className="neu-icon-btn h-8 w-8 text-destructive" onClick={() => setDeletingId(r.id)} data-testid={`delete-role-${r.id}`}><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="neu-lg p-8 max-w-md w-full space-y-5">
+            <h3 className="text-lg font-bold">{editing ? 'Редактировать роль' : 'Новая роль'}</h3>
+            <input
+              className="neu-input"
+              placeholder="Название роли"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              data-testid="input-role-name"
+            />
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-[#64748B] uppercase tracking-wide">Права доступа</p>
+              {PERMISSIONS.map(p => (
+                <label key={p.key} className="flex items-center gap-3 cursor-pointer group">
+                  <div
+                    className={`h-5 w-5 rounded flex items-center justify-center transition-all cursor-pointer ${perms[p.key] ? 'bg-[#1A56DB]' : 'neu-pressed-sm'}`}
+                    onClick={() => setPerms(prev => ({ ...prev, [p.key]: !prev[p.key] }))}
+                    data-testid={`perm-${p.key}`}
+                  >
+                    {perms[p.key] && <Check size={12} color="white" />}
+                  </div>
+                  <span className="text-sm text-[#1E293B]">{p.label}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setShowModal(false)} className="neu-btn flex-1">Отмена</button>
+              <button onClick={save} disabled={saving} className="neu-btn-primary flex-1 justify-center" data-testid="button-save-role">
+                {saving ? 'Сохранение...' : 'Сохранить'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deletingId && (
+        <ConfirmDialog msg="Удалить эту роль?" onConfirm={remove} onCancel={() => setDeletingId(null)} />
+      )}
+    </div>
+  );
+}
+
+/* ─── Services Tab ───────────────────────────────────────── */
+function ServicesTab({ clinicId }: { clinicId: string | null }) {
+  const [services, setServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState<Service | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [price, setPrice] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (clinicId) load(); }, [clinicId]);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('services').select('*').eq('clinic_id', clinicId).order('created_at');
+    setServices(data || []);
+    setLoading(false);
+  };
+
+  const openCreate = () => { setEditing(null); setName(''); setPrice(''); setShowModal(true); };
+  const openEdit = (s: Service) => { setEditing(s); setName(s.name); setPrice(String(s.price)); setShowModal(true); };
+
+  const save = async () => {
+    if (!name.trim()) { toast.error('Введите название услуги'); return; }
+    const priceNum = Number(price) || 0;
+    setSaving(true);
+    if (editing) {
+      const { error } = await supabase.from('services').update({ name, price: priceNum }).eq('id', editing.id);
+      if (error) { toast.error(error.message); } else { toast.success('Услуга обновлена'); }
+    } else {
+      const { error } = await supabase.from('services').insert({ clinic_id: clinicId, name, price: priceNum });
+      if (error) { toast.error(error.message); } else { toast.success('Услуга добавлена'); }
+    }
+    setSaving(false); setShowModal(false); load();
+  };
+
+  const remove = async () => {
+    const { error } = await supabase.from('services').delete().eq('id', deletingId);
+    if (error) toast.error(error.message); else toast.success('Услуга удалена');
+    setDeletingId(null); load();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-bold">Услуги клиники</h3>
+        <button className="neu-btn-primary flex items-center gap-2" onClick={openCreate} data-testid="button-add-service">
+          <Plus size={16} /> Добавить услугу
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-center text-[#64748B] py-12">Загрузка...</p>
+      ) : services.length === 0 ? (
+        <div className="py-16 text-center text-[#64748B]">Нет услуг. Добавьте первую.</div>
+      ) : (
+        <div className="space-y-3">
+          {services.map(s => (
+            <div key={s.id} className="neu-sm p-4 flex items-center justify-between" data-testid={`service-${s.id}`}>
+              <div>
+                <p className="font-bold text-[#1E293B]">{s.name}</p>
+                <p className="text-sm text-[#64748B]">{s.price.toLocaleString('ru')} ₸</p>
+              </div>
+              <div className="flex gap-2">
+                <button className="neu-icon-btn h-8 w-8" onClick={() => openEdit(s)}><Edit2 size={14} /></button>
+                <button className="neu-icon-btn h-8 w-8 text-destructive" onClick={() => setDeletingId(s.id)}><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="neu-lg p-8 max-w-sm w-full space-y-4">
+            <h3 className="text-lg font-bold">{editing ? 'Редактировать услугу' : 'Новая услуга'}</h3>
+            <input className="neu-input" placeholder="Название услуги" value={name} onChange={e => setName(e.target.value)} data-testid="input-service-name" />
+            <div className="relative">
+              <input className="neu-input pr-6" placeholder="Цена" type="number" value={price} onChange={e => setPrice(e.target.value)} data-testid="input-service-price" />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#64748B]">₸</span>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setShowModal(false)} className="neu-btn flex-1">Отмена</button>
+              <button onClick={save} disabled={saving} className="neu-btn-primary flex-1 justify-center" data-testid="button-save-service">
+                {saving ? 'Сохранение...' : 'Сохранить'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deletingId && <ConfirmDialog msg="Удалить эту услугу?" onConfirm={remove} onCancel={() => setDeletingId(null)} />}
+    </div>
+  );
+}
+
+/* ─── Statuses Tab ───────────────────────────────────────── */
+function StatusesTab({ clinicId }: { clinicId: string | null }) {
+  const [bookingStatuses, setBookingStatuses] = useState<BookingStatus[]>([]);
+  const [leadStatuses, setLeadStatuses] = useState<LeadStatus[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState<'booking' | 'lead' | null>(null);
+  const [editing, setEditing] = useState<any>(null);
+  const [deletingId, setDeletingId] = useState<{ id: string; type: 'booking' | 'lead' } | null>(null);
+  const [sName, setSName] = useState('');
+  const [sColor, setSColor] = useState('#3B82F6');
+  const [sConfirmed, setSConfirmed] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (clinicId) load(); }, [clinicId]);
+
+  const load = async () => {
+    setLoading(true);
+    const [bs, ls] = await Promise.all([
+      supabase.from('booking_statuses').select('*').eq('clinic_id', clinicId).order('position'),
+      supabase.from('lead_statuses').select('*').eq('clinic_id', clinicId).order('position'),
+    ]);
+    setBookingStatuses(bs.data || []);
+    setLeadStatuses(ls.data || []);
+    setLoading(false);
+  };
+
+  const seedLeadStatuses = async () => {
+    const inserts = DEFAULT_LEAD_STATUSES.map((s, i) => ({ clinic_id: clinicId, ...s, position: i }));
+    const { error } = await supabase.from('lead_statuses').insert(inserts);
+    if (error) toast.error(error.message); else { toast.success('Статусы лидов созданы'); load(); }
+  };
+
+  const openCreate = (type: 'booking' | 'lead') => {
+    setEditing(null); setSName(''); setSColor('#3B82F6'); setSConfirmed(false); setShowModal(type);
+  };
+  const openEdit = (s: any, type: 'booking' | 'lead') => {
+    setEditing(s); setSName(s.name); setSColor(s.color); setSConfirmed(s.is_confirmed || false); setShowModal(type);
+  };
+
+  const save = async () => {
+    if (!sName.trim()) { toast.error('Введите название'); return; }
+    setSaving(true);
+    const table = showModal === 'booking' ? 'booking_statuses' : 'lead_statuses';
+
+    if (editing) {
+      const update: any = { name: sName, color: sColor };
+      if (showModal === 'booking') {
+        if (sConfirmed) {
+          await supabase.from('booking_statuses').update({ is_confirmed: false }).eq('clinic_id', clinicId);
+        }
+        update.is_confirmed = sConfirmed;
+      }
+      const { error } = await supabase.from(table).update(update).eq('id', editing.id);
+      if (error) toast.error(error.message); else toast.success('Статус обновлён');
+    } else {
+      const count = showModal === 'booking' ? bookingStatuses.length : leadStatuses.length;
+      if (count >= 10) { toast.error('Максимум 10 статусов'); setSaving(false); return; }
+      const insert: any = { clinic_id: clinicId, name: sName, color: sColor, position: count };
+      if (showModal === 'booking') {
+        if (sConfirmed) {
+          await supabase.from('booking_statuses').update({ is_confirmed: false }).eq('clinic_id', clinicId);
+        }
+        insert.is_confirmed = sConfirmed;
+      }
+      const { error } = await supabase.from(table).insert(insert);
+      if (error) toast.error(error.message); else toast.success('Статус добавлен');
+    }
+    setSaving(false); setShowModal(null); load();
+  };
+
+  const remove = async () => {
+    if (!deletingId) return;
+    const table = deletingId.type === 'booking' ? 'booking_statuses' : 'lead_statuses';
+    const { error } = await supabase.from(table).delete().eq('id', deletingId.id);
+    if (error) toast.error(error.message); else toast.success('Статус удалён');
+    setDeletingId(null); load();
+  };
+
+  const StatusList = ({ items, type }: { items: (BookingStatus | LeadStatus)[], type: 'booking' | 'lead' }) => (
+    <div className="space-y-2">
+      {items.map((s: any) => (
+        <div key={s.id} className="neu-sm p-3 flex items-center gap-3" data-testid={`status-${s.id}`}>
+          <div className="h-4 w-4 rounded-full shrink-0" style={{ background: s.color }} />
+          <span className="flex-1 font-medium text-[#1E293B]">{s.name}</span>
+          {type === 'booking' && s.is_confirmed && (
+            <span className="text-xs bg-[#10B981]/10 text-[#10B981] px-2 py-0.5 rounded-full font-medium">Подтверждено</span>
+          )}
+          <button className="neu-icon-btn h-7 w-7" onClick={() => openEdit(s, type)}><Edit2 size={12} /></button>
+          <button className="neu-icon-btn h-7 w-7 text-destructive" onClick={() => setDeletingId({ id: s.id, type })}><Trash2 size={12} /></button>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="space-y-8">
+      {loading ? <p className="text-center text-[#64748B] py-12">Загрузка...</p> : (
+        <>
+          {/* Booking statuses */}
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold">Статусы записей</h3>
+                <p className="text-xs text-[#64748B] mt-0.5">Один статус может быть "Подтверждено" — запись появится у ресепшна</p>
+              </div>
+              <button className="neu-btn-primary flex items-center gap-2" onClick={() => openCreate('booking')} data-testid="button-add-booking-status">
+                <Plus size={14} /> Добавить
+              </button>
+            </div>
+            {bookingStatuses.length === 0
+              ? <p className="text-[#64748B] text-sm py-6 text-center">Нет статусов записей</p>
+              : <StatusList items={bookingStatuses} type="booking" />}
+          </div>
+
+          <div className="border-t border-border/40" />
+
+          {/* Lead statuses */}
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold">Статусы лидов</h3>
+                <p className="text-xs text-[#64748B] mt-0.5">Используются в Negis CRM</p>
+              </div>
+              <div className="flex gap-2">
+                {leadStatuses.length === 0 && (
+                  <button className="neu-btn text-sm" onClick={seedLeadStatuses} data-testid="button-seed-lead-statuses">
+                    Создать стандартные
+                  </button>
+                )}
+                <button className="neu-btn-primary flex items-center gap-2" onClick={() => openCreate('lead')} data-testid="button-add-lead-status">
+                  <Plus size={14} /> Добавить
+                </button>
+              </div>
+            </div>
+            {leadStatuses.length === 0
+              ? <p className="text-[#64748B] text-sm py-6 text-center">Нет статусов лидов</p>
+              : <StatusList items={leadStatuses} type="lead" />}
+          </div>
+        </>
+      )}
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="neu-lg p-8 max-w-sm w-full space-y-4">
+            <h3 className="text-lg font-bold">{editing ? 'Редактировать статус' : 'Новый статус'}</h3>
+            <input className="neu-input" placeholder="Название" value={sName} onChange={e => setSName(e.target.value)} data-testid="input-status-name" />
+            <div className="flex items-center gap-4">
+              <label className="text-sm text-[#64748B]">Цвет:</label>
+              <div className="relative">
+                <input type="color" value={sColor} onChange={e => setSColor(e.target.value)}
+                  className="h-9 w-16 cursor-pointer rounded-lg border-0 p-0.5"
+                  style={{ background: 'none' }} data-testid="input-status-color" />
+              </div>
+              <div className="h-6 w-6 rounded-full border border-border/30" style={{ background: sColor }} />
+            </div>
+            {showModal === 'booking' && (
+              <label className="flex items-center gap-3 cursor-pointer">
+                <div
+                  className={`h-5 w-5 rounded flex items-center justify-center transition-all ${sConfirmed ? 'bg-[#10B981]' : 'neu-pressed-sm'}`}
+                  onClick={() => setSConfirmed(v => !v)}
+                  data-testid="toggle-confirmed"
+                >
+                  {sConfirmed && <Check size={12} color="white" />}
+                </div>
+                <span className="text-sm">Подтверждено (отображать у ресепшна)</span>
+              </label>
+            )}
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setShowModal(null)} className="neu-btn flex-1">Отмена</button>
+              <button onClick={save} disabled={saving} className="neu-btn-primary flex-1 justify-center" data-testid="button-save-status">
+                {saving ? 'Сохранение...' : 'Сохранить'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deletingId && <ConfirmDialog msg="Удалить этот статус?" onConfirm={remove} onCancel={() => setDeletingId(null)} />}
+    </div>
+  );
+}
+
+/* ─── Shifts Tab ─────────────────────────────────────────── */
+function ShiftsTab({ clinicId }: { clinicId: string | null }) {
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterAgent, setFilterAgent] = useState('');
+  const [filterDate, setFilterDate] = useState('');
+
+  useEffect(() => { if (clinicId) { loadAgents(); loadShifts(); } }, [clinicId]);
+  useEffect(() => { if (clinicId) loadShifts(); }, [filterAgent, filterDate, clinicId]);
+
+  const loadAgents = async () => {
+    const { data } = await supabase.from('agents').select('id, name').eq('clinic_id', clinicId);
+    setAgents(data || []);
+  };
+
+  const loadShifts = async () => {
+    setLoading(true);
+    let q = supabase.from('shifts').select('*, agents(name)').eq('clinic_id', clinicId).order('start_time', { ascending: false }).limit(100);
+    if (filterAgent) q = q.eq('agent_id', filterAgent);
+    if (filterDate) q = q.gte('start_time', filterDate).lt('start_time', filterDate + 'T23:59:59');
+    const { data } = await q;
+    setShifts(data || []);
+    setLoading(false);
+  };
+
+  const fmtTime = (iso: string | null) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('ru', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const fmtDur = (mins: number) => {
+    if (!mins) return '—';
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return h ? `${h}ч ${m}м` : `${m}м`;
+  };
+
+  return (
+    <div className="space-y-5">
+      <h3 className="text-lg font-bold">Смены сотрудников</h3>
+
+      {/* Filters */}
+      <div className="flex gap-3 flex-wrap">
+        <select
+          className="neu-input w-auto"
+          value={filterAgent}
+          onChange={e => setFilterAgent(e.target.value)}
+          data-testid="filter-agent"
+          style={{ width: 'auto', minWidth: 160 }}
+        >
+          <option value="">Все агенты</option>
+          {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <input
+          type="date"
+          className="neu-input"
+          value={filterDate}
+          onChange={e => setFilterDate(e.target.value)}
+          data-testid="filter-date"
+          style={{ width: 'auto', minWidth: 160 }}
+        />
+        {(filterAgent || filterDate) && (
+          <button className="neu-btn text-sm" onClick={() => { setFilterAgent(''); setFilterDate(''); }}>Сбросить</button>
+        )}
+      </div>
+
+      {loading ? (
+        <p className="text-center text-[#64748B] py-12">Загрузка...</p>
+      ) : shifts.length === 0 ? (
+        <div className="py-16 text-center text-[#64748B]">Нет смен за выбранный период.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-border text-[#64748B]">
+                <th className="pb-3 font-semibold">Агент</th>
+                <th className="pb-3 font-semibold">Дата</th>
+                <th className="pb-3 font-semibold">Приход</th>
+                <th className="pb-3 font-semibold">Уход</th>
+                <th className="pb-3 font-semibold">Длит.</th>
+                <th className="pb-3 font-semibold">Записей</th>
+                <th className="pb-3 font-semibold text-right">Заработок</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shifts.map(s => (
+                <tr key={s.id} className="border-b border-border/40" data-testid={`shift-${s.id}`}>
+                  <td className="py-3 font-medium text-[#1E293B]">{s.agents?.name || '—'}</td>
+                  <td className="py-3 text-[#64748B]">{fmtDate(s.start_time)}</td>
+                  <td className="py-3">{fmtTime(s.start_time)}</td>
+                  <td className="py-3">{fmtTime(s.end_time)}</td>
+                  <td className="py-3">{fmtDur(s.duration_minutes)}</td>
+                  <td className="py-3 text-center">{s.bookings_count}</td>
+                  <td className="py-3 text-right font-bold text-[#1A56DB]">{s.earnings.toLocaleString('ru')} ₸</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── WhatsApp Tab ───────────────────────────────────────── */
+function WhatsAppTab({ clinicId }: { clinicId: string | null }) {
+  const [template, setTemplate] = useState('Здравствуйте, {имя}! Вы записаны на услугу {услуга} {дата} в {время}. Ваш специалист: {агент}.');
+  const [saving, setSaving] = useState(false);
+
+  const preview = template
+    .replace('{имя}', 'Дмитрий')
+    .replace('{услуга}', 'Консультация')
+    .replace('{дата}', '24.05.2026')
+    .replace('{время}', '14:00')
+    .replace('{агент}', 'Анна С.');
+
+  const save = async () => {
+    setSaving(true);
+    const { error } = await supabase.from('clinics').update({ whatsapp_template: template }).eq('id', clinicId);
+    if (error) toast.error(error.message); else toast.success('Шаблон сохранён');
+    setSaving(false);
+  };
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <h3 className="text-lg font-bold">Шаблон WhatsApp</h3>
+      <p className="text-sm text-[#64748B]">Доступные переменные: <code className="bg-[#E8EDF2] px-1 rounded">{'{имя} {дата} {время} {услуга} {агент}'}</code></p>
+      <textarea
+        className="neu-input min-h-[120px] resize-y"
+        value={template}
+        onChange={e => setTemplate(e.target.value)}
+        data-testid="input-whatsapp-template"
+      />
+      <div className="neu-sm p-4 border-l-4 border-[#10B981]">
+        <p className="text-xs font-bold uppercase text-[#10B981] mb-2">Предпросмотр</p>
+        <p className="text-[#1E293B] text-sm">{preview}</p>
+      </div>
+      <button onClick={save} disabled={saving} className="neu-btn-primary" data-testid="button-save-whatsapp">
+        {saving ? 'Сохранение...' : 'Сохранить шаблон'}
+      </button>
+    </div>
+  );
+}
+
+/* ─── Settings Tab ───────────────────────────────────────── */
+function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
+  const [form, setForm] = useState({ name: '', work_start: '10:00', work_end: '18:00', slot_limit: 3, whatsapp_number: '', telegram_chat_id: '' });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!clinicId) return;
+    supabase.from('clinics').select('name, work_start, work_end, slot_limit, whatsapp_number, telegram_chat_id').eq('id', clinicId).single()
+      .then(({ data }) => { if (data) setForm({ name: data.name || '', work_start: data.work_start || '10:00', work_end: data.work_end || '18:00', slot_limit: data.slot_limit || 3, whatsapp_number: data.whatsapp_number || '', telegram_chat_id: data.telegram_chat_id || '' }); setLoading(false); });
+  }, [clinicId]);
+
+  const save = async () => {
+    setSaving(true);
+    const { error } = await supabase.from('clinics').update(form).eq('id', clinicId);
+    if (error) toast.error(error.message); else toast.success('Настройки сохранены');
+    setSaving(false);
+  };
+
+  if (loading) return <p className="text-center text-[#64748B] py-12">Загрузка...</p>;
+
+  return (
+    <div className="max-w-lg space-y-5">
+      <h3 className="text-lg font-bold">Настройки клиники</h3>
+      <div>
+        <label className="block text-sm font-medium text-[#64748B] mb-1">Название клиники</label>
+        <input className="neu-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} data-testid="input-clinic-name" />
+      </div>
+      <div className="flex gap-4">
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-[#64748B] mb-1">Работа с</label>
+          <input type="time" className="neu-input" value={form.work_start} onChange={e => setForm(f => ({ ...f, work_start: e.target.value }))} data-testid="input-work-start" />
+        </div>
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-[#64748B] mb-1">до</label>
+          <input type="time" className="neu-input" value={form.work_end} onChange={e => setForm(f => ({ ...f, work_end: e.target.value }))} data-testid="input-work-end" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-[#64748B] mb-1">Максимум записей на слот</label>
+        <input type="number" min={1} max={20} className="neu-input" value={form.slot_limit} onChange={e => setForm(f => ({ ...f, slot_limit: Number(e.target.value) }))} data-testid="input-slot-limit" />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-[#64748B] mb-1">Номер WhatsApp</label>
+        <input className="neu-input" placeholder="+7XXXXXXXXXX" value={form.whatsapp_number} onChange={e => setForm(f => ({ ...f, whatsapp_number: e.target.value }))} data-testid="input-whatsapp-number" />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-[#64748B] mb-1">Telegram Chat ID</label>
+        <input className="neu-input" value={form.telegram_chat_id} onChange={e => setForm(f => ({ ...f, telegram_chat_id: e.target.value }))} data-testid="input-telegram-chat-id" />
+      </div>
+      <button onClick={save} disabled={saving} className="neu-btn-primary mt-2" data-testid="button-save-settings">
+        {saving ? 'Сохранение...' : 'Сохранить'}
+      </button>
+    </div>
   );
 }
