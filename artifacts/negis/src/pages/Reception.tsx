@@ -6,18 +6,13 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface Booking {
-  id: string; name: string; phone: string | null; age: number | null;
+  id: string; name: string; phone: string | null;
   time: string; date: string; visited: boolean | null;
-  service_id: string | null; agent_id: string | null;
 }
-interface Service { id: string; name: string }
-interface Agent   { id: string; name: string }
 
 export default function Reception() {
   const { clinicId } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [agents, setAgents]     = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const today = new Date().toISOString().split('T')[0];
@@ -27,24 +22,16 @@ export default function Reception() {
   const load = async () => {
     if (!clinicId) return;
     setLoading(true);
-    const [{ data, error }, { data: svcData }, { data: agentData }] = await Promise.all([
-      supabase.from('bookings')
-        .select('id, name, phone, age, time, date, visited, service_id, agent_id')
-        .eq('clinic_id', clinicId)
-        .eq('date', today)
-        .order('time'),
-      supabase.from('services').select('id, name').eq('clinic_id', clinicId),
-      supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
-    ]);
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('id, name, phone, time, date, visited')
+      .eq('clinic_id', clinicId)
+      .eq('date', today)
+      .order('time');
     if (error) toast.error(error.message);
     setBookings(data ?? []);
-    setServices(svcData ?? []);
-    setAgents(agentData ?? []);
     setLoading(false);
   };
-
-  const svcName   = (b: Booking) => services.find(s => s.id === b.service_id)?.name ?? '—';
-  const agentName = (b: Booking) => agents.find(a => a.id === b.agent_id)?.name ?? '—';
 
   const setVisited = async (id: string, visited: boolean) => {
     const { error } = await supabase.from('bookings').update({ visited }).eq('id', id);
@@ -79,18 +66,15 @@ export default function Reception() {
                   <th className="p-5 font-semibold w-24">Время</th>
                   <th className="p-5 font-semibold">Имя</th>
                   <th className="p-5 font-semibold">Телефон</th>
-                  <th className="p-5 font-semibold w-20">Возраст</th>
-                  <th className="p-5 font-semibold">Услуга</th>
-                  <th className="p-5 font-semibold">Агент</th>
                   <th className="p-5 font-semibold text-center w-72">Статус визита</th>
                   <th className="p-5 font-semibold w-16"></th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} className="py-16 text-center text-[#94A3B8] text-sm">Загрузка...</td></tr>
+                  <tr><td colSpan={5} className="py-16 text-center text-[#94A3B8] text-sm">Загрузка...</td></tr>
                 ) : bookings.length === 0 ? (
-                  <tr><td colSpan={8} className="py-16 text-center text-[#94A3B8] text-sm">
+                  <tr><td colSpan={5} className="py-16 text-center text-[#94A3B8] text-sm">
                     Записей на сегодня нет
                   </td></tr>
                 ) : bookings.map(b => (
@@ -98,13 +82,6 @@ export default function Reception() {
                     <td className="p-5 font-bold text-[#1E293B] text-lg">{b.time}</td>
                     <td className="p-5 font-semibold text-[#1E293B]">{b.name}</td>
                     <td className="p-5 text-sm text-[#64748B]">{b.phone ?? '—'}</td>
-                    <td className="p-5 text-sm text-[#1E293B]">{b.age ?? '—'}</td>
-                    <td className="p-5">
-                      <span className="inline-block px-2.5 py-1 rounded-lg bg-[#EEF2F6] text-[#1E325C] text-xs font-medium">
-                        {svcName(b)}
-                      </span>
-                    </td>
-                    <td className="p-5 text-sm text-[#64748B]">{agentName(b)}</td>
                     <td className="p-5">
                       <div className="flex items-center justify-center gap-2">
                         <button

@@ -78,7 +78,7 @@ export function Topbar() {
         supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
         supabase
           .from('bookings')
-          .select('id, name, agent_id, date, time, slot_hour, created_at')
+          .select('id, name, date, time, created_at')
           .eq('clinic_id', clinicId)
           .order('created_at', { ascending: false })
           .limit(15),

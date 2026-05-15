@@ -18,16 +18,11 @@ interface Booking {
   id: string;
   name: string;
   phone: string | null;
-  age: number | null;
-  service_id: string | null;
-  agent_id: string | null;
   time: string;   // "HH:00"
   date: string;   // YYYY-MM-DD
   status_id: string | null;
 }
 
-interface Service { id: string; name: string; price: number }
-interface Agent   { id: string; name: string }
 
 /* ── Helpers ──────────────────────────────────────────────── */
 const fmtDate = (d: Date) => format(d, 'yyyy-MM-dd');
@@ -36,10 +31,8 @@ const slotLabel = (h: number) => `${String(h).padStart(2, '0')}:00`;
 export default function Booking() {
   const { clinicId } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [bookings, setBookings]   = useState<Booking[]>([]);
-  const [services, setServices]   = useState<Service[]>([]);
-  const [agents, setAgents]       = useState<Agent[]>([]);
-  const [loading, setLoading]     = useState(false);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading]   = useState(false);
   const [now, setNow]             = useState<Date>(new Date());
 
   /* Sync clock every minute so past-slot detection stays fresh */
@@ -57,7 +50,7 @@ export default function Booking() {
 
   /* Modal state */
   const [modal, setModal] = useState<{ hour: number } | null>(null);
-  const [form, setForm] = useState({ name: '', phone: '', age: '', service_id: '', agent_id: '' });
+  const [form, setForm] = useState({ name: '', phone: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -78,16 +71,8 @@ export default function Booking() {
     setLoading(false);
   };
 
-  const serviceName = (b: Booking) => services.find(s => s.id === b.service_id)?.name ?? '—';
-  const agentNameB  = (b: Booking) => agents.find(a => a.id === b.agent_id)?.name ?? '—';
-
   const loadMeta = async () => {
-    const [s, a] = await Promise.all([
-      supabase.from('services').select('id, name, price').eq('clinic_id', clinicId),
-      supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
-    ]);
-    setServices(s.data || []);
-    setAgents(a.data || []);
+    // reserved for future use
   };
 
   const slotBookings = (h: number) => bookings.filter(b => parseInt(b.time) === h);
@@ -97,7 +82,7 @@ export default function Booking() {
     if (slotIsPast(h)) { toast.error('Это время уже прошло'); return; }
     const count = slotBookings(h).length;
     if (count >= MAX_PER_SLOT) { toast.error('Слот заполнен'); return; }
-    setForm({ name: '', phone: '', age: '', service_id: services[0]?.id || '', agent_id: agents[0]?.id || '' });
+    setForm({ name: '', phone: '' });
     setModal({ hour: h });
   };
 
@@ -110,9 +95,6 @@ export default function Booking() {
       clinic_id: clinicId,
       name: nameVal,
       phone: (form.phone ?? '').trim() || null,
-      age: (form.age ?? '') ? Number(form.age) : null,
-      service_id: form.service_id || null,
-      agent_id: form.agent_id || null,
       time: slotLabel(modal.hour),
       date: fmtDate(selectedDate),
     });
@@ -375,50 +357,6 @@ export default function Booking() {
                 />
               </FieldGroup>
 
-              <FieldGroup label="Возраст">
-                <input
-                  className="neu-input"
-                  placeholder="Лет"
-                  type="number"
-                  min={1}
-                  max={120}
-                  value={form.age}
-                  onChange={e => setForm(f => ({ ...f, age: e.target.value }))}
-                  data-testid="input-client-age"
-                />
-              </FieldGroup>
-
-              {services.length > 0 && (
-                <FieldGroup label="Услуга">
-                  <select
-                    className="neu-input"
-                    value={form.service_id}
-                    onChange={e => setForm(f => ({ ...f, service_id: e.target.value }))}
-                    data-testid="select-service"
-                  >
-                    <option value="">— не выбрана —</option>
-                    {services.map(s => (
-                      <option key={s.id} value={s.id}>{s.name} — {s.price.toLocaleString('ru')} ₸</option>
-                    ))}
-                  </select>
-                </FieldGroup>
-              )}
-
-              {agents.length > 0 && (
-                <FieldGroup label="Агент">
-                  <select
-                    className="neu-input"
-                    value={form.agent_id}
-                    onChange={e => setForm(f => ({ ...f, agent_id: e.target.value }))}
-                    data-testid="select-agent"
-                  >
-                    <option value="">— не выбран —</option>
-                    {agents.map(a => (
-                      <option key={a.id} value={a.id}>{a.name}</option>
-                    ))}
-                  </select>
-                </FieldGroup>
-              )}
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
