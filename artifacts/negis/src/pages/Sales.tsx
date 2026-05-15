@@ -13,7 +13,6 @@ interface Lead {
   source: string | null; status_id: string | null; comment: string | null;
   created_at: string;
   lead_statuses?: { name: string; color: string } | null;
-  agents?: { name: string } | null;
 }
 interface LeadStatus { id: string; name: string; color: string }
 interface Agent { id: string; name: string; user_id: string | null }
@@ -70,7 +69,7 @@ export default function Sales() {
     if (!clinicId) return;
     let q = supabase
       .from('leads')
-      .select('*, lead_statuses(name, color), agents(name)')
+      .select('*, lead_statuses(name, color)')
       .eq('clinic_id', clinicId);
 
     if (userRole === 'agent' && myAgentId) q = q.eq('agent_id', myAgentId);
@@ -153,6 +152,7 @@ export default function Sales() {
   const statusColor = (lead: Lead) => lead.lead_statuses?.color ?? '#94A3B8';
   const statusName = (lead: Lead) => lead.lead_statuses?.name ?? '—';
   const fullName = (lead: Lead) => [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '—';
+  const agentName = (lead: Lead) => agents.find(a => a.id === lead.agent_id)?.name ?? '—';
 
   /* ── UI ─────────────────────────────────────────────── */
   const IS: React.CSSProperties = {
@@ -238,7 +238,7 @@ export default function Sales() {
                         {statusName(lead)}
                       </span>
                     </td>
-                    <td className="p-4 text-[#64748B]">{lead.agents?.name ?? '—'}</td>
+                    <td className="p-4 text-[#64748B]">{agentName(lead)}</td>
                     <td className="p-4 text-[#94A3B8]">
                       {new Date(lead.created_at).toLocaleDateString('ru-RU')}
                     </td>
