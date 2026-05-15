@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { Plus, Trash2, Edit2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, Settings } from 'lucide-react';
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('agents');
