@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface Booking {
-  id: string; patient_name: string; patient_phone: string | null; patient_age: number | null;
+  id: string; patient_name: string; patient_phone: string | null; age: number | null;
   time: string; date: string; visited: boolean | null;
   service_id: string | null; agent_id: string | null;
 }
@@ -28,7 +28,7 @@ export default function Reception() {
     if (!clinicId) return;
     setLoading(true);
     const [{ data, error }, { data: svc }, { data: agt }] = await Promise.all([
-      supabase.from('bookings').select('id, patient_name, patient_phone, patient_age, time, date, visited, service_id, agent_id').eq('clinic_id', clinicId).eq('date', today).order('time'),
+      supabase.from('bookings').select('id, patient_name, patient_phone, age, time, date, visited, service_id, agent_id').eq('clinic_id', clinicId).eq('date', today).order('time'),
       supabase.from('services').select('id, name').eq('clinic_id', clinicId),
       supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
     ]);
@@ -94,7 +94,7 @@ export default function Reception() {
                     <td className="p-5 font-bold text-[#1E293B] text-lg">{b.time}</td>
                     <td className="p-5 font-semibold text-[#1E293B]">{b.patient_name}</td>
                     <td className="p-5 text-sm text-[#64748B]">{b.patient_phone ?? '—'}</td>
-                    <td className="p-5 text-sm text-[#64748B]">{b.patient_age ?? '—'}</td>
+                    <td className="p-5 text-sm text-[#64748B]">{b.age ?? '—'}</td>
                     <td className="p-5 text-sm text-[#64748B]">{svcName(b.service_id)}</td>
                     <td className="p-5 text-sm text-[#64748B]">{agtName(b.agent_id)}</td>
                     <td className="p-5">
