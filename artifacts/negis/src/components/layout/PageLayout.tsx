@@ -2,7 +2,7 @@ import React from 'react';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { useAuth } from '@/contexts/AuthContext';
-import { Redirect, useLocation } from 'wouter';
+import { Redirect } from 'wouter';
 
 interface PageLayoutProps {
   children: React.ReactNode;
@@ -11,25 +11,33 @@ interface PageLayoutProps {
 
 export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
   const { session, isLoading } = useAuth();
-  const [location] = useLocation();
 
   if (isLoading) {
-    return <div className="min-h-screen bg-[#E8EDF2] flex items-center justify-center">Загрузка...</div>;
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ background: '#F4F7FB' }}
+      >
+        <div style={{ fontSize: 12, letterSpacing: '0.14em', color: '#94A3B8', fontFamily: "'Inter', sans-serif" }}>
+          ЗАГРУЗКА...
+        </div>
+      </div>
+    );
   }
 
   if (requireAuth && !session) {
     return <Redirect to="/" />;
   }
 
-  // Basic mobile responsiveness logic for sidebar spacing could be added here, 
-  // keeping it simple for now with a fixed pl-60 (or pl-16 if collapsed, but we aren't tracking collapsed state globally yet, assuming full for desktop)
-  
   return (
-    <div className="min-h-[100dvh] bg-[#E8EDF2] flex text-foreground font-sans">
+    <div
+      className="min-h-[100dvh] flex font-sans"
+      style={{ background: '#F4F7FB', color: '#0B1220' }}
+    >
       <Sidebar />
-      <div className="flex-1 ml-60 transition-all duration-300 flex flex-col">
+      <div className="flex-1 flex flex-col" style={{ marginLeft: 78 }}>
         <Topbar />
-        <main className="flex-1 p-6 md:p-8 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto" style={{ padding: '32px 40px' }}>
           {children}
         </main>
       </div>

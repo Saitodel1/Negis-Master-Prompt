@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -40,7 +40,7 @@
   --color-sidebar-accent: hsl(var(--sidebar-accent));
   --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
   --color-sidebar-ring: hsl(var(--sidebar-ring));
-  --font-sans: 'Inter', sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -48,78 +48,64 @@
 }
 
 :root {
-  --background: 210 23% 90%;
-  --foreground: 215 41% 18%;
-  --border: 210 15% 80%;
-  --card: 210 23% 90%;
-  --card-foreground: 215 41% 18%;
-  --card-border: 210 15% 80%;
-  --sidebar: 210 23% 90%;
-  --sidebar-foreground: 215 41% 18%;
-  --sidebar-border: 210 15% 80%;
-  --sidebar-primary: 221 75% 47%;
+  /* NEGIS Design System */
+  --ng-bg:        #F4F7FB;
+  --ng-surface:   #FFFFFF;
+  --ng-surface-2: #EEF2F6;
+  --ng-plate:     #DDE5EE;
+  --ng-border:    #E7ECF3;
+  --ng-text:      #0B1220;
+  --ng-text-2:    #475569;
+  --ng-muted:     #94A3B8;
+  --ng-primary:   #1E325C;
+  --ng-accent:    #2859C5;
+  --ng-success:   #0F8A6B;
+  --ng-warning:   #D97706;
+  --ng-error:     #DC2626;
+
+  --background: 216 40% 96%;
+  --foreground: 222 62% 10%;
+  --border: 214 30% 90%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 62% 10%;
+  --card-border: 214 30% 90%;
+  --sidebar: 213 36% 96%;
+  --sidebar-foreground: 222 62% 10%;
+  --sidebar-border: 214 30% 90%;
+  --sidebar-primary: 218 53% 24%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 210 23% 88%;
-  --sidebar-accent-foreground: 215 41% 18%;
-  --sidebar-ring: 221 75% 47%;
-  --popover: 210 23% 90%;
-  --popover-foreground: 215 41% 18%;
-  --popover-border: 210 15% 80%;
-  --primary: 221 75% 47%;
+  --sidebar-accent: 214 30% 93%;
+  --sidebar-accent-foreground: 222 62% 10%;
+  --sidebar-ring: 218 53% 24%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 62% 10%;
+  --popover-border: 214 30% 90%;
+  --primary: 218 53% 24%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 213 93% 59%;
-  --secondary-foreground: 0 0% 100%;
-  --muted: 210 20% 85%;
+  --secondary: 214 30% 93%;
+  --secondary-foreground: 222 62% 10%;
+  --muted: 214 30% 93%;
   --muted-foreground: 215 16% 47%;
-  --accent: 210 20% 85%;
-  --accent-foreground: 215 41% 18%;
-  --destructive: 0 84% 60%;
+  --accent: 214 30% 93%;
+  --accent-foreground: 222 62% 10%;
+  --destructive: 0 74% 50%;
   --destructive-foreground: 0 0% 100%;
-  --input: 210 15% 80%;
-  --ring: 221 75% 47%;
-  --chart-1: 221 75% 47%;
-  --chart-2: 213 93% 59%;
-  --chart-3: 160 84% 39%;
-  --chart-4: 38 92% 50%;
-  --chart-5: 0 84% 60%;
-  --radius: 0.5rem;
+  --input: 214 30% 90%;
+  --ring: 218 66% 48%;
+  --chart-1: 218 66% 48%;
+  --chart-2: 160 84% 30%;
+  --chart-3: 38 80% 42%;
+  --chart-4: 0 74% 50%;
+  --chart-5: 280 67% 55%;
+  --radius: 0.75rem;
 }
 
 .dark {
-  --background: 210 23% 90%;
-  --foreground: 215 41% 18%;
-  --border: 210 15% 80%;
-  --card: 210 23% 90%;
-  --card-foreground: 215 41% 18%;
-  --card-border: 210 15% 80%;
-  --sidebar: 210 23% 90%;
-  --sidebar-foreground: 215 41% 18%;
-  --sidebar-border: 210 15% 80%;
-  --sidebar-primary: 221 75% 47%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 210 23% 88%;
-  --sidebar-accent-foreground: 215 41% 18%;
-  --sidebar-ring: 221 75% 47%;
-  --popover: 210 23% 90%;
-  --popover-foreground: 215 41% 18%;
-  --popover-border: 210 15% 80%;
-  --primary: 221 75% 47%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 213 93% 59%;
-  --secondary-foreground: 0 0% 100%;
-  --muted: 210 20% 85%;
-  --muted-foreground: 215 16% 47%;
-  --accent: 210 20% 85%;
-  --accent-foreground: 215 41% 18%;
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 100%;
-  --input: 210 15% 80%;
-  --ring: 221 75% 47%;
-  --chart-1: 221 75% 47%;
-  --chart-2: 213 93% 59%;
-  --chart-3: 160 84% 39%;
-  --chart-4: 38 92% 50%;
-  --chart-5: 0 84% 60%;
+  --background: 216 40% 96%;
+  --foreground: 222 62% 10%;
+  --border: 214 30% 90%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 62% 10%;
 }
 
 @layer base {
@@ -127,155 +113,214 @@
     @apply border-border;
   }
   body {
-    @apply font-sans antialiased bg-background text-foreground;
+    @apply font-sans antialiased;
+    background: var(--ng-bg);
+    color: var(--ng-text);
+    font-size: 14px;
+    line-height: 1.6;
   }
-  
-  /* NEUMORPHIC UTILITIES */
+
+  /* ── NEGIS DESIGN SYSTEM UTILITIES ───────────────────────── */
+
+  /* Cards / Surfaces */
   .neu {
-    background: #E8EDF2;
-    box-shadow: 6px 6px 12px #c5cad4, -6px -6px 12px #ffffff;
-    border-radius: 16px;
-    transition: all 0.2s ease;
+    background: var(--ng-surface);
+    border: 1px solid var(--ng-border);
+    border-radius: 14px;
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
   }
   .neu-sm {
-    background: #E8EDF2;
-    box-shadow: 3px 3px 6px #c5cad4, -3px -3px 6px #ffffff;
+    background: var(--ng-surface);
+    border: 1px solid var(--ng-border);
     border-radius: 12px;
-    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
   }
   .neu-lg {
-    background: #E8EDF2;
-    box-shadow: 10px 10px 20px #c5cad4, -10px -10px 20px #ffffff;
-    border-radius: 20px;
+    background: var(--ng-surface);
+    border: 1px solid var(--ng-border);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(15, 23, 42, 0.06);
   }
   .neu-pressed {
-    background: #E8EDF2;
-    box-shadow: inset 4px 4px 8px #c5cad4, inset -4px -4px 8px #ffffff;
-    border-radius: 16px;
+    background: var(--ng-surface-2);
+    border: 1px solid var(--ng-border);
+    border-radius: 14px;
+    box-shadow: inset 0 2px 6px rgba(15, 23, 42, 0.06);
   }
   .neu-pressed-sm {
-    background: #E8EDF2;
-    box-shadow: inset 2px 2px 4px #c5cad4, inset -2px -2px 4px #ffffff;
+    background: var(--ng-surface-2);
+    border: 1px solid var(--ng-plate);
     border-radius: 12px;
+    box-shadow: inset 0 1px 4px rgba(15, 23, 42, 0.08);
   }
+
+  /* Card container */
+  .neu-card {
+    background: var(--ng-surface);
+    border: 1px solid var(--ng-border);
+    border-radius: 16px;
+    padding: 28px;
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+  }
+
+  /* Input */
   .neu-input {
-    background: #E8EDF2;
-    box-shadow: inset 2px 2px 4px #c5cad4, inset -2px -2px 4px #ffffff;
-    border-radius: 10px;
-    border: none;
+    background: var(--ng-surface);
+    border: 1px solid var(--ng-border);
+    border-radius: 12px;
     outline: none;
-    padding: 10px 14px;
+    padding: 11px 14px;
     width: 100%;
     font-size: 14px;
-    color: #1E293B;
+    color: var(--ng-text);
     font-family: 'Inter', sans-serif;
-    transition: all 0.2s ease;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
   .neu-input:focus {
-    box-shadow: inset 2px 2px 4px #c5cad4, inset -2px -2px 4px #ffffff,
-                0 0 0 2px rgba(26,86,219,0.25);
+    border-color: var(--ng-accent);
+    box-shadow: 0 0 0 3px rgba(40, 89, 197, 0.12);
   }
-  .neu-input::placeholder { color: #94a3b8; }
+  .neu-input::placeholder { color: var(--ng-muted); }
+
+  /* Buttons */
   .neu-btn {
-    background: #E8EDF2;
-    box-shadow: 6px 6px 12px #c5cad4, -6px -6px 12px #ffffff;
-    border-radius: 50px;
-    border: none;
-    font-weight: 600;
+    background: var(--ng-surface);
+    border: 1px solid var(--ng-border);
+    border-radius: 12px;
+    font-weight: 500;
     font-size: 14px;
-    padding: 10px 22px;
+    padding: 10px 18px;
     cursor: pointer;
-    color: #1E293B;
+    color: var(--ng-text);
     font-family: 'Inter', sans-serif;
-    transition: all 0.2s ease;
+    transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 7px;
+    white-space: nowrap;
   }
-  .neu-btn:hover { box-shadow: 8px 8px 16px #c5cad4, -8px -8px 16px #ffffff; }
-  .neu-btn:active { box-shadow: inset 4px 4px 8px #c5cad4, inset -4px -4px 8px #ffffff; }
+  .neu-btn:hover {
+    background: var(--ng-surface-2);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  }
+  .neu-btn:active {
+    transform: translateY(0);
+    background: var(--ng-plate);
+  }
+
   .neu-btn-primary {
-    background: #1A56DB;
+    background: var(--ng-primary);
     color: white;
-    box-shadow: 4px 4px 10px #c5cad4, -4px -4px 10px #ffffff;
-    border-radius: 50px;
-    border: none;
-    font-weight: 600;
+    border: 1px solid var(--ng-primary);
+    border-radius: 12px;
+    font-weight: 500;
     font-size: 14px;
-    padding: 10px 22px;
+    padding: 10px 18px;
     cursor: pointer;
     font-family: 'Inter', sans-serif;
-    transition: all 0.2s ease;
+    transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 7px;
+    white-space: nowrap;
   }
-  .neu-btn-primary:hover { background: #1648c0; }
-  .neu-btn-primary:active { box-shadow: inset 3px 3px 6px rgba(0,0,0,0.2); }
+  .neu-btn-primary:hover {
+    background: #162748;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(30, 50, 92, 0.25);
+  }
+  .neu-btn-primary:active {
+    transform: translateY(0);
+    background: #0f1e3a;
+  }
+  .neu-btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+
   .neu-btn-success {
-    background: #10B981;
+    background: var(--ng-success);
     color: white;
-    box-shadow: 4px 4px 10px #c5cad4;
-    border-radius: 50px;
-    border: none;
-    font-weight: 600;
+    border: 1px solid var(--ng-success);
+    border-radius: 12px;
+    font-weight: 500;
     font-size: 13px;
     padding: 8px 16px;
     cursor: pointer;
     font-family: 'Inter', sans-serif;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 7px;
   }
+  .neu-btn-success:hover { background: #0a7259; transform: translateY(-1px); }
+
   .neu-btn-danger {
-    background: #EF4444;
+    background: var(--ng-error);
     color: white;
-    box-shadow: 4px 4px 10px #c5cad4;
-    border-radius: 50px;
-    border: none;
-    font-weight: 600;
+    border: 1px solid var(--ng-error);
+    border-radius: 12px;
+    font-weight: 500;
     font-size: 13px;
     padding: 8px 16px;
     cursor: pointer;
     font-family: 'Inter', sans-serif;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 7px;
   }
+  .neu-btn-danger:hover { background: #b91c1c; transform: translateY(-1px); }
+
   .neu-icon-btn {
-    background: #E8EDF2;
-    box-shadow: 3px 3px 6px #c5cad4, -3px -3px 6px #ffffff;
-    border-radius: 50%;
-    border: none;
+    background: var(--ng-surface);
+    border: 1px solid var(--ng-border);
+    border-radius: 14px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s ease;
-    color: #64748B;
+    transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    color: var(--ng-text-2);
     height: 40px;
     width: 40px;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05),
+                inset 0 1px 0 rgba(255, 255, 255, 0.8);
   }
-  .neu-icon-btn:hover { color: #1A56DB; }
-  .neu-icon-btn:active { box-shadow: inset 2px 2px 4px #c5cad4, inset -2px -2px 4px #ffffff; }
-  .neu-card {
-    background: #E8EDF2;
-    box-shadow: 6px 6px 12px #c5cad4, -6px -6px 12px #ffffff;
-    border-radius: 16px;
-    padding: 20px;
+  .neu-icon-btn:hover {
+    background: var(--ng-surface);
+    color: var(--ng-primary);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08),
+                inset 0 1px 0 rgba(255, 255, 255, 0.8);
   }
+  .neu-icon-btn:active {
+    transform: translateY(0);
+    background: var(--ng-surface-2);
+    box-shadow: inset 0 2px 6px rgba(15, 23, 42, 0.08);
+  }
+
+  /* Badge */
   .badge {
     display: inline-flex;
     align-items: center;
     padding: 3px 10px;
-    border-radius: 20px;
+    border-radius: 999px;
     font-size: 12px;
     font-weight: 500;
+    letter-spacing: 0.01em;
   }
+  .badge-success { color: var(--ng-success); background: rgba(15, 138, 107, 0.09); }
+  .badge-blue    { color: var(--ng-accent);  background: rgba(40, 89, 197, 0.09); }
+  .badge-warning { color: var(--ng-warning); background: rgba(217, 119, 6, 0.09); }
+  .badge-error   { color: var(--ng-error);   background: rgba(220, 38, 38, 0.09); }
+  .badge-muted   { color: var(--ng-muted);   background: rgba(148, 163, 184, 0.12); }
 }
