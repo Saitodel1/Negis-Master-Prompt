@@ -828,7 +828,7 @@ function ShiftsTab({ clinicId }: { clinicId: string | null }) {
 
   const loadShifts = async () => {
     setLoading(true);
-    let q = supabase.from('shifts').select('*, agents(name)').eq('clinic_id', clinicId).order('start_time', { ascending: false }).limit(100);
+    let q = supabase.from('shifts').select('*').eq('clinic_id', clinicId).order('start_time', { ascending: false }).limit(100);
     if (filterAgent) q = q.eq('agent_id', filterAgent);
     if (filterDate) q = q.gte('start_time', filterDate).lt('start_time', filterDate + 'T23:59:59');
     const { data } = await q;
@@ -900,7 +900,7 @@ function ShiftsTab({ clinicId }: { clinicId: string | null }) {
             <tbody>
               {shifts.map(s => (
                 <tr key={s.id} className="border-b border-border/40" data-testid={`shift-${s.id}`}>
-                  <td className="py-3 font-medium text-[#1E293B]">{s.agents?.name || '—'}</td>
+                  <td className="py-3 font-medium text-[#1E293B]">{agents.find(a => a.id === s.agent_id)?.name || '—'}</td>
                   <td className="py-3 text-[#64748B]">{fmtDate(s.start_time)}</td>
                   <td className="py-3">{fmtTime(s.start_time)}</td>
                   <td className="py-3">{fmtTime(s.end_time)}</td>
@@ -1068,18 +1068,20 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
   const exportBookings = async (fmt: 'csv' | 'xlsx') => {
     if (!clinicId) return;
     setLoading('bookings');
-    const { data, error } = await supabase
-      .from('bookings')
-      .select('id, date, time, name, phone, age, visited, services(name), agents(name)')
-      .eq('clinic_id', clinicId)
-      .order('date', { ascending: false });
+    const [{ data, error }, { data: agentsData }, { data: servicesData }] = await Promise.all([
+      supabase.from('bookings').select('id, date, time, name, phone, age, visited, service_id, agent_id').eq('clinic_id', clinicId).order('date', { ascending: false }),
+      supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
+      supabase.from('services').select('id, name').eq('clinic_id', clinicId),
+    ]);
     setLoading(null);
     if (error) { toast.error(error.message); return; }
+    const agentMap = Object.fromEntries((agentsData ?? []).map(a => [a.id, a.name]));
+    const serviceMap = Object.fromEntries((servicesData ?? []).map(s => [s.id, s.name]));
     const rows = (data ?? []).map((r: any) => ({
       'Дата': r.date, 'Время': r.time, 'Клиент': r.name,
       'Телефон': r.phone ?? '', 'Возраст': r.age ?? '',
-      'Услуга': r.services?.name ?? '',
-      'Агент': r.agents?.name ?? '',
+      'Услуга': r.service_id ? (serviceMap[r.service_id] ?? '—') : '—',
+      'Агент': r.agent_id ? (agentMap[r.agent_id] ?? '—') : '—',
       'Статус': r.visited === true ? 'Пришёл' : r.visited === false ? 'Не пришёл' : 'Ожидается',
     }));
     if (fmt === 'csv') {
@@ -1152,15 +1154,15 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
   const exportShifts = async (fmt: 'csv' | 'xlsx') => {
     if (!clinicId) return;
     setLoading('shifts');
-    const { data, error } = await supabase
-      .from('shifts')
-      .select('start_time, end_time, duration_minutes, bookings_count, earnings, agents(name)')
-      .eq('clinic_id', clinicId)
-      .order('start_time', { ascending: false });
+    const [{ data, error }, { data: agentsData }] = await Promise.all([
+      supabase.from('shifts').select('start_time, end_time, duration_minutes, bookings_count, earnings, agent_id').eq('clinic_id', clinicId).order('start_time', { ascending: false }),
+      supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
+    ]);
     setLoading(null);
     if (error) { toast.error(error.message); return; }
+    const agentMap = Object.fromEntries((agentsData ?? []).map(a => [a.id, a.name]));
     const rows = (data ?? []).map((r: any) => ({
-      'Агент': r.agents?.name ?? '',
+      'Агент': r.agent_id ? (agentMap[r.agent_id] ?? '—') : '—',
       'Начало': new Date(r.start_time).toLocaleString('ru-RU'),
       'Конец': r.end_time ? new Date(r.end_time).toLocaleString('ru-RU') : '',
       'Длительность (мин)': r.duration_minutes ?? '',

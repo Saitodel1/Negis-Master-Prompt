@@ -23,8 +23,6 @@ interface Booking {
   slot_hour: number; // 10..17
   date: string;      // YYYY-MM-DD
   status_id: string | null;
-  services?: { name: string } | null;
-  agents?: { name: string } | null;
 }
 
 interface Service { id: string; name: string; price: number }
@@ -72,12 +70,15 @@ export default function Booking() {
     setLoading(true);
     const { data } = await supabase
       .from('bookings')
-      .select('*, services(name), agents(name)')
+      .select('*')
       .eq('clinic_id', clinicId)
       .eq('date', fmtDate(selectedDate));
     setBookings(data || []);
     setLoading(false);
   };
+
+  const serviceName = (b: Booking) => services.find(s => s.id === b.service_id)?.name ?? '—';
+  const agentNameB  = (b: Booking) => agents.find(a => a.id === b.agent_id)?.name ?? '—';
 
   const loadMeta = async () => {
     const [s, a] = await Promise.all([
