@@ -71,8 +71,15 @@ export function Topbar() {
             color: '#94A3B8',
             fontFamily: "'Inter', sans-serif",
             letterSpacing: '0.01em',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
           }}
         >
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+          </span>
           {today}
         </span>
 
