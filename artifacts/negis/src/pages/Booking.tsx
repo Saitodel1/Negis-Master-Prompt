@@ -111,6 +111,7 @@ export default function Booking() {
       age: (form.age ?? '') ? Number(form.age) : null,
       service_id: form.service_id || null,
       agent_id: form.agent_id || null,
+      duration_minutes: 0,
       time: slotLabel(modal.hour),
       date: fmtDate(selectedDate),
     });
