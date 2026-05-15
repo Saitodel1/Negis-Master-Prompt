@@ -43,7 +43,7 @@ export default function Sales() {
   const [showNew, setShowNew] = useState(false);
 
   /* form for new lead */
-  const [form, setForm] = useState({ first_name: '', last_name: '', phone: '', age: '', source: 'Вручную', status_id: '', comment: '' });
+  const [form, setForm] = useState({ first_name: '', last_name: '', phone: '', age: '', source: 'Вручную', status_id: '', agent_id: '', comment: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { if (clinicId) init(); }, [clinicId]);
@@ -103,7 +103,7 @@ export default function Sales() {
     setSaving(true);
     const { error } = await supabase.from('leads').insert({
       clinic_id: clinicId,
-      agent_id: myAgentId,
+      agent_id: form.agent_id || myAgentId,
       first_name: form.first_name || null,
       last_name: form.last_name || null,
       phone: form.phone,
@@ -116,7 +116,7 @@ export default function Sales() {
     if (error) { toast.error(error.message); return; }
     toast.success('Лид создан');
     setShowNew(false);
-    setForm({ first_name: '', last_name: '', phone: '', age: '', source: 'Вручную', status_id: '', comment: '' });
+    setForm({ first_name: '', last_name: '', phone: '', age: '', source: 'Вручную', status_id: '', agent_id: '', comment: '' });
     init();
   };
 
@@ -303,7 +303,7 @@ export default function Sales() {
                 {(userRole === 'owner' || userRole === 'manager') && (
                   <div>
                     <label className="text-xs text-[#64748B] font-medium block mb-1.5">Ответственный</label>
-                    <select style={IS} value={selectedLead?.agent_id ?? ''} onChange={e => setForm(f => ({ ...f }))}>
+                    <select style={IS} value={form.agent_id} onChange={e => setForm(f => ({ ...f, agent_id: e.target.value }))}>
                       <option value="">— выбрать —</option>
                       {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                     </select>
