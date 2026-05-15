@@ -1068,16 +1068,20 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
   const exportBookings = async (fmt: 'csv' | 'xlsx') => {
     if (!clinicId) return;
     setLoading('bookings');
-    const { data, error } = await supabase
-      .from('bookings')
-      .select('id, date, time, name, phone, visited')
-      .eq('clinic_id', clinicId)
-      .order('date', { ascending: false });
+    const [{ data, error }, { data: agentsData }, { data: servicesData }] = await Promise.all([
+      supabase.from('bookings').select('id, date, time, name, phone, age, visited, service_id, agent_id').eq('clinic_id', clinicId).order('date', { ascending: false }),
+      supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
+      supabase.from('services').select('id, name').eq('clinic_id', clinicId),
+    ]);
     setLoading(null);
     if (error) { toast.error(error.message); return; }
+    const agentMap   = Object.fromEntries((agentsData   ?? []).map(a => [a.id, a.name]));
+    const serviceMap = Object.fromEntries((servicesData ?? []).map(s => [s.id, s.name]));
     const rows = (data ?? []).map((r: any) => ({
       'Дата': r.date, 'Время': r.time, 'Клиент': r.name,
-      'Телефон': r.phone ?? '',
+      'Телефон': r.phone ?? '', 'Возраст': r.age ?? '',
+      'Услуга': r.service_id ? (serviceMap[r.service_id] ?? '—') : '—',
+      'Агент':  r.agent_id  ? (agentMap[r.agent_id]   ?? '—') : '—',
       'Статус': r.visited === true ? 'Пришёл' : r.visited === false ? 'Не пришёл' : 'Ожидается',
     }));
     if (fmt === 'csv') {
