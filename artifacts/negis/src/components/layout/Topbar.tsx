@@ -66,7 +66,7 @@ export function Topbar() {
     clientName: r.patient_name ?? r.name ?? r.client_name ?? 'Клиент',
     agentName: r.agent_id ? (agentsRef.current[r.agent_id] ?? '—') : '—',
     date: r.date,
-    time: r.time ?? r.slot_hour != null ? (r.time ?? `${r.slot_hour}:00`) : '—',
+    time: r.time ?? (r.slot_hour != null ? `${r.slot_hour}:00` : '—'),
     createdAt: r.created_at,
   }), []);
 

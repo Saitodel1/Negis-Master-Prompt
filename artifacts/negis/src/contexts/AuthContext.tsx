@@ -65,8 +65,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setLocation('/onboarding');
       }
-    } catch (error) {
-      console.error('Error fetching user role:', error);
+    } catch {
+      toast.error('Не удалось загрузить профиль. Попробуйте перезайти.');
     } finally {
       setIsLoading(false);
     }

@@ -143,7 +143,8 @@ export default function Sales() {
 
   /* ── Delete lead ── */
   const deleteLead = async (id: string) => {
-    await supabase.from('leads').delete().eq('id', id);
+    const { error } = await supabase.from('leads').delete().eq('id', id);
+    if (error) { toast.error(error.message); return; }
     toast.success('Лид удалён');
     setSelectedLead(null);
     init();
