@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
-import { ClipboardList, Building2, Briefcase, BarChart2, Settings, LogOut, ArrowRight } from 'lucide-react';
+import { ClipboardList, Building2, Briefcase, BarChart2, Settings, LogOut, ArrowRight, CalendarDays } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { z } from 'zod';
