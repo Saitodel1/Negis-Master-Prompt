@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const { data, error } = await supabase
         .from('user_roles')
-        .select('clinic_id, role, clinics(onboarding_completed)')
+        .select('clinic_id, role')
         .eq('user_id', userId)
         .single();
 
@@ -62,13 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data) {
         setClinicId(data.clinic_id);
         setUserRole(data.role as any);
-        
-        // Handle redirects based on onboarding status and role
-        if (data.clinics && !(data.clinics as any).onboarding_completed && data.role === 'owner') {
-          setLocation('/onboarding');
-        }
       } else {
-        // No role found
         setLocation('/onboarding');
       }
     } catch (error) {
