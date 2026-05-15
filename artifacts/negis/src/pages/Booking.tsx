@@ -16,7 +16,7 @@ const MAX_PER_SLOT = 3;
 /* ── Types ────────────────────────────────────────────────── */
 interface Booking {
   id: string;
-  name: string;
+  patient_name: string;
   phone: string | null;
   age: number | null;
   service_id: string | null;
@@ -56,7 +56,7 @@ export default function Booking() {
 
   /* Modal state */
   const [modal, setModal] = useState<{ hour: number } | null>(null);
-  const [form, setForm] = useState({ name: '', phone: '', age: '', service_id: '', agent_id: '' });
+  const [form, setForm] = useState({ patient_name: '', phone: '', age: '', service_id: '', agent_id: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -93,18 +93,18 @@ export default function Booking() {
     if (slotIsPast(h)) { toast.error('Это время уже прошло'); return; }
     const count = slotBookings(h).length;
     if (count >= MAX_PER_SLOT) { toast.error('Слот заполнен'); return; }
-    setForm({ name: '', phone: '', age: '', service_id: services[0]?.id || '', agent_id: '' });
+    setForm({ patient_name: '', phone: '', age: '', service_id: services[0]?.id || '', agent_id: '' });
     setModal({ hour: h });
   };
 
   const saveBooking = async () => {
-    const nameVal = (form.name ?? '').trim();
+    const nameVal = (form.patient_name ?? '').trim();
     if (!nameVal) { toast.error('Введите имя клиента'); return; }
     if (!modal) return;
     setSaving(true);
     const { error } = await supabase.from('bookings').insert({
       clinic_id: clinicId,
-      name: nameVal,
+      patient_name: nameVal,
       phone: (form.phone ?? '').trim() || null,
       age: (form.age ?? '') ? Number(form.age) : null,
       service_id: form.service_id || null,
@@ -354,8 +354,8 @@ export default function Booking() {
                 <input
                   className="neu-input"
                   placeholder="Иван Иванов"
-                  value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                  value={form.patient_name}
+                  onChange={e => setForm(f => ({ ...f, patient_name: e.target.value }))}
                   data-testid="input-client-name"
                   autoFocus
                 />

@@ -63,7 +63,7 @@ export function Topbar() {
 
   const buildNotif = useCallback((r: any): Notif => ({
     id: r.id,
-    clientName: r.name ?? r.client_name ?? 'Клиент',
+    clientName: r.patient_name ?? r.name ?? r.client_name ?? 'Клиент',
     agentName: r.agent_id ? (agentsRef.current[r.agent_id] ?? '—') : '—',
     date: r.date,
     time: r.time ?? r.slot_hour != null ? (r.time ?? `${r.slot_hour}:00`) : '—',
@@ -78,7 +78,7 @@ export function Topbar() {
         supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
         supabase
           .from('bookings')
-          .select('id, name, date, time, created_at')
+          .select('id, patient_name, date, time, created_at')
           .eq('clinic_id', clinicId)
           .order('created_at', { ascending: false })
           .limit(15),
@@ -99,7 +99,7 @@ export function Topbar() {
           const row = payload.new as any;
           const notif: Notif = {
             id: row.id,
-            clientName: row.name ?? row.client_name ?? 'Клиент',
+            clientName: row.patient_name ?? row.name ?? row.client_name ?? 'Клиент',
             agentName: row.agent_id ? (agentsRef.current[row.agent_id] ?? '—') : '—',
             date: row.date,
             time: row.time ?? (row.slot_hour != null ? `${String(row.slot_hour).padStart(2, '0')}:00` : '—'),
