@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
-import { format } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { CalendarDays, X, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -41,6 +41,20 @@ export default function Booking() {
   const [services, setServices]   = useState<Service[]>([]);
   const [agents, setAgents]       = useState<Agent[]>([]);
   const [loading, setLoading]     = useState(false);
+  const [now, setNow]             = useState<Date>(new Date());
+
+  /* Sync clock every minute so past-slot detection stays fresh */
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const today = startOfDay(now);
+  const isToday = startOfDay(selectedDate).getTime() === today.getTime();
+  const isPast = startOfDay(selectedDate).getTime() < today.getTime();
+
+  /* A slot is in the past when the selected day is today and the hour has already passed */
+  const slotIsPast = (h: number) => isToday && h <= now.getHours();
 
   /* Modal state */
   const [modal, setModal] = useState<{ hour: number } | null>(null);
@@ -77,6 +91,8 @@ export default function Booking() {
   const slotBookings = (h: number) => bookings.filter(b => b.slot_hour === h);
 
   const openSlot = (h: number) => {
+    if (isPast) { toast.error('Нельзя записывать на прошедшую дату'); return; }
+    if (slotIsPast(h)) { toast.error('Это время уже прошло'); return; }
     const count = slotBookings(h).length;
     if (count >= MAX_PER_SLOT) { toast.error('Слот заполнен'); return; }
     setForm({ client_name: '', client_phone: '', client_age: '', service_id: services[0]?.id || '', agent_id: agents[0]?.id || '' });
@@ -153,6 +169,7 @@ export default function Booking() {
             onSelect={d => d && setSelectedDate(d)}
             locale={ru}
             showOutsideDays
+            disabled={{ before: today }}
           />
         </div>
 
@@ -203,25 +220,28 @@ export default function Booking() {
                 const count = list.length;
                 const full  = count >= MAX_PER_SLOT;
                 const partial = count > 0 && !full;
+                const past = isPast || slotIsPast(h);
+                const blocked = full || past;
 
                 let bg = '#F4F7FB';
                 let borderColor = '#E7ECF3';
                 let countColor = '#94A3B8';
 
-                if (full)    { bg = '#FEF2F2'; borderColor = '#FCA5A5'; countColor = '#DC2626'; }
-                if (partial) { bg = '#FFFBEB'; borderColor = '#FCD34D'; countColor = '#D97706'; }
+                if (past)    { bg = '#F1F5F9'; borderColor = '#E2E8F0'; countColor = '#CBD5E1'; }
+                if (full && !past) { bg = '#FEF2F2'; borderColor = '#FCA5A5'; countColor = '#DC2626'; }
+                if (partial && !past) { bg = '#FFFBEB'; borderColor = '#FCD34D'; countColor = '#D97706'; }
 
                 return (
                   <button
                     key={h}
                     onClick={() => openSlot(h)}
-                    disabled={full}
+                    disabled={blocked}
                     style={{
                       background: bg,
                       border: `1px solid ${borderColor}`,
                       borderRadius: 14,
                       padding: '18px 12px',
-                      cursor: full ? 'not-allowed' : 'pointer',
+                      cursor: blocked ? 'not-allowed' : 'pointer',
                       textAlign: 'center',
                       transition: 'all 0.15s ease',
                       display: 'flex',
@@ -229,7 +249,7 @@ export default function Booking() {
                       alignItems: 'center',
                       gap: 6,
                       fontFamily: "'Inter', sans-serif",
-                      opacity: full ? 0.75 : 1,
+                      opacity: blocked ? 0.55 : 1,
                     }}
                     onMouseEnter={e => {
                       if (!full) {

@@ -57,7 +57,13 @@ export default function Reception() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold">Приём клиентов</h2>
-          <div className="neu-sm px-4 py-2 font-bold text-[#1A56DB] text-sm">{todayLabel}</div>
+          <div className="neu-sm px-4 py-2 font-bold text-[#1A56DB] text-sm flex items-center gap-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+            </span>
+            {todayLabel}
+          </div>
         </div>
 
         <div className="neu-card p-0 overflow-hidden">
