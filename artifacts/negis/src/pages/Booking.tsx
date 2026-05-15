@@ -1,123 +1,437 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { CalendarDays, X, Plus } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
+
+/* ── Constants ────────────────────────────────────────────── */
+const SLOT_HOURS = [10, 11, 12, 13, 14, 15, 16, 17]; // 10:00–17:00, each 1h, max 3
+const MAX_PER_SLOT = 3;
+
+/* ── Types ────────────────────────────────────────────────── */
+interface Booking {
+  id: string;
+  client_name: string;
+  client_phone: string;
+  service_id: string | null;
+  agent_id: string | null;
+  slot_hour: number; // 10..17
+  date: string;      // YYYY-MM-DD
+  status_id: string | null;
+  services?: { name: string } | null;
+  agents?: { name: string } | null;
+}
+
+interface Service { id: string; name: string; price: number }
+interface Agent   { id: string; name: string }
+
+/* ── Helpers ──────────────────────────────────────────────── */
+const fmtDate = (d: Date) => format(d, 'yyyy-MM-dd');
+const slotLabel = (h: number) => `${String(h).padStart(2, '0')}:00`;
 
 export default function Booking() {
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+  const { clinicId } = useAuth();
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [bookings, setBookings]   = useState<Booking[]>([]);
+  const [services, setServices]   = useState<Service[]>([]);
+  const [agents, setAgents]       = useState<Agent[]>([]);
+  const [loading, setLoading]     = useState(false);
 
-  const mockBookings = [
-    { id: 1, time: '10:00', name: 'Анна Иванова', phone: '+7 701 123 4567', service: 'Консультация', agent: 'Ирина С.', status: 'Подтверждено' },
-    { id: 2, time: '11:30', name: 'Олег Петров', phone: '+7 707 987 6543', service: 'Лечение', agent: 'Алексей В.', status: 'Ожидает' },
-    { id: 3, time: '14:00', name: 'Мария К.', phone: '+7 777 555 4433', service: 'Осмотр', agent: 'Ирина С.', status: 'Отменено' },
-  ];
+  /* Modal state */
+  const [modal, setModal] = useState<{ hour: number } | null>(null);
+  const [form, setForm] = useState({ client_name: '', client_phone: '', service_id: '', agent_id: '' });
+  const [saving, setSaving] = useState(false);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Подтверждено': return 'text-green-600 bg-green-500/10';
-      case 'Ожидает': return 'text-yellow-600 bg-yellow-500/10';
-      case 'Отменено': return 'text-red-600 bg-red-500/10';
-      default: return 'text-gray-600 bg-gray-500/10';
+  useEffect(() => {
+    if (clinicId) {
+      loadBookings();
+      loadMeta();
     }
+  }, [clinicId, selectedDate]);
+
+  const loadBookings = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('bookings')
+      .select('*, services(name), agents(name)')
+      .eq('clinic_id', clinicId)
+      .eq('date', fmtDate(selectedDate));
+    setBookings(data || []);
+    setLoading(false);
   };
+
+  const loadMeta = async () => {
+    const [s, a] = await Promise.all([
+      supabase.from('services').select('id, name, price').eq('clinic_id', clinicId),
+      supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
+    ]);
+    setServices(s.data || []);
+    setAgents(a.data || []);
+  };
+
+  const slotBookings = (h: number) => bookings.filter(b => b.slot_hour === h);
+
+  const openSlot = (h: number) => {
+    const count = slotBookings(h).length;
+    if (count >= MAX_PER_SLOT) { toast.error('Слот заполнен'); return; }
+    setForm({ client_name: '', client_phone: '', service_id: services[0]?.id || '', agent_id: agents[0]?.id || '' });
+    setModal({ hour: h });
+  };
+
+  const saveBooking = async () => {
+    if (!form.client_name.trim()) { toast.error('Введите имя клиента'); return; }
+    if (!modal) return;
+    setSaving(true);
+    const { error } = await supabase.from('bookings').insert({
+      clinic_id: clinicId,
+      client_name: form.client_name.trim(),
+      client_phone: form.client_phone.trim(),
+      service_id: form.service_id || null,
+      agent_id: form.agent_id || null,
+      slot_hour: modal.hour,
+      date: fmtDate(selectedDate),
+    });
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success('Запись добавлена');
+      setModal(null);
+      loadBookings();
+    }
+    setSaving(false);
+  };
+
+  const dayLabel = selectedDate
+    ? format(selectedDate, 'EEEE, d MMMM yyyy', { locale: ru })
+    : '';
 
   return (
     <PageLayout>
-      <div className="h-full flex flex-col">
-        <h2 className="text-2xl font-bold mb-6">Расписание</h2>
-        
-        <div className="flex flex-col lg:flex-row gap-6 flex-1 h-[calc(100vh-140px)]">
-          {/* Calendar Sidebar */}
-          <div className="neu-card h-min flex-shrink-0 flex justify-center">
-            <style>{`
-              .rdp { --rdp-cell-size: 40px; margin: 0; }
-              .rdp-day_selected { 
-                background-color: #1A56DB !important; 
-                font-weight: bold;
-                border-radius: 12px;
-                box-shadow: 2px 2px 5px #c5cad4, -2px -2px 5px #ffffff;
-              }
-              .rdp-day:hover:not(.rdp-day_selected) {
-                background-color: #E8EDF2;
-                border-radius: 12px;
-                box-shadow: inset 2px 2px 5px #c5cad4, inset -2px -2px 5px #ffffff;
-              }
-              .rdp-button:focus-visible:not([disabled]) {
-                background-color: transparent;
-                border: 2px solid #1A56DB;
-              }
-            `}</style>
-            <DayPicker
-              mode="single"
-              selected={selectedDate}
-              onSelect={setSelectedDate}
-              locale={ru}
-              showOutsideDays
-              modifiers={{ booked: [new Date(2023, 9, 24), new Date(2023, 9, 25)] }}
-              modifiersStyles={{
-                booked: { textDecoration: 'underline', textDecorationColor: '#1A56DB', textUnderlineOffset: '4px' }
-              }}
-            />
+      <div className="flex flex-col lg:flex-row gap-6 h-full" style={{ minHeight: 0 }}>
+
+        {/* ── Calendar ──────────────────────────────────────── */}
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #E7ECF3',
+          borderRadius: 16,
+          padding: '20px 16px',
+          boxShadow: '0 4px 20px rgba(15,23,42,0.04)',
+          flexShrink: 0,
+          alignSelf: 'flex-start',
+        }}>
+          <style>{`
+            .rdp { --rdp-cell-size: 38px; margin: 0; font-family: 'Inter', sans-serif; }
+            .rdp-caption_label { font-size: 15px; font-weight: 600; color: #0B1220; letter-spacing: 0.01em; }
+            .rdp-head_cell { font-size: 11px; font-weight: 500; color: #94A3B8; letter-spacing: 0.08em; text-transform: uppercase; }
+            .rdp-day { font-size: 13px; font-weight: 400; color: #475569; border-radius: 10px; }
+            .rdp-day:hover:not([disabled]):not(.rdp-day_selected) {
+              background: #EEF2F6 !important;
+              color: #0B1220;
+            }
+            .rdp-day_selected, .rdp-day_selected:hover {
+              background: #1E325C !important;
+              color: white !important;
+              border-radius: 10px;
+              font-weight: 600;
+            }
+            .rdp-day_today:not(.rdp-day_selected) {
+              color: #2859C5;
+              font-weight: 600;
+            }
+            .rdp-nav_button { color: #94A3B8; border-radius: 8px; }
+            .rdp-nav_button:hover { background: #EEF2F6; color: #0B1220; }
+          `}</style>
+          <DayPicker
+            mode="single"
+            selected={selectedDate}
+            onSelect={d => d && setSelectedDate(d)}
+            locale={ru}
+            showOutsideDays
+          />
+        </div>
+
+        {/* ── Slots panel ───────────────────────────────────── */}
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #E7ECF3',
+          borderRadius: 16,
+          boxShadow: '0 4px 20px rgba(15,23,42,0.04)',
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          minHeight: 0,
+        }}>
+          {/* Header */}
+          <div style={{
+            padding: '18px 24px',
+            borderBottom: '1px solid #E7ECF3',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+          }}>
+            <CalendarDays size={16} color="#2859C5" strokeWidth={1.75} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#0B1220', fontFamily: "'Inter', sans-serif" }}>
+              {dayLabel}
+            </span>
+            {loading && (
+              <span style={{ fontSize: 12, color: '#94A3B8', marginLeft: 6, fontFamily: "'Inter', sans-serif" }}>
+                загрузка...
+              </span>
+            )}
           </div>
 
-          {/* Bookings List */}
-          <div className="neu-card flex-1 flex flex-col p-0 overflow-hidden">
-            <div className="p-6 border-b border-border bg-[#E8EDF2] z-10 shrink-0">
-              <h3 className="text-xl font-bold text-[#1E293B] capitalize">
-                {selectedDate ? format(selectedDate, 'EEEE, d MMMM yyyy', { locale: ru }) : 'Выберите дату'}
-              </h3>
+          {/* Slot grid */}
+          <div style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '24px',
+          }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+              gap: 12,
+            }}>
+              {SLOT_HOURS.map(h => {
+                const list = slotBookings(h);
+                const count = list.length;
+                const full  = count >= MAX_PER_SLOT;
+                const partial = count > 0 && !full;
+
+                let bg = '#F4F7FB';
+                let borderColor = '#E7ECF3';
+                let countColor = '#94A3B8';
+
+                if (full)    { bg = '#FEF2F2'; borderColor = '#FCA5A5'; countColor = '#DC2626'; }
+                if (partial) { bg = '#FFFBEB'; borderColor = '#FCD34D'; countColor = '#D97706'; }
+
+                return (
+                  <button
+                    key={h}
+                    onClick={() => openSlot(h)}
+                    disabled={full}
+                    style={{
+                      background: bg,
+                      border: `1px solid ${borderColor}`,
+                      borderRadius: 14,
+                      padding: '18px 12px',
+                      cursor: full ? 'not-allowed' : 'pointer',
+                      textAlign: 'center',
+                      transition: 'all 0.15s ease',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontFamily: "'Inter', sans-serif",
+                      opacity: full ? 0.75 : 1,
+                    }}
+                    onMouseEnter={e => {
+                      if (!full) {
+                        (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
+                        (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 20px rgba(15,23,42,0.09)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                      (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+                    }}
+                    data-testid={`slot-${h}`}
+                  >
+                    <span style={{ fontSize: 20, fontWeight: 600, color: '#0B1220', letterSpacing: '0.01em' }}>
+                      {slotLabel(h)}
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: countColor }}>
+                      {count} / {MAX_PER_SLOT}
+                    </span>
+                    {/* Mini booking dots */}
+                    <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
+                      {Array.from({ length: MAX_PER_SLOT }).map((_, i) => (
+                        <div key={i} style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: '50%',
+                          background: i < count
+                            ? (full ? '#DC2626' : partial ? '#D97706' : '#2859C5')
+                            : '#DDE5EE',
+                          transition: 'background 0.2s',
+                        }} />
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {mockBookings.map((booking) => (
-                <div key={booking.id} className="neu p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex items-start gap-4">
-                    <div className="neu-pressed-sm w-16 py-2 flex flex-col items-center justify-center shrink-0">
-                      <span className="text-lg font-bold text-[#1A56DB] leading-none">{booking.time.split(':')[0]}</span>
-                      <span className="text-xs font-semibold text-[#64748B] leading-none mt-1">{booking.time.split(':')[1]}</span>
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-[#1E293B] text-lg">{booking.name}</h4>
-                      <p className="text-sm font-medium text-[#64748B]">{booking.phone}</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="badge bg-[#E8EDF2] border border-border shadow-[inset_1px_1px_3px_#c5cad4,inset_-1px_-1px_3px_#ffffff] text-[#1E293B]">
-                          {booking.service}
-                        </span>
-                        <span className="text-xs font-medium text-[#64748B] flex items-center">
-                          <span className="w-1.5 h-1.5 rounded-full bg-border mr-1.5" />
-                          {booking.agent}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-between md:flex-col md:items-end gap-3 md:gap-4 ml-20 md:ml-0 border-t border-border/50 pt-3 md:border-0 md:pt-0">
-                    <select 
-                      className={`text-xs font-bold px-3 py-1.5 rounded-full border-none outline-none appearance-none cursor-pointer ${getStatusColor(booking.status)}`}
-                      defaultValue={booking.status}
-                    >
-                      <option value="Подтверждено">Подтверждено</option>
-                      <option value="Ожидает">Ожидает</option>
-                      <option value="Отменено">Отменено</option>
-                    </select>
-                    
-                    <button className="text-sm font-semibold text-[#1A56DB] hover:underline">Редактировать</button>
-                  </div>
+
+            {/* Legend */}
+            <div style={{
+              display: 'flex',
+              gap: 20,
+              marginTop: 28,
+              paddingTop: 20,
+              borderTop: '1px solid #F4F7FB',
+              fontFamily: "'Inter', sans-serif",
+            }}>
+              {[
+                { color: '#DDE5EE', label: 'Свободно' },
+                { color: '#D97706', label: 'Частично занято' },
+                { color: '#DC2626', label: 'Заполнено' },
+              ].map(({ color, label }) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+                  <span style={{ fontSize: 12, color: '#94A3B8' }}>{label}</span>
                 </div>
               ))}
-              
-              {mockBookings.length === 0 && (
-                <div className="h-full flex flex-col items-center justify-center text-[#64748B] py-12">
-                  <CalendarDays size={48} className="mb-4 opacity-20" />
-                  <p className="font-medium text-lg">Нет записей на этот день</p>
-                </div>
-              )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* ── New Booking Modal ────────────────────────────────── */}
+      {modal && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50 p-4"
+          style={{ background: 'rgba(11,18,32,0.18)', backdropFilter: 'blur(8px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setModal(null); }}
+        >
+          <div style={{
+            background: '#FFFFFF',
+            border: '1px solid #E7ECF3',
+            borderRadius: 20,
+            boxShadow: '0 24px 64px rgba(15,23,42,0.14)',
+            width: '100%',
+            maxWidth: 420,
+            padding: '32px 28px',
+            fontFamily: "'Inter', sans-serif",
+          }}>
+            {/* Modal header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: '#0B1220' }}>Новая запись</div>
+                <div style={{ fontSize: 13, color: '#94A3B8', marginTop: 3 }}>
+                  {slotLabel(modal.hour)} — {format(selectedDate, 'd MMMM', { locale: ru })}
+                </div>
+              </div>
+              <button
+                onClick={() => setModal(null)}
+                style={{
+                  background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 10,
+                  width: 32, height: 32, cursor: 'pointer', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', color: '#94A3B8',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <FieldGroup label="Имя клиента">
+                <input
+                  className="neu-input"
+                  placeholder="Иван Иванов"
+                  value={form.client_name}
+                  onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))}
+                  data-testid="input-client-name"
+                  autoFocus
+                />
+              </FieldGroup>
+
+              <FieldGroup label="Телефон">
+                <input
+                  className="neu-input"
+                  placeholder="+7 XXX XXX XXXX"
+                  value={form.client_phone}
+                  onChange={e => setForm(f => ({ ...f, client_phone: e.target.value }))}
+                  data-testid="input-client-phone"
+                />
+              </FieldGroup>
+
+              {services.length > 0 && (
+                <FieldGroup label="Услуга">
+                  <select
+                    className="neu-input"
+                    value={form.service_id}
+                    onChange={e => setForm(f => ({ ...f, service_id: e.target.value }))}
+                    data-testid="select-service"
+                  >
+                    <option value="">— не выбрана —</option>
+                    {services.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} — {s.price.toLocaleString('ru')} ₸</option>
+                    ))}
+                  </select>
+                </FieldGroup>
+              )}
+
+              {agents.length > 0 && (
+                <FieldGroup label="Агент">
+                  <select
+                    className="neu-input"
+                    value={form.agent_id}
+                    onChange={e => setForm(f => ({ ...f, agent_id: e.target.value }))}
+                    data-testid="select-agent"
+                  >
+                    <option value="">— не выбран —</option>
+                    {agents.map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </FieldGroup>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+              <button
+                onClick={() => setModal(null)}
+                style={{
+                  flex: 1, background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 12,
+                  padding: '11px 0', fontSize: 14, fontWeight: 500, color: '#475569',
+                  cursor: 'pointer', fontFamily: "'Inter', sans-serif", transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = '#EEF2F6')}
+                onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = '#F4F7FB')}
+              >
+                Отмена
+              </button>
+              <button
+                onClick={saveBooking}
+                disabled={saving}
+                style={{
+                  flex: 2, background: '#1E325C', border: '1px solid #1E325C', borderRadius: 12,
+                  padding: '11px 0', fontSize: 14, fontWeight: 500, color: 'white',
+                  cursor: saving ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif",
+                  opacity: saving ? 0.65 : 1, display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', gap: 8, transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => { if (!saving) (e.currentTarget as HTMLButtonElement).style.background = '#162748'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#1E325C'; }}
+                data-testid="button-save-booking"
+              >
+                {saving ? 'Сохранение...' : <><Plus size={15} /> Записать</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageLayout>
+  );
+}
+
+function FieldGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{
+        display: 'block', fontSize: 12, fontWeight: 500, color: '#94A3B8',
+        marginBottom: 5, letterSpacing: '0.05em', textTransform: 'uppercase',
+        fontFamily: "'Inter', sans-serif",
+      }}>
+        {label}
+      </label>
+      {children}
+    </div>
   );
 }
