@@ -36,6 +36,7 @@ export default function Booking() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [bookings, setBookings]   = useState<Booking[]>([]);
   const [services, setServices]   = useState<Service[]>([]);
+  const [agents,   setAgents]     = useState<{ id: string; name: string }[]>([]);
   const [myAgentId, setMyAgentId] = useState<string | null>(null);
   const [loading, setLoading]     = useState(false);
   const [now, setNow]             = useState<Date>(new Date());
@@ -55,7 +56,7 @@ export default function Booking() {
 
   /* Modal state */
   const [modal, setModal] = useState<{ hour: number } | null>(null);
-  const [form, setForm] = useState({ patient_name: '', patient_phone: '', age: '', service_id: '' });
+  const [form, setForm] = useState({ patient_name: '', patient_phone: '', age: '', service_id: '', agent_id: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -77,12 +78,14 @@ export default function Booking() {
   };
 
   const loadMeta = async () => {
-    const [s, a] = await Promise.all([
+    const [s, a, me] = await Promise.all([
       supabase.from('services').select('id, name, price').eq('clinic_id', clinicId),
+      supabase.from('agents').select('id, name').eq('clinic_id', clinicId).order('name'),
       supabase.from('agents').select('id').eq('clinic_id', clinicId).eq('user_id', user?.id ?? '').single(),
     ]);
     setServices(s.data || []);
-    if (a.data) setMyAgentId(a.data.id);
+    setAgents(a.data || []);
+    if (me.data) setMyAgentId(me.data.id);
   };
 
   const slotBookings = (h: number) => bookings.filter(b => parseInt(b.time) === h);
@@ -92,7 +95,7 @@ export default function Booking() {
     if (slotIsPast(h)) { toast.error('Это время уже прошло'); return; }
     const count = slotBookings(h).length;
     if (count >= MAX_PER_SLOT) { toast.error('Слот заполнен'); return; }
-    setForm({ patient_name: '', patient_phone: '', age: '', service_id: services[0]?.id || '' });
+    setForm({ patient_name: '', patient_phone: '', age: '', service_id: services[0]?.id || '', agent_id: myAgentId || '' });
     setModal({ hour: h });
   };
 
@@ -110,7 +113,7 @@ export default function Booking() {
       patient_phone: (form.patient_phone ?? '').trim() || null,
       age: (form.age ?? '') ? Number(form.age) : null,
       service_id: form.service_id || null,
-      agent_id: myAgentId,
+      agent_id: form.agent_id || null,
       duration_minutes: 0,
       time: slotLabel(modal.hour),
       date: fmtDate(selectedDate),
@@ -401,6 +404,20 @@ export default function Booking() {
                 </FieldGroup>
               )}
 
+              {agents.length > 0 && (
+                <FieldGroup label="Агент">
+                  <select
+                    className="neu-input"
+                    value={form.agent_id}
+                    onChange={e => setForm(f => ({ ...f, agent_id: e.target.value }))}
+                  >
+                    <option value="">— не выбрано —</option>
+                    {agents.map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </FieldGroup>
+              )}
 
             </div>
 
