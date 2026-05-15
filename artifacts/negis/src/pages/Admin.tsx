@@ -55,28 +55,11 @@ export default function Admin() {
                     </tr>
                   </thead>
                   <tbody>
-                    {['Анна С.', 'Иван И.', 'Мария К.'].map((name, i) => (
-                      <tr key={i} className="border-b border-border/50">
-                        <td className="py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="neu-icon-btn h-10 w-10 text-xs font-bold shrink-0">{name.substring(0, 2).toUpperCase()}</div>
-                            <div>
-                              <p className="font-bold text-[#1E293B]">{name}</p>
-                              <p className="text-xs text-[#64748B]">agent{i}@clinic.kz</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-4"><span className="badge bg-[#E8EDF2] border border-border shadow-[inset_1px_1px_2px_#c5cad4] font-medium text-xs">Оператор</span></td>
-                        <td className="py-4 font-bold text-[#1E293B]">2 500 ₸</td>
-                        <td className="py-4 font-bold text-[#1A56DB]">50 / нед</td>
-                        <td className="py-4 text-right">
-                          <div className="flex justify-end gap-2">
-                            <button className="neu-icon-btn h-8 w-8"><Edit2 size={14} /></button>
-                            <button className="neu-icon-btn h-8 w-8 text-destructive hover:text-destructive"><Trash2 size={14} /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    <tr>
+                      <td colSpan={5} className="py-16 text-center text-[#64748B]">
+                        Нет сотрудников. Добавьте первого агента.
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
