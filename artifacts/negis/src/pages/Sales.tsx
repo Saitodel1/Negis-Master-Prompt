@@ -1,11 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { Search, Plus, Upload, X, Check, ArrowUpDown, ChevronDown } from 'lucide-react';
+import { Search, Plus, X, Check, ArrowUpDown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
 
 /* ── Types ─────────────────────────────────────────────── */
 interface Lead {
@@ -44,8 +42,6 @@ export default function Sales() {
 
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [showNew, setShowNew] = useState(false);
-  const [importLoading, setImportLoading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   /* form for new lead */
   const [form, setForm] = useState({ first_name: '', last_name: '', phone: '', age: '', source: 'Вручную', status_id: '', comment: '' });
@@ -154,42 +150,6 @@ export default function Sales() {
     init();
   };
 
-  /* ── CSV / Excel import ── */
-  const handleImport = async (file: File) => {
-    if (!clinicId) return;
-    setImportLoading(true);
-    try {
-      let rows: Record<string, string>[] = [];
-      if (file.name.endsWith('.csv')) {
-        const text = await file.text();
-        const result = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true });
-        rows = result.data;
-      } else {
-        const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf);
-        rows = XLSX.utils.sheet_to_json<Record<string, string>>(wb.Sheets[wb.SheetNames[0]], { defval: '' });
-      }
-      const insert = rows.map(r => ({
-        clinic_id: clinicId,
-        agent_id: myAgentId,
-        first_name: r['Имя'] || r['first_name'] || r['name'] || null,
-        last_name: r['Фамилия'] || r['last_name'] || null,
-        phone: r['Телефон'] || r['phone'] || r['Phone'] || null,
-        age: r['Возраст'] || r['age'] ? parseInt(r['Возраст'] || r['age']) || null : null,
-        source: r['Источник'] || r['source'] || 'Вручную',
-        comment: r['Комментарий'] || r['comment'] || null,
-        status_id: statuses[0]?.id ?? null,
-      })).filter(r => r.phone);
-      if (!insert.length) { toast.error('Нет строк с телефоном'); return; }
-      const { error } = await supabase.from('leads').insert(insert);
-      if (error) { toast.error(error.message); return; }
-      toast.success(`Импортировано ${insert.length} лидов`);
-      init();
-    } catch (e: any) {
-      toast.error(e.message || 'Ошибка импорта');
-    } finally { setImportLoading(false); }
-  };
-
   const statusColor = (lead: Lead) => lead.lead_statuses?.color ?? '#94A3B8';
   const statusName = (lead: Lead) => lead.lead_statuses?.name ?? '—';
   const fullName = (lead: Lead) => [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '—';
@@ -207,21 +167,9 @@ export default function Sales() {
         {/* Header */}
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold">Negis CRM</h2>
-          <div className="flex gap-2">
-            <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = ''; }} />
-            <button
-              className="neu-btn flex items-center gap-2 text-sm"
-              onClick={() => fileRef.current?.click()}
-              disabled={importLoading}
-            >
-              <Upload size={15} />
-              {importLoading ? 'Импорт...' : 'Импорт CSV/Excel'}
-            </button>
-            <button className="neu-btn-primary flex items-center gap-2" onClick={() => setShowNew(true)}>
-              <Plus size={16} /> Новый лид
-            </button>
-          </div>
+          <button className="neu-btn-primary flex items-center gap-2" onClick={() => setShowNew(true)}>
+            <Plus size={16} /> Новый лид
+          </button>
         </div>
 
         {/* Filters */}

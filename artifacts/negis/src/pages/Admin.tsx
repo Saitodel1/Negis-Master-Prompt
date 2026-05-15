@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { Plus, Trash2, Edit2, Settings, Check, Download } from 'lucide-react';
+import { Plus, Trash2, Edit2, Settings, Check, Download, Upload } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import Papa from 'papaparse';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -63,7 +64,7 @@ export default function Admin() {
     { id: 'statuses', label: 'Статусы' },
     { id: 'shifts', label: 'Смены' },
     { id: 'whatsapp', label: 'WhatsApp' },
-    { id: 'export', label: 'Экспорт' },
+    { id: 'export', label: 'Импорт / Экспорт' },
     { id: 'settings', label: 'Настройки' },
   ];
 
@@ -1016,6 +1017,46 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
 /* ─── Export Tab ─────────────────────────────────────────── */
 function ExportTab({ clinicId }: { clinicId: string | null }) {
   const [loading, setLoading] = useState<string | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleImportLeads = async (file: File) => {
+    if (!clinicId) return;
+    setImportLoading(true);
+    try {
+      let rows: Record<string, string>[] = [];
+      if (file.name.endsWith('.csv')) {
+        const text = await file.text();
+        const result = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true });
+        rows = result.data;
+      } else {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf);
+        rows = XLSX.utils.sheet_to_json<Record<string, string>>(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+      }
+      const { data: statuses } = await supabase
+        .from('lead_statuses').select('id').eq('clinic_id', clinicId).order('position').limit(1);
+      const defaultStatusId = statuses?.[0]?.id ?? null;
+      const insert = rows.map(r => ({
+        clinic_id: clinicId,
+        first_name: r['Имя'] || r['first_name'] || r['name'] || null,
+        last_name: r['Фамилия'] || r['last_name'] || null,
+        phone: r['Телефон'] || r['phone'] || r['Phone'] || null,
+        age: (r['Возраст'] || r['age']) ? (parseInt(r['Возраст'] || r['age']) || null) : null,
+        source: r['Источник'] || r['source'] || 'Вручную',
+        comment: r['Комментарий'] || r['comment'] || null,
+        status_id: defaultStatusId,
+      })).filter(r => r.phone);
+      if (!insert.length) { toast.error('Нет строк с номером телефона'); return; }
+      const { error } = await supabase.from('leads').insert(insert);
+      if (error) { toast.error(error.message); return; }
+      toast.success(`Импортировано ${insert.length} лидов`);
+    } catch (e: any) {
+      toast.error(e.message || 'Ошибка импорта');
+    } finally {
+      setImportLoading(false);
+    }
+  };
 
   const exportSheet = (rows: Record<string, unknown>[], filename: string) => {
     const wb = XLSX.utils.book_new();
@@ -1152,8 +1193,35 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
   ];
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-[#64748B]">Выгрузите данные в CSV или Excel-формат</p>
+    <div className="space-y-6">
+      {/* ── Import section ── */}
+      <div>
+        <h4 className="font-bold text-[#1E293B] mb-1">Импорт лидов</h4>
+        <p className="text-sm text-[#64748B] mb-3">
+          Загрузите CSV или Excel. Колонки: <span className="font-mono bg-[#F1F5F9] px-1 rounded text-xs">Имя, Фамилия, Телефон, Возраст, Источник, Комментарий</span>
+        </p>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,.xlsx,.xls"
+          className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleImportLeads(f); e.target.value = ''; }}
+        />
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={importLoading}
+          className="neu-btn flex items-center gap-2 text-sm px-5 py-2.5"
+        >
+          <Upload size={15} />
+          {importLoading ? 'Импорт...' : 'Выбрать файл'}
+        </button>
+      </div>
+
+      <div className="border-t border-[#E7ECF3] pt-5">
+        <h4 className="font-bold text-[#1E293B] mb-1">Экспорт данных</h4>
+        <p className="text-sm text-[#64748B] mb-4">Выгрузите данные в CSV или Excel-формат</p>
+      </div>
+
       {sections.map(s => (
         <div key={s.id} className="neu-sm p-5 flex items-center justify-between gap-4">
           <div>
