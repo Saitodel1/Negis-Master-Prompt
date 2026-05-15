@@ -106,9 +106,14 @@ export default function Landing() {
       if (signUpError) throw signUpError;
       const userId = authData.user?.id;
       if (!userId) throw new Error('Не удалось создать аккаунт');
+      const slug = data.clinicName
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9-]/g, '')
+        .slice(0, 40) + '-' + Math.random().toString(36).slice(2, 7);
       const { data: clinic, error: clinicError } = await supabase
         .from('clinics')
-        .insert({ name: data.clinicName, owner_id: userId })
+        .insert({ name: data.clinicName, owner_id: userId, slug })
         .select('id')
         .single();
       if (clinicError) throw clinicError;
