@@ -101,34 +101,294 @@ export default function Admin() {
   );
 }
 
+/* ─── Employee type ──────────────────────────────────────── */
+interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  hourly_rate: number;
+  weekly_target: number;
+  user_id: string | null;
+  user_roles?: { role: string }[] | null;
+}
+
+const SYSTEM_ROLES = [
+  { value: 'agent',        label: 'Агент' },
+  { value: 'receptionist', label: 'Ресепшионист' },
+  { value: 'manager',      label: 'Менеджер' },
+  { value: 'owner',        label: 'Руководитель' },
+];
+
+const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
+
 /* ─── Agents Tab ─────────────────────────────────────────── */
 function AgentsTab({ clinicId }: { clinicId: string | null }) {
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState<Employee | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState('agent');
+  const [hourlyRate, setHourlyRate] = useState('0');
+  const [weeklyTarget, setWeeklyTarget] = useState('20');
+
+  useEffect(() => { if (clinicId) loadEmployees(); }, [clinicId]);
+
+  const loadEmployees = async () => {
+    if (!clinicId) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/admin/employees?clinic_id=${clinicId}`);
+      const data = await res.json();
+      if (res.ok) setEmployees(data);
+      else toast.error(data.error || 'Ошибка загрузки');
+    } finally { setLoading(false); }
+  };
+
+  const openCreate = () => {
+    setEditing(null);
+    setName(''); setEmail(''); setPassword('');
+    setRole('agent'); setHourlyRate('0'); setWeeklyTarget('20');
+    setShowModal(true);
+  };
+
+  const openEdit = (emp: Employee) => {
+    setEditing(emp);
+    setName(emp.name);
+    setEmail(emp.email);
+    setPassword('');
+    setRole(emp.user_roles?.[0]?.role ?? 'agent');
+    setHourlyRate(String(emp.hourly_rate ?? 0));
+    setWeeklyTarget(String(emp.weekly_target ?? 20));
+    setShowModal(true);
+  };
+
+  const save = async () => {
+    if (!name.trim()) { toast.error('Введите имя'); return; }
+    if (!editing && !email.trim()) { toast.error('Введите email'); return; }
+    if (!editing && password.length < 6) { toast.error('Пароль: минимум 6 символов'); return; }
+    setSaving(true);
+    try {
+      if (editing) {
+        const res = await fetch(`${BASE_URL}/api/admin/employees/${editing.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clinic_id: clinicId, name, role,
+            hourly_rate: parseFloat(hourlyRate) || 0,
+            weekly_target: parseInt(weeklyTarget) || 20,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) { toast.error(data.error || 'Ошибка'); return; }
+        toast.success('Сотрудник обновлён');
+      } else {
+        const res = await fetch(`${BASE_URL}/api/admin/employees`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clinic_id: clinicId, name, email, password, role,
+            hourly_rate: parseFloat(hourlyRate) || 0,
+            weekly_target: parseInt(weeklyTarget) || 20,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) { toast.error(data.error || 'Ошибка'); return; }
+        toast.success('Сотрудник создан');
+      }
+      setShowModal(false);
+      loadEmployees();
+    } finally { setSaving(false); }
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingId) return;
+    const res = await fetch(`${BASE_URL}/api/admin/employees/${deletingId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) { toast.error(data.error || 'Ошибка удаления'); }
+    else { toast.success('Сотрудник удалён'); loadEmployees(); }
+    setDeletingId(null);
+  };
+
+  const roleLabel = (emp: Employee) =>
+    SYSTEM_ROLES.find(r => r.value === (emp.user_roles?.[0]?.role ?? ''))?.label ?? '—';
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-bold">Сотрудники клиники</h3>
-        <button className="neu-btn-primary flex items-center gap-2"><Plus size={16} /> Добавить агента</button>
+        <button className="neu-btn-primary flex items-center gap-2" onClick={openCreate}>
+          <Plus size={16} /> Добавить сотрудника
+        </button>
       </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-left">
           <thead>
-            <tr className="border-b border-border text-sm text-[#64748B]">
+            <tr className="border-b border-[#E7ECF3] text-sm text-[#64748B]">
               <th className="pb-3 font-semibold">Имя</th>
+              <th className="pb-3 font-semibold">Email</th>
               <th className="pb-3 font-semibold">Роль</th>
-              <th className="pb-3 font-semibold">Ставка</th>
-              <th className="pb-3 font-semibold">Таргет</th>
+              <th className="pb-3 font-semibold">Ставка / ч</th>
+              <th className="pb-3 font-semibold">Таргет / нед.</th>
               <th className="pb-3 font-semibold text-right">Действия</th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td colSpan={5} className="py-16 text-center text-[#64748B]">
-                Нет сотрудников. Добавьте первого агента.
-              </td>
-            </tr>
+            {loading ? (
+              <tr><td colSpan={6} className="py-16 text-center text-[#94A3B8] text-sm">Загрузка...</td></tr>
+            ) : employees.length === 0 ? (
+              <tr><td colSpan={6} className="py-16 text-center text-[#94A3B8] text-sm">
+                Нет сотрудников. Добавьте первого.
+              </td></tr>
+            ) : employees.map(emp => (
+              <tr key={emp.id} className="border-b border-[#F1F5F9] text-sm hover:bg-[#F8FAFC] transition-colors">
+                <td className="py-3 font-medium text-[#0B1220]">{emp.name}</td>
+                <td className="py-3 text-[#64748B]">{emp.email || '—'}</td>
+                <td className="py-3">
+                  <span className="inline-block px-2 py-0.5 rounded-md bg-[#EEF2F6] text-[#1E325C] text-xs font-medium">
+                    {roleLabel(emp)}
+                  </span>
+                </td>
+                <td className="py-3 text-[#64748B]">{emp.hourly_rate?.toLocaleString('ru-RU')} ₸</td>
+                <td className="py-3 text-[#64748B]">{emp.weekly_target}</td>
+                <td className="py-3 text-right">
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      className="neu-btn p-1.5"
+                      onClick={() => openEdit(emp)}
+                      title="Редактировать"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    <button
+                      className="neu-btn p-1.5 text-red-500"
+                      onClick={() => setDeletingId(emp.id)}
+                      title="Удалить"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
+
+      {/* ── Employee Modal ── */}
+      {showModal && (
+        <div
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}
+        >
+          <div className="neu-lg p-8 max-w-md w-full space-y-5">
+            <h4 className="text-base font-bold text-[#0B1220]">
+              {editing ? 'Редактировать сотрудника' : 'Новый сотрудник'}
+            </h4>
+
+            <div className="space-y-3">
+              <FieldRow label="Имя">
+                <input
+                  className="neu-input w-full"
+                  placeholder="Полное имя"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                />
+              </FieldRow>
+
+              {!editing && (
+                <>
+                  <FieldRow label="Email (логин)">
+                    <input
+                      type="email"
+                      className="neu-input w-full"
+                      placeholder="email@clinic.kz"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                    />
+                  </FieldRow>
+                  <FieldRow label="Пароль">
+                    <input
+                      type="password"
+                      className="neu-input w-full"
+                      placeholder="Минимум 6 символов"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                    />
+                  </FieldRow>
+                </>
+              )}
+
+              <FieldRow label="Роль">
+                <select
+                  className="neu-input w-full"
+                  value={role}
+                  onChange={e => setRole(e.target.value)}
+                >
+                  {SYSTEM_ROLES.map(r => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+              </FieldRow>
+
+              <FieldRow label="Ставка (₸/ч)">
+                <input
+                  type="number"
+                  className="neu-input w-full"
+                  placeholder="0"
+                  min={0}
+                  value={hourlyRate}
+                  onChange={e => setHourlyRate(e.target.value)}
+                />
+              </FieldRow>
+
+              <FieldRow label="Таргет (зап./нед.)">
+                <input
+                  type="number"
+                  className="neu-input w-full"
+                  placeholder="20"
+                  min={0}
+                  value={weeklyTarget}
+                  onChange={e => setWeeklyTarget(e.target.value)}
+                />
+              </FieldRow>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button className="neu-btn flex-1" onClick={() => setShowModal(false)}>Отмена</button>
+              <button className="neu-btn-primary flex-1 flex items-center justify-center gap-2" onClick={save} disabled={saving}>
+                <Check size={15} />
+                {saving ? 'Сохранение...' : editing ? 'Сохранить' : 'Создать'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm Delete ── */}
+      {deletingId && (
+        <ConfirmDialog
+          msg="Удалить сотрудника? Его аккаунт и данные будут удалены безвозвратно."
+          onConfirm={confirmDelete}
+          onCancel={() => setDeletingId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Field Row helper ── */
+function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-[#64748B] mb-1.5">{label}</label>
+      {children}
     </div>
   );
 }
