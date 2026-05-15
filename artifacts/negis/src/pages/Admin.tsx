@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 /* ─── Types ──────────────────────────────────────────────── */
 interface Role { id: string; name: string; permissions: Record<string, boolean> }
 interface Service { id: string; name: string; price: number }
-interface BookingStatus { id: string; name: string; color: string; is_confirmed: boolean; position: number }
+interface BookingStatus { id: string; name: string; color: string; position: number }
 interface LeadStatus { id: string; name: string; color: string; position: number }
 interface Shift {
   id: string; agent_id: string; start_time: string; end_time: string | null;
@@ -638,7 +638,6 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
   const [deletingId, setDeletingId] = useState<{ id: string; type: 'booking' | 'lead' } | null>(null);
   const [sName, setSName] = useState('');
   const [sColor, setSColor] = useState('#3B82F6');
-  const [sConfirmed, setSConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { if (clinicId) load(); }, [clinicId]);
@@ -661,10 +660,10 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
   };
 
   const openCreate = (type: 'booking' | 'lead') => {
-    setEditing(null); setSName(''); setSColor('#3B82F6'); setSConfirmed(false); setShowModal(type);
+    setEditing(null); setSName(''); setSColor('#3B82F6'); setShowModal(type);
   };
   const openEdit = (s: any, type: 'booking' | 'lead') => {
-    setEditing(s); setSName(s.name); setSColor(s.color); setSConfirmed(s.is_confirmed || false); setShowModal(type);
+    setEditing(s); setSName(s.name); setSColor(s.color); setShowModal(type);
   };
 
   const save = async () => {
@@ -673,26 +672,12 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
     const table = showModal === 'booking' ? 'booking_statuses' : 'lead_statuses';
 
     if (editing) {
-      const update: any = { name: sName, color: sColor };
-      if (showModal === 'booking') {
-        if (sConfirmed) {
-          await supabase.from('booking_statuses').update({ is_confirmed: false }).eq('clinic_id', clinicId);
-        }
-        update.is_confirmed = sConfirmed;
-      }
-      const { error } = await supabase.from(table).update(update).eq('id', editing.id);
+      const { error } = await supabase.from(table).update({ name: sName, color: sColor }).eq('id', editing.id);
       if (error) toast.error(error.message); else toast.success('Статус обновлён');
     } else {
       const count = showModal === 'booking' ? bookingStatuses.length : leadStatuses.length;
       if (count >= 10) { toast.error('Максимум 10 статусов'); setSaving(false); return; }
-      const insert: any = { clinic_id: clinicId, name: sName, color: sColor, position: count };
-      if (showModal === 'booking') {
-        if (sConfirmed) {
-          await supabase.from('booking_statuses').update({ is_confirmed: false }).eq('clinic_id', clinicId);
-        }
-        insert.is_confirmed = sConfirmed;
-      }
-      const { error } = await supabase.from(table).insert(insert);
+      const { error } = await supabase.from(table).insert({ clinic_id: clinicId, name: sName, color: sColor, position: count });
       if (error) toast.error(error.message); else toast.success('Статус добавлен');
     }
     setSaving(false); setShowModal(null); load();
@@ -712,9 +697,6 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
         <div key={s.id} className="neu-sm p-3 flex items-center gap-3" data-testid={`status-${s.id}`}>
           <div className="h-4 w-4 rounded-full shrink-0" style={{ background: s.color }} />
           <span className="flex-1 font-medium text-[#1E293B]">{s.name}</span>
-          {type === 'booking' && s.is_confirmed && (
-            <span className="text-xs bg-[#10B981]/10 text-[#10B981] px-2 py-0.5 rounded-full font-medium">Подтверждено</span>
-          )}
           <button className="neu-icon-btn h-7 w-7" onClick={() => openEdit(s, type)}><Edit2 size={12} /></button>
           <button className="neu-icon-btn h-7 w-7 text-destructive" onClick={() => setDeletingId({ id: s.id, type })}><Trash2 size={12} /></button>
         </div>
