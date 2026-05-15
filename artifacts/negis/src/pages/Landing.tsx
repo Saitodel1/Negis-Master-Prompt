@@ -1,146 +1,595 @@
-import React, { useState } from 'react';
-import { Link, useLocation } from 'wouter';
-import { ClipboardList, Building2, Briefcase, X } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'wouter';
+import { ClipboardList, Building2, Briefcase, BarChart2, Settings, LogOut } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 const loginSchema = z.object({
   email: z.string().email('Неверный формат email'),
-  password: z.string().min(6, 'Пароль должен быть не менее 6 символов'),
+  password: z.string().min(6, 'Минимум 6 символов'),
 });
 
-type LoginFormValues = z.infer<typeof loginSchema>;
+const registerSchema = z.object({
+  ownerName: z.string().min(1, 'Введите имя'),
+  clinicName: z.string().min(1, 'Введите название клиники'),
+  email: z.string().email('Неверный формат email'),
+  password: z.string().min(8, 'Минимум 8 символов'),
+  confirmPassword: z.string().min(1, 'Подтвердите пароль'),
+}).refine(d => d.password === d.confirmPassword, {
+  message: 'Пароли не совпадают',
+  path: ['confirmPassword'],
+});
+
+type LoginValues = z.infer<typeof loginSchema>;
+type RegisterValues = z.infer<typeof registerSchema>;
+
+type ModalState = 'idle' | 'login' | 'register' | 'departments';
+
+const GoogleIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+    <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+    <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
+    <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+    <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+  </svg>
+);
 
 export default function Landing() {
-  const [selectedDept, setSelectedDept] = useState<{ title: string, role: string } | null>(null);
-  const [, setLocation] = useLocation();
+  const [modalState, setModalState] = useState<ModalState>('idle');
+  const [isButtonPressed, setIsButtonPressed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+  const [resetMsg, setResetMsg] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const [, setLocation] = useLocation();
+  const { session, userRole, clinicId, signOut } = useAuth();
+  const modalRef = useRef<HTMLDivElement>(null);
 
-  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormValues>({
-    resolver: zodResolver(loginSchema)
-  });
+  const loginForm = useForm<LoginValues>({ resolver: zodResolver(loginSchema) });
+  const registerForm = useForm<RegisterValues>({ resolver: zodResolver(registerSchema) });
 
-  const onSubmit = async (data: LoginFormValues) => {
+  useEffect(() => {
+    if (modalState !== 'idle') {
+      requestAnimationFrame(() => setModalVisible(true));
+    } else {
+      setModalVisible(false);
+    }
+  }, [modalState]);
+
+  const openModal = () => {
+    setError('');
+    setResetSent(false);
+    if (session) {
+      setModalState('departments');
+    } else {
+      setModalState('login');
+    }
+  };
+
+  const closeModal = () => {
+    setModalVisible(false);
+    setTimeout(() => setModalState('idle'), 200);
+  };
+
+  const handleButtonClick = () => {
+    setIsButtonPressed(true);
+    setTimeout(() => setIsButtonPressed(false), 300);
+    setTimeout(() => openModal(), 100);
+  };
+
+  const handleLogin = async (data: LoginValues) => {
     setIsLoading(true);
+    setError('');
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,
       });
-
       if (error) throw error;
-      
-      // The AuthContext will handle the redirect based on role
-      toast.success('Успешный вход');
-    } catch (error: any) {
-      toast.error(error.message || 'Ошибка входа');
+      setModalState('departments');
+    } catch (e: any) {
+      setError(e.message || 'Ошибка входа');
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleRegister = async (data: RegisterValues) => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+        options: { data: { full_name: data.ownerName } },
+      });
+      if (signUpError) throw signUpError;
+      const userId = authData.user?.id;
+      if (!userId) throw new Error('Не удалось создать аккаунт');
+
+      const { data: clinic, error: clinicError } = await supabase
+        .from('clinics')
+        .insert({ name: data.clinicName, owner_id: userId })
+        .select('id')
+        .single();
+      if (clinicError) throw clinicError;
+
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .insert({ user_id: userId, clinic_id: clinic.id, role: 'owner' });
+      if (roleError) throw roleError;
+
+      setLocation('/onboarding');
+    } catch (e: any) {
+      setError(e.message || 'Ошибка регистрации');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleAuth = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    });
+  };
+
+  const handleResetPassword = async () => {
+    const email = loginForm.getValues('email');
+    if (!email) {
+      setResetMsg('Введите email для сброса пароля');
+      return;
+    }
+    await supabase.auth.resetPasswordForEmail(email);
+    setResetSent(true);
+    setResetMsg(`Письмо со сбросом пароля отправлено на ${email}`);
+  };
+
+  const isInvalidCredentials = error.toLowerCase().includes('invalid');
+
   return (
-    <div className="min-h-screen bg-[#E8EDF2] flex flex-col items-center justify-center p-4">
-      <div className="text-center mb-12">
-        <h1 className="text-[#1A56DB] text-5xl md:text-6xl font-extrabold mb-4">Negis</h1>
-        <p className="text-[#64748B] text-lg md:text-xl font-medium">Операционная экосистема для клиник</p>
-      </div>
+    <div
+      className="relative min-h-screen flex items-center justify-center overflow-hidden"
+      style={{ background: '#F0F0F0' }}
+    >
+      {/* Crosshair SVG overlay */}
+      <svg
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        style={{ zIndex: 0 }}
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        {/* Top line */}
+        <line x1="50%" y1="0" x2="50%" y2="calc(50% - 160px)" stroke="#CCCCCC" strokeWidth="0.5" />
+        <circle cx="50%" cy="4" r="2" fill="#CCCCCC" />
+        {/* Bottom line */}
+        <line x1="50%" y1="100%" x2="50%" y2="calc(50% + 160px)" stroke="#CCCCCC" strokeWidth="0.5" />
+        <circle cx="50%" cy="99%" r="2" fill="#CCCCCC" />
+        {/* Left line */}
+        <line x1="0" y1="50%" x2="calc(50% - 160px)" y2="50%" stroke="#CCCCCC" strokeWidth="0.5" />
+        <circle cx="4" cy="50%" r="2" fill="#CCCCCC" />
+        {/* Right line */}
+        <line x1="100%" y1="50%" x2="calc(50% + 160px)" y2="50%" stroke="#CCCCCC" strokeWidth="0.5" />
+        <circle cx="99%" cy="50%" r="2" fill="#CCCCCC" />
+      </svg>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl w-full">
-        {/* Запись */}
-        <div 
-          className="neu p-8 cursor-pointer text-center flex flex-col items-center hover:-translate-y-1 transition-transform"
-          onClick={() => setSelectedDept({ title: 'Запись', role: 'agent' })}
+      {/* Main circular button */}
+      <div className="relative z-10 flex flex-col items-center">
+        <button
+          onClick={handleButtonClick}
+          data-testid="button-negis-main"
+          style={{
+            width: 300,
+            height: 300,
+            borderRadius: '50%',
+            background: '#D8D8D8',
+            boxShadow: isButtonPressed
+              ? '4px 4px 12px #b0b0b0, -4px -4px 12px #ffffff, inset 2px 2px 4px #ffffff, inset -2px -2px 4px #b0b0b0'
+              : '8px 8px 20px #b0b0b0, -8px -8px 20px #ffffff, inset 2px 2px 4px #ffffff, inset -2px -2px 4px #b0b0b0',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'box-shadow 0.2s ease, transform 0.15s cubic-bezier(0.34,1.56,0.64,1)',
+            transform: isButtonPressed ? 'scale(0.97)' : 'scale(1)',
+          }}
+          onMouseEnter={e => {
+            if (!isButtonPressed) {
+              (e.currentTarget as HTMLButtonElement).style.boxShadow =
+                '12px 12px 28px #b0b0b0, -12px -12px 28px #ffffff, inset 2px 2px 4px #ffffff, inset -2px -2px 4px #b0b0b0';
+            }
+          }}
+          onMouseLeave={e => {
+            if (!isButtonPressed) {
+              (e.currentTarget as HTMLButtonElement).style.boxShadow =
+                '8px 8px 20px #b0b0b0, -8px -8px 20px #ffffff, inset 2px 2px 4px #ffffff, inset -2px -2px 4px #b0b0b0';
+            }
+          }}
         >
-          <div className="neu-icon-btn h-16 w-16 mb-6 text-[#1A56DB]">
-            <ClipboardList size={32} />
-          </div>
-          <h2 className="text-xl font-bold text-foreground mb-2">Запись</h2>
-          <p className="text-[#64748B] text-sm">Операторы</p>
-        </div>
-
-        {/* Ресепшн */}
-        <div 
-          className="neu p-8 cursor-pointer text-center flex flex-col items-center hover:-translate-y-1 transition-transform"
-          onClick={() => setSelectedDept({ title: 'Ресепшн', role: 'receptionist' })}
-        >
-          <div className="neu-icon-btn h-16 w-16 mb-6 text-[#1A56DB]">
-            <Building2 size={32} />
-          </div>
-          <h2 className="text-xl font-bold text-foreground mb-2">Ресепшн</h2>
-          <p className="text-[#64748B] text-sm">Приём клиентов</p>
-        </div>
-
-        {/* Negis CRM */}
-        <div 
-          className="neu p-8 cursor-pointer text-center flex flex-col items-center hover:-translate-y-1 transition-transform"
-          onClick={() => setSelectedDept({ title: 'Negis CRM', role: 'manager' })}
-        >
-          <div className="neu-icon-btn h-16 w-16 mb-6 text-[#1A56DB]">
-            <Briefcase size={32} />
-          </div>
-          <h2 className="text-xl font-bold text-foreground mb-2">Negis CRM</h2>
-          <p className="text-[#64748B] text-sm">Отдел продаж</p>
-        </div>
-      </div>
-
-      <div className="mt-16 flex flex-col items-center gap-4">
-        <Link href="/register" className="text-[#1A56DB] font-semibold hover:underline">
-          Нет аккаунта? Зарегистрировать клинику
-        </Link>
-        <Link href="/admin" className="text-xs text-[#64748B] hover:text-foreground transition-colors">
-          Войти как администратор
-        </Link>
-      </div>
-
-      {/* Login Modal */}
-      {selectedDept && (
-        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="neu-lg w-full max-w-md relative p-8 bg-[#E8EDF2]">
-            <button 
-              className="neu-icon-btn absolute top-4 right-4"
-              onClick={() => setSelectedDept(null)}
+          <div
+            style={{
+              width: 240,
+              height: 240,
+              borderRadius: '50%',
+              background: '#D4D4D4',
+              boxShadow: isButtonPressed
+                ? 'inset 8px 8px 20px #b0b0b0, inset -8px -8px 20px #f5f5f5'
+                : 'inset 6px 6px 16px #b0b0b0, inset -6px -6px 16px #f5f5f5',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'box-shadow 0.2s ease',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "'Space Grotesk', 'Inter', sans-serif",
+                fontWeight: 600,
+                fontSize: 28,
+                letterSpacing: 6,
+                color: '#2A2A2A',
+                textTransform: 'uppercase',
+                userSelect: 'none',
+              }}
             >
-              <X size={20} />
-            </button>
-            
-            <h2 className="text-2xl font-bold text-center mb-6">Вход в систему</h2>
-            <p className="text-center text-[#64748B] mb-8 font-medium">{selectedDept.title}</p>
+              NEGIS
+            </span>
+          </div>
+        </button>
+      </div>
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-              <div>
-                <input 
-                  type="email" 
-                  placeholder="Email" 
-                  className="neu-input" 
-                  {...register('email')}
-                />
-                {errors.email && <p className="text-destructive text-xs mt-1 px-2">{errors.email.message}</p>}
-              </div>
-              
-              <div>
-                <input 
-                  type="password" 
-                  placeholder="Пароль" 
-                  className="neu-input" 
-                  {...register('password')}
-                />
-                {errors.password && <p className="text-destructive text-xs mt-1 px-2">{errors.password.message}</p>}
-              </div>
-
-              <button 
-                type="submit" 
-                className="neu-btn-primary w-full justify-center mt-4"
-                disabled={isLoading}
-              >
-                {isLoading ? 'Вход...' : 'Войти'}
-              </button>
-            </form>
+      {/* Modal backdrop + card */}
+      {modalState !== 'idle' && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50 p-4"
+          style={{
+            background: 'rgba(0,0,0,0.15)',
+            backdropFilter: 'blur(6px)',
+            transition: 'opacity 0.2s ease',
+            opacity: modalVisible ? 1 : 0,
+          }}
+          onClick={e => { if (e.target === e.currentTarget) closeModal(); }}
+        >
+          <div
+            ref={modalRef}
+            style={{
+              background: '#EBEBEB',
+              borderRadius: 24,
+              boxShadow: '12px 12px 28px #c0c0c0, -12px -12px 28px #ffffff',
+              width: '100%',
+              maxWidth: 400,
+              padding: '40px 36px',
+              transition: 'transform 0.2s cubic-bezier(0.34,1.2,0.64,1), opacity 0.2s ease',
+              transform: modalVisible ? 'scale(1)' : 'scale(0.95)',
+              opacity: modalVisible ? 1 : 0,
+            }}
+          >
+            {modalState === 'departments' ? (
+              <DepartmentSelect userRole={userRole} onNavigate={setLocation} onSignOut={signOut} />
+            ) : (
+              <AuthForms
+                mode={modalState as 'login' | 'register'}
+                setMode={m => { setError(''); setResetSent(false); setResetMsg(''); setModalState(m); }}
+                loginForm={loginForm}
+                registerForm={registerForm}
+                onLogin={handleLogin}
+                onRegister={handleRegister}
+                onGoogle={handleGoogleAuth}
+                onResetPassword={handleResetPassword}
+                error={error}
+                resetSent={resetSent}
+                resetMsg={resetMsg}
+                isInvalidCredentials={isInvalidCredentials}
+                isLoading={isLoading}
+              />
+            )}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Department Select ─────────────────────────────────── */
+function DepartmentSelect({
+  userRole,
+  onNavigate,
+  onSignOut,
+}: {
+  userRole: string | null;
+  onNavigate: (path: string) => void;
+  onSignOut: () => void;
+}) {
+  const isManager = userRole === 'owner' || userRole === 'manager';
+
+  const departments = [
+    { label: 'Запись', path: '/booking', Icon: ClipboardList, always: true },
+    { label: 'Ресепшн', path: '/reception', Icon: Building2, always: true },
+    { label: 'Negis CRM', path: '/sales', Icon: Briefcase, always: true },
+    { label: 'Дашборд', path: '/dashboard', Icon: BarChart2, always: false },
+    { label: 'Админ', path: '/admin', Icon: Settings, always: false },
+  ].filter(d => d.always || isManager);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {departments.map(({ label, path, Icon }) => (
+        <button
+          key={path}
+          data-testid={`button-dept-${path.replace('/', '')}`}
+          onClick={() => onNavigate(path)}
+          style={{
+            background: '#EBEBEB',
+            boxShadow: '4px 4px 10px #c0c0c0, -4px -4px 10px #ffffff',
+            borderRadius: 14,
+            border: 'none',
+            padding: '14px 20px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            transition: 'box-shadow 0.15s ease, transform 0.15s ease',
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 15,
+            fontWeight: 600,
+            color: '#1E293B',
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = '6px 6px 14px #c0c0c0, -6px -6px 14px #ffffff';
+            (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = '4px 4px 10px #c0c0c0, -4px -4px 10px #ffffff';
+            (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+          }}
+          onMouseDown={e => {
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = 'inset 3px 3px 6px #c0c0c0, inset -3px -3px 6px #ffffff';
+            (e.currentTarget as HTMLButtonElement).style.transform = 'scale(0.98)';
+          }}
+          onMouseUp={e => {
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = '4px 4px 10px #c0c0c0, -4px -4px 10px #ffffff';
+            (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+          }}
+        >
+          <Icon size={20} color="#1A56DB" />
+          {label}
+        </button>
+      ))}
+
+      <button
+        onClick={onSignOut}
+        data-testid="button-signout"
+        style={{
+          marginTop: 4,
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: 13,
+          color: '#94a3b8',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          fontFamily: "'Inter', sans-serif",
+          transition: 'color 0.15s',
+        }}
+        onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.color = '#64748B')}
+        onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.color = '#94a3b8')}
+      >
+        <LogOut size={14} />
+        Выйти
+      </button>
+    </div>
+  );
+}
+
+/* ─── Auth Forms ─────────────────────────────────────────── */
+function AuthForms({
+  mode, setMode, loginForm, registerForm,
+  onLogin, onRegister, onGoogle,
+  onResetPassword, error, resetSent, resetMsg,
+  isInvalidCredentials, isLoading,
+}: {
+  mode: 'login' | 'register';
+  setMode: (m: 'login' | 'register') => void;
+  loginForm: any;
+  registerForm: any;
+  onLogin: (d: LoginValues) => void;
+  onRegister: (d: RegisterValues) => void;
+  onGoogle: () => void;
+  onResetPassword: () => void;
+  error: string;
+  resetSent: boolean;
+  resetMsg: string;
+  isInvalidCredentials: boolean;
+  isLoading: boolean;
+}) {
+  const inputStyle: React.CSSProperties = {
+    background: '#EBEBEB',
+    boxShadow: 'inset 2px 2px 5px #c0c0c0, inset -2px -2px 5px #ffffff',
+    borderRadius: 10,
+    border: 'none',
+    outline: 'none',
+    padding: '11px 14px',
+    width: '100%',
+    fontSize: 14,
+    color: '#1E293B',
+    fontFamily: "'Inter', sans-serif",
+    transition: 'box-shadow 0.2s ease',
+  };
+
+  const primaryBtn: React.CSSProperties = {
+    background: '#1A56DB',
+    color: 'white',
+    boxShadow: '3px 3px 8px #c0c0c0, -3px -3px 8px #ffffff',
+    borderRadius: 50,
+    border: 'none',
+    fontWeight: 600,
+    fontSize: 14,
+    padding: '11px 22px',
+    cursor: isLoading ? 'not-allowed' : 'pointer',
+    width: '100%',
+    fontFamily: "'Inter', sans-serif",
+    transition: 'all 0.2s ease',
+    opacity: isLoading ? 0.7 : 1,
+  };
+
+  const googleBtn: React.CSSProperties = {
+    background: '#EBEBEB',
+    boxShadow: '4px 4px 10px #c0c0c0, -4px -4px 10px #ffffff',
+    borderRadius: 50,
+    border: 'none',
+    fontWeight: 500,
+    fontSize: 14,
+    padding: '11px 22px',
+    cursor: 'pointer',
+    width: '100%',
+    fontFamily: "'Inter', sans-serif",
+    color: '#1E293B',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    transition: 'all 0.2s ease',
+  };
+
+  const isLogin = mode === 'login';
+
+  return (
+    <div style={{ transition: 'opacity 0.2s ease' }}>
+      {isLogin ? (
+        <form onSubmit={loginForm.handleSubmit(onLogin)} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <input
+              type="email"
+              placeholder="Email"
+              style={inputStyle}
+              data-testid="input-email"
+              {...loginForm.register('email')}
+              onFocus={e => (e.target.style.boxShadow = 'inset 2px 2px 5px #c0c0c0, inset -2px -2px 5px #ffffff, 0 0 0 2px rgba(26,86,219,0.2)')}
+              onBlur={e => (e.target.style.boxShadow = 'inset 2px 2px 5px #c0c0c0, inset -2px -2px 5px #ffffff')}
+            />
+            {loginForm.formState.errors.email && (
+              <p style={{ color: '#EF4444', fontSize: 12, marginTop: 4, paddingLeft: 4 }}>
+                {loginForm.formState.errors.email.message}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <input
+              type="password"
+              placeholder="Пароль"
+              style={inputStyle}
+              data-testid="input-password"
+              {...loginForm.register('password')}
+              onFocus={e => (e.target.style.boxShadow = 'inset 2px 2px 5px #c0c0c0, inset -2px -2px 5px #ffffff, 0 0 0 2px rgba(26,86,219,0.2)')}
+              onBlur={e => (e.target.style.boxShadow = 'inset 2px 2px 5px #c0c0c0, inset -2px -2px 5px #ffffff')}
+            />
+            {loginForm.formState.errors.password && (
+              <p style={{ color: '#EF4444', fontSize: 12, marginTop: 4, paddingLeft: 4 }}>
+                {loginForm.formState.errors.password.message}
+              </p>
+            )}
+          </div>
+
+          {error && (
+            <div>
+              <p style={{ color: '#EF4444', fontSize: 13, textAlign: 'center' }}>{error}</p>
+              {isInvalidCredentials && !resetSent && (
+                <button
+                  type="button"
+                  onClick={onResetPassword}
+                  style={{ background: 'none', border: 'none', color: '#1A56DB', fontSize: 12, cursor: 'pointer', width: '100%', textAlign: 'center', marginTop: 4 }}
+                >
+                  Забыли пароль? Сбросить
+                </button>
+              )}
+            </div>
+          )}
+
+          {resetMsg && (
+            <p style={{ color: resetSent ? '#10B981' : '#EF4444', fontSize: 12, textAlign: 'center' }}>
+              {resetMsg}
+            </p>
+          )}
+
+          <button type="submit" style={primaryBtn} disabled={isLoading} data-testid="button-login">
+            {isLoading ? 'Вход...' : 'Войти'}
+          </button>
+
+          <button type="button" onClick={onGoogle} style={googleBtn} data-testid="button-google-login">
+            <GoogleIcon />
+            Войти через Google
+          </button>
+
+          <p style={{ textAlign: 'center', fontSize: 13, color: '#64748B', marginTop: 4 }}>
+            Нет аккаунта?{' '}
+            <button
+              type="button"
+              onClick={() => setMode('register')}
+              style={{ background: 'none', border: 'none', color: '#1A56DB', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
+            >
+              Зарегистрироваться
+            </button>
+          </p>
+        </form>
+      ) : (
+        <form onSubmit={registerForm.handleSubmit(onRegister)} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {(
+            [
+              { name: 'ownerName', placeholder: 'Имя владельца', type: 'text' },
+              { name: 'clinicName', placeholder: 'Название клиники', type: 'text' },
+              { name: 'email', placeholder: 'Email', type: 'email' },
+              { name: 'password', placeholder: 'Пароль (мин. 8 символов)', type: 'password' },
+              { name: 'confirmPassword', placeholder: 'Подтверждение пароля', type: 'password' },
+            ] as const
+          ).map(({ name, placeholder, type }) => (
+            <div key={name}>
+              <input
+                type={type}
+                placeholder={placeholder}
+                style={inputStyle}
+                data-testid={`input-${name}`}
+                {...registerForm.register(name)}
+                onFocus={(e: React.FocusEvent<HTMLInputElement>) => (e.target.style.boxShadow = 'inset 2px 2px 5px #c0c0c0, inset -2px -2px 5px #ffffff, 0 0 0 2px rgba(26,86,219,0.2)')}
+                onBlur={(e: React.FocusEvent<HTMLInputElement>) => (e.target.style.boxShadow = 'inset 2px 2px 5px #c0c0c0, inset -2px -2px 5px #ffffff')}
+              />
+              {registerForm.formState.errors[name] && (
+                <p style={{ color: '#EF4444', fontSize: 12, marginTop: 4, paddingLeft: 4 }}>
+                  {registerForm.formState.errors[name]?.message as string}
+                </p>
+              )}
+            </div>
+          ))}
+
+          {error && (
+            <p style={{ color: '#EF4444', fontSize: 13, textAlign: 'center' }}>{error}</p>
+          )}
+
+          <button type="submit" style={primaryBtn} disabled={isLoading} data-testid="button-register">
+            {isLoading ? 'Создание...' : 'Создать аккаунт'}
+          </button>
+
+          <button type="button" onClick={onGoogle} style={googleBtn} data-testid="button-google-register">
+            <GoogleIcon />
+            Зарегистрироваться через Google
+          </button>
+
+          <p style={{ textAlign: 'center', fontSize: 13, color: '#64748B', marginTop: 4 }}>
+            Уже есть аккаунт?{' '}
+            <button
+              type="button"
+              onClick={() => setMode('login')}
+              style={{ background: 'none', border: 'none', color: '#1A56DB', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
+            >
+              Войти
+            </button>
+          </p>
+        </form>
       )}
     </div>
   );
