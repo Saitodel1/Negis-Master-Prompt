@@ -16,12 +16,13 @@ const MAX_PER_SLOT = 3;
 /* ── Types ────────────────────────────────────────────────── */
 interface Booking {
   id: string;
-  client_name: string;
-  client_phone: string;
+  name: string;
+  phone: string | null;
+  age: number | null;
   service_id: string | null;
   agent_id: string | null;
-  slot_hour: number; // 10..17
-  date: string;      // YYYY-MM-DD
+  time: string;   // "HH:00"
+  date: string;   // YYYY-MM-DD
   status_id: string | null;
 }
 
@@ -56,7 +57,7 @@ export default function Booking() {
 
   /* Modal state */
   const [modal, setModal] = useState<{ hour: number } | null>(null);
-  const [form, setForm] = useState({ client_name: '', client_phone: '', client_age: '', service_id: '', agent_id: '' });
+  const [form, setForm] = useState({ name: '', phone: '', age: '', service_id: '', agent_id: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -89,29 +90,29 @@ export default function Booking() {
     setAgents(a.data || []);
   };
 
-  const slotBookings = (h: number) => bookings.filter(b => b.slot_hour === h);
+  const slotBookings = (h: number) => bookings.filter(b => parseInt(b.time) === h);
 
   const openSlot = (h: number) => {
     if (isPast) { toast.error('Нельзя записывать на прошедшую дату'); return; }
     if (slotIsPast(h)) { toast.error('Это время уже прошло'); return; }
     const count = slotBookings(h).length;
     if (count >= MAX_PER_SLOT) { toast.error('Слот заполнен'); return; }
-    setForm({ client_name: '', client_phone: '', client_age: '', service_id: services[0]?.id || '', agent_id: agents[0]?.id || '' });
+    setForm({ name: '', phone: '', age: '', service_id: services[0]?.id || '', agent_id: agents[0]?.id || '' });
     setModal({ hour: h });
   };
 
   const saveBooking = async () => {
-    if (!form.client_name.trim()) { toast.error('Введите имя клиента'); return; }
+    if (!form.name.trim()) { toast.error('Введите имя клиента'); return; }
     if (!modal) return;
     setSaving(true);
     const { error } = await supabase.from('bookings').insert({
       clinic_id: clinicId,
-      client_name: form.client_name.trim(),
-      client_phone: form.client_phone.trim(),
-      client_age: form.client_age ? Number(form.client_age) : null,
+      name: form.name.trim(),
+      phone: form.phone.trim() || null,
+      age: form.age ? Number(form.age) : null,
       service_id: form.service_id || null,
       agent_id: form.agent_id || null,
-      slot_hour: modal.hour,
+      time: slotLabel(modal.hour),
       date: fmtDate(selectedDate),
     });
     if (error) {
@@ -356,8 +357,8 @@ export default function Booking() {
                 <input
                   className="neu-input"
                   placeholder="Иван Иванов"
-                  value={form.client_name}
-                  onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))}
+                  value={form.name}
+                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   data-testid="input-client-name"
                   autoFocus
                 />
@@ -367,8 +368,8 @@ export default function Booking() {
                 <input
                   className="neu-input"
                   placeholder="+7 XXX XXX XXXX"
-                  value={form.client_phone}
-                  onChange={e => setForm(f => ({ ...f, client_phone: e.target.value }))}
+                  value={form.phone}
+                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                   data-testid="input-client-phone"
                 />
               </FieldGroup>
@@ -380,8 +381,8 @@ export default function Booking() {
                   type="number"
                   min={1}
                   max={120}
-                  value={form.client_age}
-                  onChange={e => setForm(f => ({ ...f, client_age: e.target.value }))}
+                  value={form.age}
+                  onChange={e => setForm(f => ({ ...f, age: e.target.value }))}
                   data-testid="input-client-age"
                 />
               </FieldGroup>
