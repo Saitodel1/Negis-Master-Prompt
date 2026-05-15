@@ -44,7 +44,7 @@ export default function Booking() {
 
   /* Modal state */
   const [modal, setModal] = useState<{ hour: number } | null>(null);
-  const [form, setForm] = useState({ client_name: '', client_phone: '', service_id: '', agent_id: '' });
+  const [form, setForm] = useState({ client_name: '', client_phone: '', client_age: '', service_id: '', agent_id: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -79,7 +79,7 @@ export default function Booking() {
   const openSlot = (h: number) => {
     const count = slotBookings(h).length;
     if (count >= MAX_PER_SLOT) { toast.error('Слот заполнен'); return; }
-    setForm({ client_name: '', client_phone: '', service_id: services[0]?.id || '', agent_id: agents[0]?.id || '' });
+    setForm({ client_name: '', client_phone: '', client_age: '', service_id: services[0]?.id || '', agent_id: agents[0]?.id || '' });
     setModal({ hour: h });
   };
 
@@ -91,6 +91,7 @@ export default function Booking() {
       clinic_id: clinicId,
       client_name: form.client_name.trim(),
       client_phone: form.client_phone.trim(),
+      client_age: form.client_age ? Number(form.client_age) : null,
       service_id: form.service_id || null,
       agent_id: form.agent_id || null,
       slot_hour: modal.hour,
@@ -348,6 +349,19 @@ export default function Booking() {
                   value={form.client_phone}
                   onChange={e => setForm(f => ({ ...f, client_phone: e.target.value }))}
                   data-testid="input-client-phone"
+                />
+              </FieldGroup>
+
+              <FieldGroup label="Возраст">
+                <input
+                  className="neu-input"
+                  placeholder="Лет"
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={form.client_age}
+                  onChange={e => setForm(f => ({ ...f, client_age: e.target.value }))}
+                  data-testid="input-client-age"
                 />
               </FieldGroup>
 
