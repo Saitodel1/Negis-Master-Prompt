@@ -17,8 +17,8 @@ const MAX_PER_SLOT = 3;
 interface Booking {
   id: string;
   patient_name: string;
-  phone: string | null;
-  age: number | null;
+  patient_phone: string | null;
+  patient_age: number | null;
   service_id: string | null;
   agent_id: string | null;
   time: string;   // "HH:00"
@@ -56,7 +56,7 @@ export default function Booking() {
 
   /* Modal state */
   const [modal, setModal] = useState<{ hour: number } | null>(null);
-  const [form, setForm] = useState({ patient_name: '', phone: '', age: '', service_id: '', agent_id: '' });
+  const [form, setForm] = useState({ patient_name: '', patient_phone: '', patient_age: '', service_id: '', agent_id: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -93,7 +93,7 @@ export default function Booking() {
     if (slotIsPast(h)) { toast.error('Это время уже прошло'); return; }
     const count = slotBookings(h).length;
     if (count >= MAX_PER_SLOT) { toast.error('Слот заполнен'); return; }
-    setForm({ patient_name: '', phone: '', age: '', service_id: services[0]?.id || '', agent_id: '' });
+    setForm({ patient_name: '', patient_phone: '', patient_age: '', service_id: services[0]?.id || '', agent_id: '' });
     setModal({ hour: h });
   };
 
@@ -105,8 +105,8 @@ export default function Booking() {
     const { error } = await supabase.from('bookings').insert({
       clinic_id: clinicId,
       patient_name: nameVal,
-      phone: (form.phone ?? '').trim() || null,
-      age: (form.age ?? '') ? Number(form.age) : null,
+      patient_phone: (form.patient_phone ?? '').trim() || null,
+      patient_age: (form.patient_age ?? '') ? Number(form.patient_age) : null,
       service_id: form.service_id || null,
       agent_id: form.agent_id || null,
       time: slotLabel(modal.hour),
@@ -365,8 +365,8 @@ export default function Booking() {
                 <input
                   className="neu-input"
                   placeholder="+7 XXX XXX XXXX"
-                  value={form.phone}
-                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                  value={form.patient_phone}
+                  onChange={e => setForm(f => ({ ...f, patient_phone: e.target.value }))}
                   data-testid="input-client-phone"
                 />
               </FieldGroup>
@@ -378,8 +378,8 @@ export default function Booking() {
                   type="number"
                   min={1}
                   max={120}
-                  value={form.age}
-                  onChange={e => setForm(f => ({ ...f, age: e.target.value }))}
+                  value={form.patient_age}
+                  onChange={e => setForm(f => ({ ...f, patient_age: e.target.value }))}
                 />
               </FieldGroup>
 

@@ -1069,7 +1069,7 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
     if (!clinicId) return;
     setLoading('bookings');
     const [{ data, error }, { data: agentsData }, { data: servicesData }] = await Promise.all([
-      supabase.from('bookings').select('id, date, time, patient_name, phone, age, visited, service_id, agent_id').eq('clinic_id', clinicId).order('date', { ascending: false }),
+      supabase.from('bookings').select('id, date, time, patient_name, patient_phone, patient_age, visited, service_id, agent_id').eq('clinic_id', clinicId).order('date', { ascending: false }),
       supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
       supabase.from('services').select('id, name').eq('clinic_id', clinicId),
     ]);
@@ -1079,7 +1079,7 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
     const serviceMap = Object.fromEntries((servicesData ?? []).map(s => [s.id, s.name]));
     const rows = (data ?? []).map((r: any) => ({
       'Дата': r.date, 'Время': r.time, 'Клиент': r.patient_name,
-      'Телефон': r.phone ?? '', 'Возраст': r.age ?? '',
+      'Телефон': r.patient_phone ?? '', 'Возраст': r.patient_age ?? '',
       'Услуга': r.service_id ? (serviceMap[r.service_id] ?? '—') : '—',
       'Агент':  r.agent_id  ? (agentMap[r.agent_id]   ?? '—') : '—',
       'Статус': r.visited === true ? 'Пришёл' : r.visited === false ? 'Не пришёл' : 'Ожидается',
