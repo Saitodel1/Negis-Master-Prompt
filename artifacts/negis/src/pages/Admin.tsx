@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { Plus, Trash2, Edit2, Settings, Check } from 'lucide-react';
+import { Plus, Trash2, Edit2, Settings, Check, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -62,6 +63,7 @@ export default function Admin() {
     { id: 'statuses', label: 'Статусы' },
     { id: 'shifts', label: 'Смены' },
     { id: 'whatsapp', label: 'WhatsApp' },
+    { id: 'export', label: 'Экспорт' },
     { id: 'settings', label: 'Настройки' },
   ];
 
@@ -94,6 +96,7 @@ export default function Admin() {
           {activeTab === 'statuses' && <StatusesTab clinicId={clinicId} />}
           {activeTab === 'shifts' && <ShiftsTab clinicId={clinicId} />}
           {activeTab === 'whatsapp' && <WhatsAppTab clinicId={clinicId} />}
+          {activeTab === 'export' && <ExportTab clinicId={clinicId} />}
           {activeTab === 'settings' && <SettingsTabContent clinicId={clinicId} />}
         </div>
       </div>
@@ -1006,6 +1009,177 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
       <button onClick={save} disabled={saving} className="neu-btn-primary mt-2" data-testid="button-save-settings">
         {saving ? 'Сохранение...' : 'Сохранить'}
       </button>
+    </div>
+  );
+}
+
+/* ─── Export Tab ─────────────────────────────────────────── */
+function ExportTab({ clinicId }: { clinicId: string | null }) {
+  const [loading, setLoading] = useState<string | null>(null);
+
+  const exportSheet = (rows: Record<string, unknown>[], filename: string) => {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Данные');
+    XLSX.writeFile(wb, filename);
+  };
+
+  const exportBookings = async (fmt: 'csv' | 'xlsx') => {
+    if (!clinicId) return;
+    setLoading('bookings');
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('id, date, time, name, phone, age, visited, services(name), agents(name)')
+      .eq('clinic_id', clinicId)
+      .order('date', { ascending: false });
+    setLoading(null);
+    if (error) { toast.error(error.message); return; }
+    const rows = (data ?? []).map((r: any) => ({
+      'Дата': r.date, 'Время': r.time, 'Клиент': r.name,
+      'Телефон': r.phone ?? '', 'Возраст': r.age ?? '',
+      'Услуга': r.services?.name ?? '',
+      'Агент': r.agents?.name ?? '',
+      'Статус': r.visited === true ? 'Пришёл' : r.visited === false ? 'Не пришёл' : 'Ожидается',
+    }));
+    if (fmt === 'csv') {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Записи');
+      XLSX.writeFile(wb, `записи_${new Date().toISOString().split('T')[0]}.csv`, { bookType: 'csv' });
+    } else {
+      exportSheet(rows, `записи_${new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+    toast.success('Файл скачан');
+  };
+
+  const exportLeads = async (fmt: 'csv' | 'xlsx') => {
+    if (!clinicId) return;
+    setLoading('leads');
+    const { data, error } = await supabase
+      .from('leads')
+      .select('first_name, last_name, phone, age, source, comment, created_at, lead_statuses(name), agents(name)')
+      .eq('clinic_id', clinicId)
+      .order('created_at', { ascending: false });
+    setLoading(null);
+    if (error) { toast.error(error.message); return; }
+    const rows = (data ?? []).map((r: any) => ({
+      'Имя': r.first_name ?? '', 'Фамилия': r.last_name ?? '',
+      'Телефон': r.phone ?? '', 'Возраст': r.age ?? '',
+      'Источник': r.source ?? '', 'Статус': r.lead_statuses?.name ?? '',
+      'Ответственный': r.agents?.name ?? '',
+      'Комментарий': r.comment ?? '',
+      'Дата создания': new Date(r.created_at).toLocaleDateString('ru-RU'),
+    }));
+    if (fmt === 'csv') {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Лиды');
+      XLSX.writeFile(wb, `лиды_${new Date().toISOString().split('T')[0]}.csv`, { bookType: 'csv' });
+    } else {
+      exportSheet(rows, `лиды_${new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+    toast.success('Файл скачан');
+  };
+
+  const exportAgents = async (fmt: 'csv' | 'xlsx') => {
+    if (!clinicId) return;
+    setLoading('agents');
+    const { data, error } = await supabase
+      .from('agents')
+      .select('name, rate, daily_target, is_active')
+      .eq('clinic_id', clinicId)
+      .order('name');
+    setLoading(null);
+    if (error) { toast.error(error.message); return; }
+    const rows = (data ?? []).map((r: any) => ({
+      'Имя': r.name, 'Ставка (₸/час)': r.rate ?? '',
+      'Цель (₸/день)': r.daily_target ?? '',
+      'Активен': r.is_active ? 'Да' : 'Нет',
+    }));
+    if (fmt === 'csv') {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Агенты');
+      XLSX.writeFile(wb, `агенты_${new Date().toISOString().split('T')[0]}.csv`, { bookType: 'csv' });
+    } else {
+      exportSheet(rows, `агенты_${new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+    toast.success('Файл скачан');
+  };
+
+  const exportShifts = async (fmt: 'csv' | 'xlsx') => {
+    if (!clinicId) return;
+    setLoading('shifts');
+    const { data, error } = await supabase
+      .from('shifts')
+      .select('start_time, end_time, duration_minutes, bookings_count, earnings, agents(name)')
+      .eq('clinic_id', clinicId)
+      .order('start_time', { ascending: false });
+    setLoading(null);
+    if (error) { toast.error(error.message); return; }
+    const rows = (data ?? []).map((r: any) => ({
+      'Агент': r.agents?.name ?? '',
+      'Начало': new Date(r.start_time).toLocaleString('ru-RU'),
+      'Конец': r.end_time ? new Date(r.end_time).toLocaleString('ru-RU') : '',
+      'Длительность (мин)': r.duration_minutes ?? '',
+      'Записей': r.bookings_count ?? 0,
+      'Заработок (₸)': r.earnings ?? 0,
+    }));
+    if (fmt === 'csv') {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Смены');
+      XLSX.writeFile(wb, `смены_${new Date().toISOString().split('T')[0]}.csv`, { bookType: 'csv' });
+    } else {
+      exportSheet(rows, `смены_${new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+    toast.success('Файл скачан');
+  };
+
+  const sections = [
+    {
+      id: 'bookings', title: 'Записи клиентов', description: 'Все записи: дата, время, клиент, услуга, агент, статус визита',
+      onExport: exportBookings,
+    },
+    {
+      id: 'leads', title: 'Лиды (CRM)', description: 'Все лиды: имя, телефон, источник, статус, ответственный',
+      onExport: exportLeads,
+    },
+    {
+      id: 'agents', title: 'Агенты', description: 'Список сотрудников: имя, ставка, цель',
+      onExport: exportAgents,
+    },
+    {
+      id: 'shifts', title: 'Смены', description: 'История смен: агент, время, длительность, заработок',
+      onExport: exportShifts,
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-[#64748B]">Выгрузите данные в CSV или Excel-формат</p>
+      {sections.map(s => (
+        <div key={s.id} className="neu-sm p-5 flex items-center justify-between gap-4">
+          <div>
+            <p className="font-bold text-[#1E293B]">{s.title}</p>
+            <p className="text-sm text-[#64748B] mt-0.5">{s.description}</p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              disabled={loading === s.id}
+              onClick={() => s.onExport('csv')}
+              className="neu-btn flex items-center gap-2 text-sm px-4 py-2"
+            >
+              <Download size={14} />
+              CSV
+            </button>
+            <button
+              disabled={loading === s.id}
+              onClick={() => s.onExport('xlsx')}
+              className="neu-btn-primary flex items-center gap-2 text-sm px-4 py-2"
+            >
+              <Download size={14} />
+              {loading === s.id ? '...' : 'Excel'}
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
