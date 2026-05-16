@@ -10,7 +10,7 @@ interface PageLayoutProps {
 }
 
 export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
-  const { session, isLoading } = useAuth();
+  const { session, isLoading, isImpersonation } = useAuth();
 
   if (isLoading) {
     return (
@@ -25,14 +25,20 @@ export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
     );
   }
 
-  if (requireAuth && !session) {
+  /* Allow through if: normal Supabase session OR active impersonation */
+  if (requireAuth && !session && !isImpersonation) {
     return <Redirect to="/" />;
   }
 
   return (
     <div
       className="min-h-[100dvh] flex font-sans"
-      style={{ background: '#F4F7FB', color: '#0B1220' }}
+      style={{
+        background: '#F4F7FB',
+        color: '#0B1220',
+        /* Push content down when impersonation banner is showing */
+        paddingTop: isImpersonation ? 40 : 0,
+      }}
     >
       <Sidebar />
       <div className="flex-1 flex flex-col" style={{ marginLeft: 78 }}>

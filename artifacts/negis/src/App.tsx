@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 import Landing from "@/pages/Landing";
 import Register from "@/pages/Register";
@@ -18,6 +19,45 @@ import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
 
+/* ── Impersonation Banner ────────────────────────────────── */
+function ImpersonationBanner() {
+  const { isImpersonation, impersonationClinicName, signOut } = useAuth();
+  if (!isImpersonation) return null;
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+      height: 40,
+      background: '#DC2626',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+      fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500,
+      color: '#FFFFFF',
+      letterSpacing: '0.01em',
+    }}>
+      <span style={{ opacity: 0.75, fontSize: 12 }}>РЕЖИМ ПРОСМОТРА</span>
+      <span style={{ opacity: 0.35 }}>|</span>
+      <span>{impersonationClinicName}</span>
+      <span style={{ opacity: 0.35 }}>|</span>
+      <button
+        onClick={signOut}
+        style={{
+          background: 'rgba(255,255,255,0.15)',
+          border: '1px solid rgba(255,255,255,0.30)',
+          borderRadius: 6,
+          color: '#FFFFFF', cursor: 'pointer',
+          fontSize: 12, fontWeight: 600,
+          padding: '3px 10px',
+          fontFamily: "'Inter', sans-serif",
+          letterSpacing: '0.03em',
+        }}
+      >
+        Выйти
+      </button>
+    </div>
+  );
+}
+
+/* ── Router ── */
 function Router() {
   return (
     <Switch>
@@ -36,12 +76,14 @@ function Router() {
   );
 }
 
+/* ── App ── */
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <AuthProvider>
           <TooltipProvider>
+            <ImpersonationBanner />
             <Router />
             <Toaster position="bottom-right" />
           </TooltipProvider>
