@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'wouter';
-import { BarChart2, CalendarDays, Building2, Briefcase, Settings, LogOut, X, Check, KeyRound, User } from 'lucide-react';
+import { BarChart2, CalendarDays, Building2, Briefcase, Settings, LogOut, X, Check, KeyRound, User, Megaphone } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -10,6 +10,7 @@ const NAV = [
   { href: '/booking',   icon: CalendarDays, label: 'Запись',   roles: ['owner', 'manager', 'agent'] },
   { href: '/reception', icon: Building2,    label: 'Ресепшн',  roles: ['owner', 'manager', 'receptionist'] },
   { href: '/sales',     icon: Briefcase,    label: 'CRM',      roles: ['owner', 'manager', 'agent'] },
+  { href: '/ads',       icon: Megaphone,    label: 'Реклама',  roles: ['owner', 'manager'] },
   { href: '/admin',     icon: Settings,     label: 'Админ',    roles: ['owner', 'manager'] },
 ];
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { Plus, Trash2, Edit2, Settings, Check, Download, Upload } from 'lucide-react';
+import { Plus, Trash2, Edit2, Settings, Check, Download, Upload, Copy, RefreshCw, ExternalLink } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import { supabase } from '@/lib/supabase';
@@ -928,15 +928,42 @@ function WhatsAppTab({ clinicId }: { clinicId: string | null }) {
 }
 
 /* ─── Settings Tab ───────────────────────────────────────── */
+interface AdAccountRow {
+  id: string; platform: string; account_name: string | null; account_id: string; is_active: boolean;
+}
+
 function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
   const [form, setForm] = useState({ name: '', work_start: '10:00', work_end: '18:00', slot_limit: 3, whatsapp_number: '', telegram_chat_id: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const [webhookSecret, setWebhookSecret] = useState('');
+  const [usdToKzt, setUsdToKzt] = useState(450);
+  const [savingAds, setSavingAds] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [adAccounts, setAdAccounts] = useState<AdAccountRow[]>([]);
+  const [copiedSecret, setCopiedSecret] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+
+  const webhookUrl = clinicId
+    ? `${window.location.origin}${BASE_URL}/api/leads/webhook/${clinicId}`
+    : '';
+
   useEffect(() => {
     if (!clinicId) return;
-    supabase.from('clinics').select('name, work_start, work_end, slot_limit, whatsapp_number, telegram_chat_id').eq('id', clinicId).single()
-      .then(({ data }) => { if (data) setForm({ name: data.name || '', work_start: data.work_start || '10:00', work_end: data.work_end || '18:00', slot_limit: data.slot_limit || 3, whatsapp_number: data.whatsapp_number || '', telegram_chat_id: data.telegram_chat_id || '' }); setLoading(false); });
+    supabase.from('clinics')
+      .select('name, work_start, work_end, slot_limit, whatsapp_number, telegram_chat_id, webhook_secret, usd_to_kzt')
+      .eq('id', clinicId).single()
+      .then(({ data }) => {
+        if (data) {
+          setForm({ name: data.name || '', work_start: data.work_start || '10:00', work_end: data.work_end || '18:00', slot_limit: data.slot_limit || 3, whatsapp_number: data.whatsapp_number || '', telegram_chat_id: data.telegram_chat_id || '' });
+          setWebhookSecret(data.webhook_secret || '');
+          setUsdToKzt(data.usd_to_kzt || 450);
+        }
+        setLoading(false);
+      });
+    supabase.from('ad_accounts').select('id, platform, account_name, account_id, is_active').eq('clinic_id', clinicId).eq('is_active', true)
+      .then(({ data }) => setAdAccounts(data ?? []));
   }, [clinicId]);
 
   const save = async () => {
@@ -946,40 +973,177 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
     setSaving(false);
   };
 
+  const saveAds = async () => {
+    setSavingAds(true);
+    const { error } = await supabase.from('clinics').update({ usd_to_kzt: usdToKzt }).eq('id', clinicId);
+    if (error) toast.error(error.message); else toast.success('Настройки рекламы сохранены');
+    setSavingAds(false);
+  };
+
+  const regenerateSecret = async () => {
+    setRegenerating(true);
+    const arr = new Uint8Array(32);
+    crypto.getRandomValues(arr);
+    const newSecret = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+    const { error } = await supabase.from('clinics').update({ webhook_secret: newSecret }).eq('id', clinicId);
+    if (error) { toast.error(error.message); } else { setWebhookSecret(newSecret); toast.success('Секрет обновлён'); }
+    setRegenerating(false);
+  };
+
+  const copyText = async (text: string, which: 'secret' | 'url') => {
+    await navigator.clipboard.writeText(text);
+    if (which === 'secret') { setCopiedSecret(true); setTimeout(() => setCopiedSecret(false), 2000); }
+    else { setCopiedUrl(true); setTimeout(() => setCopiedUrl(false), 2000); }
+    toast.success('Скопировано');
+  };
+
+  const disconnectAccount = async (id: string) => {
+    await supabase.from('ad_accounts').update({ is_active: false }).eq('id', id);
+    setAdAccounts(prev => prev.filter(a => a.id !== id));
+    toast.success('Аккаунт отключён');
+  };
+
   if (loading) return <p className="text-center text-[#64748B] py-12">Загрузка...</p>;
 
   return (
-    <div className="max-w-lg space-y-5">
-      <h3 className="text-lg font-bold">Настройки клиники</h3>
-      <div>
-        <label className="block text-sm font-medium text-[#64748B] mb-1">Название клиники</label>
-        <input className="neu-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} data-testid="input-clinic-name" />
-      </div>
-      <div className="flex gap-4">
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-[#64748B] mb-1">Работа с</label>
-          <input type="time" className="neu-input" value={form.work_start} onChange={e => setForm(f => ({ ...f, work_start: e.target.value }))} data-testid="input-work-start" />
+    <div className="space-y-10">
+      {/* ── Clinic settings ── */}
+      <div className="max-w-lg space-y-5">
+        <h3 className="text-lg font-bold">Настройки клиники</h3>
+        <div>
+          <label className="block text-sm font-medium text-[#64748B] mb-1">Название клиники</label>
+          <input className="neu-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} data-testid="input-clinic-name" />
         </div>
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-[#64748B] mb-1">до</label>
-          <input type="time" className="neu-input" value={form.work_end} onChange={e => setForm(f => ({ ...f, work_end: e.target.value }))} data-testid="input-work-end" />
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-[#64748B] mb-1">Работа с</label>
+            <input type="time" className="neu-input" value={form.work_start} onChange={e => setForm(f => ({ ...f, work_start: e.target.value }))} data-testid="input-work-start" />
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-[#64748B] mb-1">до</label>
+            <input type="time" className="neu-input" value={form.work_end} onChange={e => setForm(f => ({ ...f, work_end: e.target.value }))} data-testid="input-work-end" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#64748B] mb-1">Максимум записей на слот</label>
+          <input type="number" min={1} max={20} className="neu-input" value={form.slot_limit} onChange={e => setForm(f => ({ ...f, slot_limit: Number(e.target.value) }))} data-testid="input-slot-limit" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#64748B] mb-1">Номер WhatsApp</label>
+          <input className="neu-input" placeholder="+7XXXXXXXXXX" value={form.whatsapp_number} onChange={e => setForm(f => ({ ...f, whatsapp_number: e.target.value }))} data-testid="input-whatsapp-number" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#64748B] mb-1">Telegram Chat ID</label>
+          <input className="neu-input" value={form.telegram_chat_id} onChange={e => setForm(f => ({ ...f, telegram_chat_id: e.target.value }))} data-testid="input-telegram-chat-id" />
+        </div>
+        <button onClick={save} disabled={saving} className="neu-btn-primary mt-2" data-testid="button-save-settings">
+          {saving ? 'Сохранение...' : 'Сохранить'}
+        </button>
+      </div>
+
+      {/* ── Реклама и интеграции ── */}
+      <div className="max-w-2xl space-y-5 border-t border-[#E7ECF3] pt-8">
+        <div>
+          <h3 className="text-lg font-bold">Реклама и интеграции</h3>
+          <p className="text-sm text-[#64748B] mt-0.5">Настройки webhook и рекламных аккаунтов</p>
+        </div>
+
+        {/* Webhook URL */}
+        <div>
+          <label className="block text-sm font-medium text-[#64748B] mb-1">Webhook URL</label>
+          <p className="text-xs text-[#94A3B8] mb-2">
+            Отправляйте POST-запрос на этот URL, чтобы создавать лидов автоматически.{' '}
+            <a href="https://negis.app/docs/webhook" target="_blank" rel="noopener noreferrer"
+              className="text-[#1A56DB] inline-flex items-center gap-0.5 hover:underline">
+              Документация <ExternalLink size={11} />
+            </a>
+          </p>
+          <div className="flex gap-2">
+            <input
+              readOnly
+              className="neu-input text-xs font-mono flex-1"
+              value={webhookUrl}
+            />
+            <button
+              onClick={() => copyText(webhookUrl, 'url')}
+              className="neu-btn flex items-center gap-1.5 text-sm px-4"
+            >
+              {copiedUrl ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
+              {copiedUrl ? 'Скопировано' : 'Копировать'}
+            </button>
+          </div>
+        </div>
+
+        {/* Webhook Secret */}
+        <div>
+          <label className="block text-sm font-medium text-[#64748B] mb-1">Webhook Secret</label>
+          <p className="text-xs text-[#94A3B8] mb-2">
+            Передавайте в заголовке <span className="font-mono bg-[#F1F5F9] px-1 rounded">X-Webhook-Secret</span> для аутентификации.
+          </p>
+          <div className="flex gap-2">
+            <input
+              readOnly
+              type="password"
+              className="neu-input font-mono text-sm flex-1"
+              value={webhookSecret}
+            />
+            <button onClick={() => copyText(webhookSecret, 'secret')} className="neu-btn flex items-center gap-1.5 text-sm px-4">
+              {copiedSecret ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
+              {copiedSecret ? 'Скопировано' : 'Показать'}
+            </button>
+            <button onClick={regenerateSecret} disabled={regenerating} className="neu-btn flex items-center gap-1.5 text-sm px-4">
+              <RefreshCw size={14} className={regenerating ? 'animate-spin' : ''} />
+              Обновить
+            </button>
+          </div>
+        </div>
+
+        {/* Курс USD → ₸ */}
+        <div className="max-w-xs">
+          <label className="block text-sm font-medium text-[#64748B] mb-1">Курс USD → ₸</label>
+          <p className="text-xs text-[#94A3B8] mb-2">Используется для перерасчёта расходов из Facebook / TikTok в тенге.</p>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              min={1}
+              className="neu-input"
+              value={usdToKzt}
+              onChange={e => setUsdToKzt(Number(e.target.value))}
+            />
+            <button onClick={saveAds} disabled={savingAds} className="neu-btn-primary flex items-center gap-1.5 text-sm px-4 whitespace-nowrap">
+              <Check size={14} />
+              {savingAds ? 'Сохранение...' : 'Сохранить'}
+            </button>
+          </div>
+        </div>
+
+        {/* Connected Ad Accounts */}
+        <div>
+          <label className="block text-sm font-medium text-[#64748B] mb-3">Подключённые рекламные аккаунты</label>
+          {adAccounts.length === 0 ? (
+            <p className="text-sm text-[#94A3B8] neu-sm p-4">
+              Нет подключённых аккаунтов. Подключите их на странице{' '}
+              <a href={`${BASE_URL}/ads`} className="text-[#1A56DB] hover:underline">Реклама</a>.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {adAccounts.map(acc => (
+                <div key={acc.id} className="neu-sm p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${acc.platform === 'facebook' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-700'}`}>
+                      {acc.platform === 'facebook' ? 'Facebook' : 'TikTok'}
+                    </span>
+                    <span className="text-sm font-medium text-[#0B1220]">{acc.account_name || acc.account_id}</span>
+                  </div>
+                  <button onClick={() => disconnectAccount(acc.id)} className="neu-btn text-xs text-red-500 hover:text-red-700 px-3 py-1.5">
+                    Отключить
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-      <div>
-        <label className="block text-sm font-medium text-[#64748B] mb-1">Максимум записей на слот</label>
-        <input type="number" min={1} max={20} className="neu-input" value={form.slot_limit} onChange={e => setForm(f => ({ ...f, slot_limit: Number(e.target.value) }))} data-testid="input-slot-limit" />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-[#64748B] mb-1">Номер WhatsApp</label>
-        <input className="neu-input" placeholder="+7XXXXXXXXXX" value={form.whatsapp_number} onChange={e => setForm(f => ({ ...f, whatsapp_number: e.target.value }))} data-testid="input-whatsapp-number" />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-[#64748B] mb-1">Telegram Chat ID</label>
-        <input className="neu-input" value={form.telegram_chat_id} onChange={e => setForm(f => ({ ...f, telegram_chat_id: e.target.value }))} data-testid="input-telegram-chat-id" />
-      </div>
-      <button onClick={save} disabled={saving} className="neu-btn-primary mt-2" data-testid="button-save-settings">
-        {saving ? 'Сохранение...' : 'Сохранить'}
-      </button>
     </div>
   );
 }

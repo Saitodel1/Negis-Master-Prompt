@@ -13,6 +13,7 @@ import Reception from "@/pages/Reception";
 import Sales from "@/pages/Sales";
 import Agent from "@/pages/Agent";
 import Admin from "@/pages/Admin";
+import Ads from "@/pages/Ads";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -29,6 +30,7 @@ function Router() {
       <Route path="/sales" component={Sales} />
       <Route path="/agent" component={Agent} />
       <Route path="/admin" component={Admin} />
+      <Route path="/ads" component={Ads} />
       <Route component={NotFound} />
     </Switch>
   );
