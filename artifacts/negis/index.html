@@ -2,6 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function() {
+        var host = window.location.hostname;
+        if (host !== 'www.negis.online' && host !== 'localhost' && host !== '127.0.0.1') {
+          window.location.replace('https://www.negis.online' + window.location.pathname + window.location.search);
+        }
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>Negis — Операционная экосистема для клиник</title>
     <meta name="description" content="Negis — Операционная экосистема для клиник — built on Replit. Update this description to reflect the app." />
