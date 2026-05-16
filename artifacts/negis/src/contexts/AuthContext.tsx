@@ -95,21 +95,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /* ── 2. Verify impersonation token with Negis Control ── */
   const handleImpersonationToken = async (token: string) => {
-    const apiUrl = import.meta.env.VITE_NEGIS_CONTROL_API_URL as string | undefined;
-    if (!apiUrl) {
-      cleanUrl();
-      toast.error('VITE_NEGIS_CONTROL_API_URL не настроен');
-      setIsLoading(false);
-      return;
-    }
+    const apiUrl =
+      (import.meta.env.VITE_NEGIS_CONTROL_API_URL as string | undefined)
+      || 'https://admin.negis.online';
 
     try {
-      const res = await fetch(`${apiUrl}/api/impersonation/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${apiUrl}/api/impersonation/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+      } catch {
+        cleanUrl();
+        toast.error('Не удалось проверить доступ через Negis Control');
+        setIsLoading(false);
+        return;
+      }
 
+      if (res.status === 401 || res.status === 403) throw new Error('expired_token');
       if (!res.ok) throw new Error('invalid_token');
 
       const data: { clinicId: string; clinicName: string; ownerEmail: string; issuedBy: string } = await res.json();
@@ -142,10 +147,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUserRole('owner');
       setIsLoading(false);
       setLocation('/dashboard');
-    } catch {
+    } catch (err: any) {
       cleanUrl();
       clearImpersonationStorage();
-      toast.error('Доступ по ссылке истёк. Войдите снова из Negis Control.');
+      const msg = err?.message === 'expired_token'
+        ? 'Доступ по ссылке истёк. Войдите снова из Negis Control.'
+        : 'Не удалось проверить доступ через Negis Control.';
+      toast.error(msg);
       setIsLoading(false);
       setLocation('/');
     }
