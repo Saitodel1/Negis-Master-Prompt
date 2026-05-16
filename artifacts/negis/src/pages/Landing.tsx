@@ -23,9 +23,23 @@ const registerSchema = z.object({
   path: ['confirmPassword'],
 });
 
-type LoginValues = z.infer<typeof loginSchema>;
-type RegisterValues = z.infer<typeof registerSchema>;
-type ModalState = 'idle' | 'choice' | 'login' | 'register';
+const resetSchema = z.object({
+  email: z.string().email('Неверный формат email'),
+});
+
+const newPasswordSchema = z.object({
+  password: z.string().min(8, 'Минимум 8 символов'),
+  confirmPassword: z.string().min(1, 'Подтвердите пароль'),
+}).refine(d => d.password === d.confirmPassword, {
+  message: 'Пароли не совпадают',
+  path: ['confirmPassword'],
+});
+
+type LoginValues      = z.infer<typeof loginSchema>;
+type RegisterValues   = z.infer<typeof registerSchema>;
+type ResetValues      = z.infer<typeof resetSchema>;
+type NewPasswordValues = z.infer<typeof newPasswordSchema>;
+type ModalState = 'idle' | 'choice' | 'login' | 'register' | 'reset' | 'newpassword';
 
 const roleRoute = (role: string | null) => {
   if (role === 'owner' || role === 'manager') return '/dashboard';
@@ -35,18 +49,30 @@ const roleRoute = (role: string | null) => {
 
 export default function Landing() {
   const [modalState, setModalState] = useState<ModalState>('idle');
-  const [pressed, setPressed] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [resetSent, setResetSent] = useState(false);
-  const [resetMsg, setResetMsg] = useState('');
+  const [pressed,    setPressed]    = useState(false);
+  const [visible,    setVisible]    = useState(false);
+  const [isLoading,  setIsLoading]  = useState(false);
+  const [error,      setError]      = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [, setLocation] = useLocation();
   const { session, userRole } = useAuth();
   const modalRef = useRef<HTMLDivElement>(null);
 
-  const loginForm = useForm<LoginValues>({ resolver: zodResolver(loginSchema) });
-  const registerForm = useForm<RegisterValues>({ resolver: zodResolver(registerSchema) });
+  const loginForm       = useForm<LoginValues>      ({ resolver: zodResolver(loginSchema) });
+  const registerForm    = useForm<RegisterValues>   ({ resolver: zodResolver(registerSchema) });
+  const resetForm       = useForm<ResetValues>      ({ resolver: zodResolver(resetSchema) });
+  const newPasswordForm = useForm<NewPasswordValues>({ resolver: zodResolver(newPasswordSchema) });
+
+  /* Detect PASSWORD_RECOVERY from Supabase email link */
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setError(''); setSuccessMsg('');
+        setModalState('newpassword');
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (modalState !== 'idle') {
@@ -57,11 +83,8 @@ export default function Landing() {
   }, [modalState]);
 
   const openModal = () => {
-    if (session) {
-      setLocation(roleRoute(userRole));
-      return;
-    }
-    setError(''); setResetSent(false); setResetMsg('');
+    if (session) { setLocation(roleRoute(userRole)); return; }
+    setError(''); setSuccessMsg('');
     setModalState('choice');
   };
 
@@ -76,19 +99,17 @@ export default function Landing() {
     setTimeout(openModal, 80);
   };
 
+  /* ── Login ── */
   const handleLogin = async (data: LoginValues) => {
     setIsLoading(true); setError('');
     try {
       const { data: authData, error } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
+        email: data.email, password: data.password,
       });
       if (error) throw error;
       const { data: roleRow } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', authData.user?.id)
-        .single();
+        .from('user_roles').select('role')
+        .eq('user_id', authData.user?.id).single();
       closeModal();
       setLocation(roleRoute(roleRow?.role ?? null));
     } catch (e: any) {
@@ -96,6 +117,7 @@ export default function Landing() {
     } finally { setIsLoading(false); }
   };
 
+  /* ── Register ── */
   const handleRegister = async (data: RegisterValues) => {
     setIsLoading(true); setError('');
     try {
@@ -107,19 +129,14 @@ export default function Landing() {
       const userId = authData.user?.id;
       if (!userId) throw new Error('Не удалось создать аккаунт');
       const slug = data.clinicName
-        .toLowerCase()
-        .replace(/\s+/g, '-')
-        .replace(/[^a-z0-9-]/g, '')
-        .slice(0, 40) + '-' + Math.random().toString(36).slice(2, 7);
+        .toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 40)
+        + '-' + Math.random().toString(36).slice(2, 7);
       const { data: clinic, error: clinicError } = await supabase
-        .from('clinics')
-        .insert({ name: data.clinicName, owner_id: userId, slug })
-        .select('id')
-        .single();
+        .from('clinics').insert({ name: data.clinicName, owner_id: userId, slug })
+        .select('id').single();
       if (clinicError) throw clinicError;
       const { error: roleError } = await supabase
-        .from('user_roles')
-        .insert({ user_id: userId, clinic_id: clinic.id, role: 'owner' });
+        .from('user_roles').insert({ user_id: userId, clinic_id: clinic.id, role: 'owner' });
       if (roleError) throw roleError;
       setLocation('/onboarding');
     } catch (e: any) {
@@ -127,20 +144,34 @@ export default function Landing() {
     } finally { setIsLoading(false); }
   };
 
-  const handleResetPassword = async () => {
-    const email = loginForm.getValues('email');
-    if (!email) { setResetMsg('Введите email для сброса пароля'); return; }
-    await supabase.auth.resetPasswordForEmail(email);
-    setResetSent(true);
-    setResetMsg(`Письмо отправлено на ${email}`);
+  /* ── Reset password — send email ── */
+  const handleSendReset = async (data: ResetValues) => {
+    setIsLoading(true); setError(''); setSuccessMsg('');
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
+        redirectTo: window.location.origin + '/',
+      });
+      if (error) throw error;
+      setSuccessMsg(`Письмо отправлено на ${data.email}. Проверьте почту.`);
+    } catch (e: any) {
+      setError(e.message || 'Ошибка отправки письма');
+    } finally { setIsLoading(false); }
   };
 
-  /* ── Physical industrial activation core ──
-     2 layers: circleOuter (precision-machined ring) → circleInner (control surface).
-     No scale animation — inner surface sinks on press. Tight shadow creates mass.
-  ── */
+  /* ── Set new password after recovery link ── */
+  const handleNewPassword = async (data: NewPasswordValues) => {
+    setIsLoading(true); setError(''); setSuccessMsg('');
+    try {
+      const { error } = await supabase.auth.updateUser({ password: data.password });
+      if (error) throw error;
+      setSuccessMsg('Пароль успешно изменён. Войдите с новым паролем.');
+      setTimeout(() => { setModalState('login'); setSuccessMsg(''); }, 2200);
+    } catch (e: any) {
+      setError(e.message || 'Ошибка смены пароля');
+    } finally { setIsLoading(false); }
+  };
 
-  /* Tight drop shadow — creates ground weight, not float */
+  /* ── Styles ── */
   const dropShadow = pressed
     ? '0 4px 10px rgba(15,23,42,0.18), 0 1px 3px rgba(15,23,42,0.12)'
     : '0 10px 28px rgba(15,23,42,0.18), 0 4px 10px rgba(15,23,42,0.10), 0 1px 3px rgba(15,23,42,0.06)';
@@ -150,18 +181,12 @@ export default function Landing() {
     cursor: 'pointer', border: 'none',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     position: 'relative',
-    /* No scale — physical objects don't shrink. Shadow tightens on press only. */
-    transition: 'box-shadow 0.18s ease',
-    transform: 'none',
-    /* Precision-machined aluminum/ceramic ring — #D8DEE6 base, soft top highlight */
+    transition: 'box-shadow 0.18s ease', transform: 'none',
     background: 'linear-gradient(170deg, #DDE3EB 0%, #D8DEE6 40%, #CDD4DD 100%)',
     boxShadow: [
       dropShadow,
-      /* subtle top bevel highlight — precision edge */
       'inset 0 1px 0 rgba(255,255,255,0.72)',
-      /* bottom inner edge shadow — material depth */
       'inset 0 -1px 3px rgba(15,23,42,0.10)',
-      /* inner rim where ring meets recess */
       'inset 0 0 0 1px rgba(15,23,42,0.06)',
     ].join(', '),
   };
@@ -169,26 +194,14 @@ export default function Landing() {
   const circleInner: React.CSSProperties = {
     width: 210, height: 210, borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    /* Control surface — #EEF2F6, slightly recessed, not flat, not convex */
     background: pressed ? '#E8ECF2' : '#EEF2F6',
-    /* Recessed control surface: inset shadow simulates shallow well depth */
     boxShadow: pressed
-      ? [
-          'inset 0 3px 10px rgba(15,23,42,0.13)',
-          'inset 0 1px 4px rgba(15,23,42,0.08)',
-          'inset 0 -1px 2px rgba(255,255,255,0.50)',
-        ].join(', ')
-      : [
-          'inset 0 2px 7px rgba(15,23,42,0.08)',
-          'inset 0 1px 3px rgba(15,23,42,0.05)',
-          'inset 0 -1px 3px rgba(255,255,255,0.60)',
-        ].join(', '),
+      ? ['inset 0 3px 10px rgba(15,23,42,0.13)', 'inset 0 1px 4px rgba(15,23,42,0.08)', 'inset 0 -1px 2px rgba(255,255,255,0.50)'].join(', ')
+      : ['inset 0 2px 7px rgba(15,23,42,0.08)', 'inset 0 1px 3px rgba(15,23,42,0.05)', 'inset 0 -1px 3px rgba(255,255,255,0.60)'].join(', '),
     transition: 'box-shadow 0.18s ease, background 0.18s ease',
-    position: 'relative',
-    flexShrink: 0,
+    position: 'relative', flexShrink: 0,
   };
 
-  /* ── Shared input / button styles ── */
   const IS: React.CSSProperties = {
     background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 11,
     outline: 'none', padding: '11px 14px', width: '100%', fontSize: 14,
@@ -210,11 +223,19 @@ export default function Landing() {
     fontFamily: "'Inter', sans-serif", transition: 'background 0.15s ease',
     opacity: isLoading ? 0.65 : 1, letterSpacing: '0.01em',
   };
+  const LinkBtn: React.CSSProperties = {
+    background: 'none', border: 'none', color: '#2859C5', fontSize: 12,
+    cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+    padding: 0, textDecoration: 'none',
+    transition: 'color 0.15s ease',
+  };
 
   const modalLabel =
-    modalState === 'choice' ? 'ВХОД В СИСТЕМУ'
-    : modalState === 'login' ? 'АВТОРИЗАЦИЯ'
-    : 'СОЗДАТЬ ПРОСТРАНСТВО';
+    modalState === 'choice'      ? 'ВХОД В СИСТЕМУ'
+    : modalState === 'login'     ? 'АВТОРИЗАЦИЯ'
+    : modalState === 'register'  ? 'СОЗДАТЬ ПРОСТРАНСТВО'
+    : modalState === 'reset'     ? 'ВОССТАНОВЛЕНИЕ ПАРОЛЯ'
+    :                              'НОВЫЙ ПАРОЛЬ';
 
   return (
     <div
@@ -289,21 +310,19 @@ export default function Landing() {
               opacity: visible ? 1 : 0,
             }}
           >
-            {/* Header plate */}
+            {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
               <div style={{
                 background: '#DDE5EE', borderRadius: 8, padding: '5px 10px',
                 fontSize: 10, fontWeight: 600, letterSpacing: '0.18em', color: '#0B1220',
                 fontFamily: "'Inter', sans-serif", textTransform: 'uppercase',
-              }}>
-                NEGIS
-              </div>
+              }}>NEGIS</div>
               <span style={{ fontSize: 12, color: '#94A3B8', letterSpacing: '0.06em', fontFamily: "'Inter', sans-serif" }}>
                 {modalLabel}
               </span>
             </div>
 
-            {/* Choice */}
+            {/* ── Choice ── */}
             {modalState === 'choice' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <ChoiceButton
@@ -321,7 +340,7 @@ export default function Landing() {
               </div>
             )}
 
-            {/* Login */}
+            {/* ── Login ── */}
             {modalState === 'login' && (
               <form onSubmit={loginForm.handleSubmit(handleLogin)} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
                 <div>
@@ -341,21 +360,15 @@ export default function Landing() {
                       {loginForm.formState.errors.password.message}
                     </p>
                   )}
-                </div>
-                {error && (
-                  <div>
-                    <p style={{ color: '#DC2626', fontSize: 13, textAlign: 'center' }}>{error}</p>
-                    {!resetSent && (
-                      <button type="button" onClick={handleResetPassword}
-                        style={{ background: 'none', border: 'none', color: '#2859C5', fontSize: 12, cursor: 'pointer', width: '100%', textAlign: 'center', marginTop: 4, fontFamily: "'Inter', sans-serif" }}>
-                        Забыли пароль?
-                      </button>
-                    )}
+                  {/* Forgot password — always visible */}
+                  <div style={{ textAlign: 'right', marginTop: 6 }}>
+                    <button type="button" style={LinkBtn}
+                      onClick={() => { setError(''); setSuccessMsg(''); resetForm.reset(); setModalState('reset'); }}>
+                      Забыли пароль?
+                    </button>
                   </div>
-                )}
-                {resetMsg && (
-                  <p style={{ color: resetSent ? '#0F8A6B' : '#DC2626', fontSize: 12, textAlign: 'center' }}>{resetMsg}</p>
-                )}
+                </div>
+                {error && <p style={{ color: '#DC2626', fontSize: 13, textAlign: 'center' }}>{error}</p>}
                 <button type="submit" style={{ ...PrimaryBtn, marginTop: 4 }} disabled={isLoading} data-testid="button-login">
                   {isLoading ? 'Вход...' : 'Войти'}
                 </button>
@@ -363,16 +376,92 @@ export default function Landing() {
               </form>
             )}
 
-            {/* Register */}
+            {/* ── Reset password (send email) ── */}
+            {modalState === 'reset' && (
+              <form onSubmit={resetForm.handleSubmit(handleSendReset)} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+                <p style={{ fontSize: 13, color: '#64748B', fontFamily: "'Inter', sans-serif", lineHeight: 1.5, margin: 0 }}>
+                  Укажите email вашего аккаунта — мы отправим ссылку для сброса пароля.
+                </p>
+                <div>
+                  <input type="email" placeholder="Email" style={IS}
+                    {...resetForm.register('email')} onFocus={onFocus} onBlur={onBlur} />
+                  {resetForm.formState.errors.email && (
+                    <p style={{ color: '#DC2626', fontSize: 12, marginTop: 4, paddingLeft: 2 }}>
+                      {resetForm.formState.errors.email.message}
+                    </p>
+                  )}
+                </div>
+                {error && <p style={{ color: '#DC2626', fontSize: 13, textAlign: 'center' }}>{error}</p>}
+                {successMsg && (
+                  <div style={{
+                    background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10,
+                    padding: '10px 14px', fontSize: 13, color: '#15803D',
+                    fontFamily: "'Inter', sans-serif", lineHeight: 1.5,
+                  }}>
+                    {successMsg}
+                  </div>
+                )}
+                {!successMsg && (
+                  <button type="submit" style={{ ...PrimaryBtn, marginTop: 4 }} disabled={isLoading}>
+                    {isLoading ? 'Отправка...' : 'Отправить письмо'}
+                  </button>
+                )}
+                <BackLink label="Назад к входу" onClick={() => setModalState('login')} />
+              </form>
+            )}
+
+            {/* ── New password (after recovery link) ── */}
+            {modalState === 'newpassword' && (
+              <form onSubmit={newPasswordForm.handleSubmit(handleNewPassword)} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+                <p style={{ fontSize: 13, color: '#64748B', fontFamily: "'Inter', sans-serif", lineHeight: 1.5, margin: 0 }}>
+                  Введите новый пароль для вашего аккаунта.
+                </p>
+                <div>
+                  <input type="password" placeholder="Новый пароль (мин. 8 символов)" style={IS}
+                    {...newPasswordForm.register('password')} onFocus={onFocus} onBlur={onBlur} />
+                  {newPasswordForm.formState.errors.password && (
+                    <p style={{ color: '#DC2626', fontSize: 12, marginTop: 4, paddingLeft: 2 }}>
+                      {newPasswordForm.formState.errors.password.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <input type="password" placeholder="Подтвердите пароль" style={IS}
+                    {...newPasswordForm.register('confirmPassword')} onFocus={onFocus} onBlur={onBlur} />
+                  {newPasswordForm.formState.errors.confirmPassword && (
+                    <p style={{ color: '#DC2626', fontSize: 12, marginTop: 4, paddingLeft: 2 }}>
+                      {newPasswordForm.formState.errors.confirmPassword.message}
+                    </p>
+                  )}
+                </div>
+                {error && <p style={{ color: '#DC2626', fontSize: 13, textAlign: 'center' }}>{error}</p>}
+                {successMsg && (
+                  <div style={{
+                    background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10,
+                    padding: '10px 14px', fontSize: 13, color: '#15803D',
+                    fontFamily: "'Inter', sans-serif", lineHeight: 1.5,
+                  }}>
+                    {successMsg}
+                  </div>
+                )}
+                {!successMsg && (
+                  <button type="submit" style={{ ...PrimaryBtn, marginTop: 4 }} disabled={isLoading}>
+                    {isLoading ? 'Сохранение...' : 'Установить новый пароль'}
+                  </button>
+                )}
+              </form>
+            )}
+
+            {/* ── Register ── */}
             {modalState === 'register' && (
               <form onSubmit={registerForm.handleSubmit(handleRegister)} style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
                 {(
                   [
-                    { name: 'ownerName', placeholder: 'Ваше имя', type: 'text' },
-                    { name: 'clinicName', placeholder: 'Название клиники', type: 'text' },
-                    { name: 'email', placeholder: 'Email', type: 'email' },
-                    { name: 'password', placeholder: 'Пароль (мин. 8 символов)', type: 'password' },
-                    { name: 'confirmPassword', placeholder: 'Подтвердите пароль', type: 'password' },
+                    { name: 'ownerName',        placeholder: 'Ваше имя',                type: 'text'     },
+                    { name: 'clinicName',        placeholder: 'Название клиники',        type: 'text'     },
+                    { name: 'email',             placeholder: 'Email',                   type: 'email'    },
+                    { name: 'password',          placeholder: 'Пароль (мин. 8 символов)', type: 'password' },
+                    { name: 'confirmPassword',   placeholder: 'Подтвердите пароль',      type: 'password' },
                   ] as const
                 ).map(({ name, placeholder, type }) => (
                   <div key={name}>
@@ -401,7 +490,7 @@ export default function Landing() {
   );
 }
 
-/* ── Choice Button ─────────────────────────────────────────── */
+/* ── Choice Button ── */
 function ChoiceButton({ label, sub, onClick, testId }: {
   label: string; sub: string; onClick: () => void; testId?: string;
 }) {
@@ -436,12 +525,11 @@ function ChoiceButton({ label, sub, onClick, testId }: {
   );
 }
 
-/* ── Back Link ─────────────────────────────────────────────── */
+/* ── Back Link ── */
 function BackLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
-      type="button"
-      onClick={onClick}
+      type="button" onClick={onClick}
       style={{
         background: 'none', border: 'none', color: '#94A3B8', fontSize: 12,
         cursor: 'pointer', textAlign: 'center', fontFamily: "'Inter', sans-serif",
