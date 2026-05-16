@@ -136,12 +136,14 @@ export default function Landing() {
   };
 
   /* ── Circle styles ──
-     Outer: 320px total. Ring = (320 - 200) / 2 = 60px per side, matching the reference.
-     Inner disc: flat, recessed below ring level, with bright bevel rim + top-left shadow.
+     Reference: raised white cylinder with a thin machined groove + bright flat disc.
+     3 layers: circleOuter (ring) → groove → circleInner (disc).
   ── */
-  const ringDropShadow = pressed
-    ? '0 5px 18px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,0.10)'
-    : '0 24px 56px rgba(15,23,42,0.20), 0 8px 22px rgba(15,23,42,0.12), 0 2px 5px rgba(15,23,42,0.06)';
+
+  /* Drop shadow cast downward-right, simulating overhead light */
+  const dropShadow = pressed
+    ? '0 8px 22px rgba(0,0,0,0.16), 0 3px 8px rgba(0,0,0,0.10)'
+    : '0 32px 72px rgba(0,0,0,0.22), 0 14px 32px rgba(0,0,0,0.13), 0 4px 10px rgba(0,0,0,0.07)';
 
   const circleOuter: React.CSSProperties = {
     width: 320, height: 320, borderRadius: '50%',
@@ -150,28 +152,40 @@ export default function Landing() {
     position: 'relative',
     transition: 'transform 0.22s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 0.22s ease',
     transform: pressed ? 'scale(0.967)' : 'scale(1)',
-    /* Matte aluminum ring surface — light from top-left */
-    background: 'linear-gradient(145deg, #E6E7EA 0%, #DDDEE2 35%, #D3D5DA 65%, #CDCFD5 100%)',
+    /* White cylinder ring — specular highlight top-left, slightly darker bottom-right */
+    background: 'linear-gradient(145deg, #FFFFFF 0%, #F4F4F4 35%, #E6E6E6 65%, #DCDCDC 100%)',
     boxShadow: [
-      ringDropShadow,
-      /* bright top-left rim highlight */
-      'inset 0 2px 5px rgba(255,255,255,0.75)',
-      /* subtle bottom-right inner shadow for ring depth */
-      'inset 0 -2px 5px rgba(15,23,42,0.09)',
+      dropShadow,
+      /* inner top-left rim highlight (bevel edge of raised cylinder) */
+      'inset 0 3px 6px rgba(255,255,255,0.95)',
+      /* inner bottom-right shadow (cylinder depth) */
+      'inset 0 -3px 8px rgba(0,0,0,0.10)',
     ].join(', '),
   };
 
-  const circleInner: React.CSSProperties = {
-    width: 204, height: 204, borderRadius: '50%',
+  /* Groove: thin machined channel, ~6px wide per side — thin dark line separating ring from disc */
+  const groove: React.CSSProperties = {
+    width: 214, height: 214, borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    /* Flat matte disc — near-uniform surface colour, no bright centre, no bottom glow. */
-    background: '#DCDFE4',
-    border: 'none',
+    background: 'linear-gradient(145deg, #AEAEB2 0%, #BCBCC0 50%, #C8C8CC 100%)',
+    boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.28), inset 0 -1px 3px rgba(255,255,255,0.25)',
+    flexShrink: 0,
+  };
+
+  const circleInner: React.CSSProperties = {
+    width: 202, height: 202, borderRadius: '50%',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    /* Bright flat white disc — the elevated face of the button */
+    background: pressed
+      ? 'linear-gradient(160deg, #F0F0F0 0%, #F7F7F7 50%, #F9F9F9 100%)'
+      : 'linear-gradient(160deg, #F8F8F8 0%, #FAFAFA 40%, #FFFFFF 100%)',
+    /* Very subtle inset — disc sits fractionally below ring top, top edge slightly shaded */
     boxShadow: pressed
-      ? 'inset 0 8px 22px rgba(15,23,42,0.22), inset 3px 3px 12px rgba(15,23,42,0.12)'
-      : 'inset 0 6px 18px rgba(15,23,42,0.16), inset 3px 3px 10px rgba(15,23,42,0.08)',
-    transition: 'box-shadow 0.22s ease',
+      ? 'inset 0 4px 12px rgba(0,0,0,0.12), inset 2px 2px 6px rgba(0,0,0,0.06)'
+      : 'inset 0 2px 6px rgba(0,0,0,0.07), inset 1px 1px 3px rgba(0,0,0,0.04)',
+    transition: 'box-shadow 0.22s ease, background 0.22s ease',
     position: 'relative',
+    flexShrink: 0,
   };
 
   /* ── Shared input / button styles ── */
@@ -227,22 +241,25 @@ export default function Landing() {
           style={circleOuter}
           onMouseEnter={e => {
             if (!pressed) (e.currentTarget as HTMLButtonElement).style.boxShadow =
-              '0 30px 64px rgba(15,23,42,0.23), 0 10px 26px rgba(15,23,42,0.13), 0 2px 5px rgba(15,23,42,0.06), inset 0 2px 5px rgba(255,255,255,0.75), inset 0 -2px 5px rgba(15,23,42,0.09)';
+              '0 38px 80px rgba(0,0,0,0.26), 0 16px 36px rgba(0,0,0,0.15), 0 4px 10px rgba(0,0,0,0.07), inset 0 3px 6px rgba(255,255,255,0.95), inset 0 -3px 8px rgba(0,0,0,0.10)';
           }}
           onMouseLeave={e => {
             if (!pressed) (e.currentTarget as HTMLButtonElement).style.boxShadow =
-              '0 24px 56px rgba(15,23,42,0.20), 0 8px 22px rgba(15,23,42,0.12), 0 2px 5px rgba(15,23,42,0.06), inset 0 2px 5px rgba(255,255,255,0.75), inset 0 -2px 5px rgba(15,23,42,0.09)';
+              '0 32px 72px rgba(0,0,0,0.22), 0 14px 32px rgba(0,0,0,0.13), 0 4px 10px rgba(0,0,0,0.07), inset 0 3px 6px rgba(255,255,255,0.95), inset 0 -3px 8px rgba(0,0,0,0.10)';
           }}
         >
-          <div style={circleInner}>
-            <span style={{
-              fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 500,
-              fontSize: 18, letterSpacing: '0.30em', color: '#636B78',
-              textTransform: 'uppercase', userSelect: 'none', position: 'relative',
-              textShadow: '0 1px 2px rgba(255,255,255,0.55), 0 -1px 0 rgba(15,23,42,0.08)',
-            }}>
-              NEGIS
-            </span>
+          {/* Groove ring — thin machined channel between ring face and disc */}
+          <div style={groove}>
+            <div style={circleInner}>
+              <span style={{
+                fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 500,
+                fontSize: 18, letterSpacing: '0.30em', color: '#787E87',
+                textTransform: 'uppercase', userSelect: 'none', position: 'relative',
+                textShadow: '0 1px 2px rgba(255,255,255,0.80)',
+              }}>
+                NEGIS
+              </span>
+            </div>
           </div>
         </button>
 
