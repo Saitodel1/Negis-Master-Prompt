@@ -137,25 +137,58 @@ export default function Landing() {
 
   /* ── Circle styles ── */
   const circleOuter: React.CSSProperties = {
-    width: 296, height: 296, borderRadius: '50%',
+    width: 300, height: 300, borderRadius: '50%',
     cursor: 'pointer', border: 'none',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     position: 'relative',
     transition: 'transform 0.22s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 0.22s ease',
-    transform: pressed ? 'scale(0.965)' : 'scale(1)',
-    background: 'radial-gradient(ellipse at 35% 30%, #C8D0D8 0%, #B2BCC8 40%, #A4AEB9 70%, #9BA5B0 100%)',
+    transform: pressed ? 'scale(0.967)' : 'scale(1)',
+    background: [
+      'radial-gradient(circle at 32% 28%,',
+      '  #ECEEF1 0%,',
+      '  #DDE2E9 25%,',
+      '  #D0D7E1 55%,',
+      '  #C8D0DB 80%,',
+      '  #C2CCD8 100%)',
+    ].join(''),
     boxShadow: pressed
-      ? '0 6px 24px rgba(15,23,42,0.18), 0 2px 6px rgba(15,23,42,0.12), inset 0 2px 8px rgba(0,0,0,0.14)'
-      : '0 16px 48px rgba(15,23,42,0.18), 0 4px 12px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.15)',
+      ? [
+          '0 4px 16px rgba(15,23,42,0.14)',
+          '0 1px 4px rgba(15,23,42,0.08)',
+          'inset 0 3px 10px rgba(15,23,42,0.12)',
+          'inset 0 -1px 4px rgba(255,255,255,0.40)',
+        ].join(', ')
+      : [
+          '0 22px 64px rgba(15,23,42,0.16)',
+          '0 6px 18px rgba(15,23,42,0.09)',
+          '0 1px 2px rgba(15,23,42,0.05)',
+          'inset 0 2px 3px rgba(255,255,255,0.72)',
+          'inset 0 -2px 4px rgba(15,23,42,0.08)',
+        ].join(', '),
   };
 
   const circleInner: React.CSSProperties = {
-    width: 230, height: 230, borderRadius: '50%',
+    width: 228, height: 228, borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: 'radial-gradient(ellipse at 38% 32%, #C4CDD6 0%, #B8C1CC 35%, #AEB7C2 65%, #A8B0BB 100%)',
+    background: [
+      'radial-gradient(ellipse at 44% 40%,',
+      '  #EAECF0 0%,',
+      '  #E0E5EC 30%,',
+      '  #D5DCE6 60%,',
+      '  #CFDAE5 100%)',
+    ].join(''),
     boxShadow: pressed
-      ? 'inset 0 6px 20px rgba(15,23,42,0.20), inset 0 -2px 6px rgba(255,255,255,0.08)'
-      : 'inset 0 4px 14px rgba(15,23,42,0.14), inset 0 -3px 8px rgba(255,255,255,0.10), 0 1px 3px rgba(15,23,42,0.08)',
+      ? [
+          'inset 0 8px 28px rgba(15,23,42,0.18)',
+          'inset 0 3px 10px rgba(15,23,42,0.12)',
+          'inset 0 -3px 8px rgba(255,255,255,0.30)',
+        ].join(', ')
+      : [
+          'inset 0 5px 18px rgba(15,23,42,0.13)',
+          'inset 0 2px 7px rgba(15,23,42,0.09)',
+          'inset 0 -3px 9px rgba(255,255,255,0.36)',
+          'inset 1px 0 6px rgba(15,23,42,0.04)',
+        ].join(', '),
     transition: 'box-shadow 0.22s ease',
     position: 'relative', overflow: 'hidden',
   };
@@ -191,7 +224,7 @@ export default function Landing() {
   return (
     <div
       className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden"
-      style={{ background: '#F4F7FB' }}
+      style={{ background: '#EDEEF0' }}
     >
       {/* Crosshair */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg" style={{ zIndex: 0 }}>
@@ -213,11 +246,11 @@ export default function Landing() {
           style={circleOuter}
           onMouseEnter={e => {
             if (!pressed) (e.currentTarget as HTMLButtonElement).style.boxShadow =
-              '0 20px 56px rgba(15,23,42,0.22), 0 6px 16px rgba(15,23,42,0.12), inset 0 1px 0 rgba(255,255,255,0.15)';
+              '0 28px 72px rgba(15,23,42,0.20), 0 8px 22px rgba(15,23,42,0.11), 0 1px 2px rgba(15,23,42,0.05), inset 0 2px 3px rgba(255,255,255,0.72), inset 0 -2px 4px rgba(15,23,42,0.08)';
           }}
           onMouseLeave={e => {
             if (!pressed) (e.currentTarget as HTMLButtonElement).style.boxShadow =
-              '0 16px 48px rgba(15,23,42,0.18), 0 4px 12px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.15)';
+              '0 22px 64px rgba(15,23,42,0.16), 0 6px 18px rgba(15,23,42,0.09), 0 1px 2px rgba(15,23,42,0.05), inset 0 2px 3px rgba(255,255,255,0.72), inset 0 -2px 4px rgba(15,23,42,0.08)';
           }}
         >
           <div style={circleInner}>
@@ -228,10 +261,10 @@ export default function Landing() {
               pointerEvents: 'none',
             }} />
             <span style={{
-              fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 600,
-              fontSize: 22, letterSpacing: '0.22em', color: '#3A4452',
+              fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 500,
+              fontSize: 20, letterSpacing: '0.28em', color: '#6B7684',
               textTransform: 'uppercase', userSelect: 'none', position: 'relative',
-              textShadow: '0 1px 0 rgba(255,255,255,0.18), 0 -1px 0 rgba(15,23,42,0.12)',
+              textShadow: '0 1px 2px rgba(255,255,255,0.50), 0 -1px 0 rgba(15,23,42,0.10)',
             }}>
               NEGIS
             </span>
