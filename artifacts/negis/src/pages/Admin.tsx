@@ -1168,18 +1168,29 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
         const wb = XLSX.read(buf);
         rows = XLSX.utils.sheet_to_json<Record<string, string>>(wb.Sheets[wb.SheetNames[0]], { defval: '' });
       }
-      const { data: statuses } = await supabase
-        .from('lead_statuses').select('id').eq('clinic_id', clinicId).order('position').limit(1);
+      const [{ data: statuses }, { data: agentsList }] = await Promise.all([
+        supabase.from('lead_statuses').select('id').eq('clinic_id', clinicId).order('position').limit(1),
+        supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
+      ]);
       const defaultStatusId = statuses?.[0]?.id ?? null;
+      /* Map agent name → id for "Ответственный" / "Owner" column */
+      const agentByName = (name: string | undefined) => {
+        if (!name || !agentsList) return null;
+        const n = name.trim().toLowerCase();
+        return agentsList.find(a => a.name.toLowerCase() === n)?.id ?? null;
+      };
       const insert = rows.map(r => ({
         clinic_id: clinicId,
-        first_name: r['Имя'] || r['first_name'] || r['name'] || null,
-        last_name: r['Фамилия'] || r['last_name'] || null,
-        phone: r['Телефон'] || r['phone'] || r['Phone'] || null,
-        age: (r['Возраст'] || r['age']) ? (parseInt(r['Возраст'] || r['age']) || null) : null,
-        source: r['Источник'] || r['source'] || 'Вручную',
-        comment: r['Комментарий'] || r['comment'] || null,
-        status_id: defaultStatusId,
+        first_name: r['Имя']       || r['first_name'] || r['name']        || r['First Name']  || null,
+        last_name:  r['Фамилия']   || r['last_name']  || r['Last Name']   || null,
+        phone:      r['Телефон']   || r['phone']       || r['Phone']       || r['Phone Number'] || null,
+        email:      r['Email']     || r['email']       || r['E-MAIL']      || null,
+        company:    r['Компания']  || r['company']     || r['Company']     || r['Company Name'] || null,
+        age:        (r['Возраст']  || r['age']) ? (parseInt(r['Возраст'] || r['age']) || null) : null,
+        source:     r['Источник']  || r['source']      || r['Lead Source'] || 'Вручную',
+        comment:    r['Комментарий'] || r['Примечание'] || r['comment']   || r['Notes'] || null,
+        agent_id:   agentByName(r['Ответственный'] || r['Owner'] || r['ОТВЕТСТВЕННЫЙ']),
+        status_id:  defaultStatusId,
       })).filter(r => r.phone);
       if (!insert.length) { toast.error('Нет строк с номером телефона'); return; }
       const { error } = await supabase.from('leads').insert(insert);
@@ -1234,7 +1245,7 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
     const [{ data, error }, { data: agentsData }] = await Promise.all([
       supabase
         .from('leads')
-        .select('first_name, last_name, phone, age, source, comment, created_at, agent_id, lead_statuses(name)')
+        .select('first_name, last_name, phone, email, company, age, source, comment, created_at, agent_id, lead_statuses(name)')
         .eq('clinic_id', clinicId)
         .order('created_at', { ascending: false }),
       supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
@@ -1244,7 +1255,8 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
     const agentMap = Object.fromEntries((agentsData ?? []).map(a => [a.id, a.name]));
     const rows = (data ?? []).map((r: any) => ({
       'Имя': r.first_name ?? '', 'Фамилия': r.last_name ?? '',
-      'Телефон': r.phone ?? '', 'Возраст': r.age ?? '',
+      'Телефон': r.phone ?? '', 'Email': r.email ?? '',
+      'Компания': r.company ?? '', 'Возраст': r.age ?? '',
       'Источник': r.source ?? '', 'Статус': r.lead_statuses?.name ?? '',
       'Ответственный': r.agent_id ? (agentMap[r.agent_id] ?? '—') : '—',
       'Комментарий': r.comment ?? '',

@@ -9,7 +9,8 @@ import { toast } from 'sonner';
 interface Lead {
   id: string; clinic_id: string; agent_id: string | null;
   first_name: string | null; last_name: string | null;
-  phone: string | null; age: number | null;
+  phone: string | null; email: string | null; company: string | null;
+  age: number | null;
   source: string | null; status_id: string | null; comment: string | null;
   created_at: string;
   lead_statuses?: { name: string; color: string } | null;
@@ -43,7 +44,7 @@ export default function Sales() {
   const [showNew, setShowNew] = useState(false);
 
   /* form for new lead */
-  const [form, setForm] = useState({ first_name: '', last_name: '', phone: '', age: '', source: 'Вручную', status_id: '', agent_id: '', comment: '' });
+  const [form, setForm] = useState({ first_name: '', last_name: '', phone: '', email: '', company: '', age: '', source: 'Вручную', status_id: '', agent_id: '', comment: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { if (clinicId) init(); }, [clinicId]);
@@ -107,6 +108,8 @@ export default function Sales() {
       first_name: form.first_name || null,
       last_name: form.last_name || null,
       phone: form.phone,
+      email: form.email || null,
+      company: form.company || null,
       age: form.age ? parseInt(form.age) : null,
       source: form.source,
       status_id: form.status_id || statuses[0]?.id || null,
@@ -116,7 +119,7 @@ export default function Sales() {
     if (error) { toast.error(error.message); return; }
     toast.success('Лид создан');
     setShowNew(false);
-    setForm({ first_name: '', last_name: '', phone: '', age: '', source: 'Вручную', status_id: '', agent_id: '', comment: '' });
+    setForm({ first_name: '', last_name: '', phone: '', email: '', company: '', age: '', source: 'Вручную', status_id: '', agent_id: '', comment: '' });
     init();
   };
 
@@ -128,6 +131,8 @@ export default function Sales() {
       first_name: selectedLead.first_name,
       last_name: selectedLead.last_name,
       phone: selectedLead.phone,
+      email: selectedLead.email,
+      company: selectedLead.company,
       age: selectedLead.age,
       source: selectedLead.source,
       status_id: selectedLead.status_id,
@@ -281,9 +286,19 @@ export default function Sales() {
                     <input style={IS} placeholder="Фамилия" value={form.last_name} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} />
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-[#64748B] font-medium block mb-1.5">Телефон *</label>
+                    <input style={IS} placeholder="+7 700 000 0000" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-[#64748B] font-medium block mb-1.5">Email</label>
+                    <input style={IS} type="email" placeholder="email@example.com" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+                  </div>
+                </div>
                 <div>
-                  <label className="text-xs text-[#64748B] font-medium block mb-1.5">Телефон *</label>
-                  <input style={IS} placeholder="+7 700 000 0000" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+                  <label className="text-xs text-[#64748B] font-medium block mb-1.5">Компания</label>
+                  <input style={IS} placeholder="Название компании" value={form.company} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -311,7 +326,7 @@ export default function Sales() {
                 )}
                 <div>
                   <label className="text-xs text-[#64748B] font-medium block mb-1.5">Комментарий</label>
-                  <textarea style={{ ...IS, minHeight: 80, resize: 'vertical' } as React.CSSProperties}
+                  <textarea style={{ ...IS, minHeight: 70, resize: 'vertical' } as React.CSSProperties}
                     placeholder="Заметки..." value={form.comment} onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} />
                 </div>
               </div>
@@ -344,6 +359,8 @@ export default function Sales() {
                     { label: 'Имя', key: 'first_name', type: 'text' },
                     { label: 'Фамилия', key: 'last_name', type: 'text' },
                     { label: 'Телефон', key: 'phone', type: 'text' },
+                    { label: 'Email', key: 'email', type: 'email' },
+                    { label: 'Компания', key: 'company', type: 'text' },
                     { label: 'Возраст', key: 'age', type: 'number' },
                   ].map(({ label, key, type }) => (
                     <div key={key}>
