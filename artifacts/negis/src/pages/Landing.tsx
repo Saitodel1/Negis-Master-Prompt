@@ -135,62 +135,43 @@ export default function Landing() {
     setResetMsg(`Письмо отправлено на ${email}`);
   };
 
-  /* ── Circle styles ── */
+  /* ── Circle styles ──
+     Outer: 320px total. Ring = (320 - 200) / 2 = 60px per side, matching the reference.
+     Inner disc: flat, recessed below ring level, with bright bevel rim + top-left shadow.
+  ── */
+  const ringDropShadow = pressed
+    ? '0 5px 18px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,0.10)'
+    : '0 24px 56px rgba(15,23,42,0.20), 0 8px 22px rgba(15,23,42,0.12), 0 2px 5px rgba(15,23,42,0.06)';
+
   const circleOuter: React.CSSProperties = {
-    width: 300, height: 300, borderRadius: '50%',
+    width: 320, height: 320, borderRadius: '50%',
     cursor: 'pointer', border: 'none',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     position: 'relative',
     transition: 'transform 0.22s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 0.22s ease',
     transform: pressed ? 'scale(0.967)' : 'scale(1)',
-    background: [
-      'radial-gradient(circle at 32% 28%,',
-      '  #ECEEF1 0%,',
-      '  #DDE2E9 25%,',
-      '  #D0D7E1 55%,',
-      '  #C8D0DB 80%,',
-      '  #C2CCD8 100%)',
-    ].join(''),
-    boxShadow: pressed
-      ? [
-          '0 4px 16px rgba(15,23,42,0.14)',
-          '0 1px 4px rgba(15,23,42,0.08)',
-          'inset 0 3px 10px rgba(15,23,42,0.12)',
-          'inset 0 -1px 4px rgba(255,255,255,0.40)',
-        ].join(', ')
-      : [
-          '0 22px 64px rgba(15,23,42,0.16)',
-          '0 6px 18px rgba(15,23,42,0.09)',
-          '0 1px 2px rgba(15,23,42,0.05)',
-          'inset 0 2px 3px rgba(255,255,255,0.72)',
-          'inset 0 -2px 4px rgba(15,23,42,0.08)',
-        ].join(', '),
+    /* Matte aluminum ring surface — light from top-left */
+    background: 'linear-gradient(145deg, #E6E7EA 0%, #DDDEE2 35%, #D3D5DA 65%, #CDCFD5 100%)',
+    boxShadow: [
+      ringDropShadow,
+      /* bright top-left rim highlight */
+      'inset 0 2px 5px rgba(255,255,255,0.75)',
+      /* subtle bottom-right inner shadow for ring depth */
+      'inset 0 -2px 5px rgba(15,23,42,0.09)',
+    ].join(', '),
   };
 
   const circleInner: React.CSSProperties = {
-    width: 228, height: 228, borderRadius: '50%',
+    width: 204, height: 204, borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: [
-      'radial-gradient(ellipse at 44% 40%,',
-      '  #EAECF0 0%,',
-      '  #E0E5EC 30%,',
-      '  #D5DCE6 60%,',
-      '  #CFDAE5 100%)',
-    ].join(''),
+    /* Flat matte disc — near-uniform surface colour, no bright centre, no bottom glow. */
+    background: '#DCDFE4',
+    border: 'none',
     boxShadow: pressed
-      ? [
-          'inset 0 8px 28px rgba(15,23,42,0.18)',
-          'inset 0 3px 10px rgba(15,23,42,0.12)',
-          'inset 0 -3px 8px rgba(255,255,255,0.30)',
-        ].join(', ')
-      : [
-          'inset 0 5px 18px rgba(15,23,42,0.13)',
-          'inset 0 2px 7px rgba(15,23,42,0.09)',
-          'inset 0 -3px 9px rgba(255,255,255,0.36)',
-          'inset 1px 0 6px rgba(15,23,42,0.04)',
-        ].join(', '),
+      ? 'inset 0 8px 22px rgba(15,23,42,0.22), inset 3px 3px 12px rgba(15,23,42,0.12)'
+      : 'inset 0 6px 18px rgba(15,23,42,0.16), inset 3px 3px 10px rgba(15,23,42,0.08)',
     transition: 'box-shadow 0.22s ease',
-    position: 'relative', overflow: 'hidden',
+    position: 'relative',
   };
 
   /* ── Shared input / button styles ── */
@@ -246,25 +227,19 @@ export default function Landing() {
           style={circleOuter}
           onMouseEnter={e => {
             if (!pressed) (e.currentTarget as HTMLButtonElement).style.boxShadow =
-              '0 28px 72px rgba(15,23,42,0.20), 0 8px 22px rgba(15,23,42,0.11), 0 1px 2px rgba(15,23,42,0.05), inset 0 2px 3px rgba(255,255,255,0.72), inset 0 -2px 4px rgba(15,23,42,0.08)';
+              '0 30px 64px rgba(15,23,42,0.23), 0 10px 26px rgba(15,23,42,0.13), 0 2px 5px rgba(15,23,42,0.06), inset 0 2px 5px rgba(255,255,255,0.75), inset 0 -2px 5px rgba(15,23,42,0.09)';
           }}
           onMouseLeave={e => {
             if (!pressed) (e.currentTarget as HTMLButtonElement).style.boxShadow =
-              '0 22px 64px rgba(15,23,42,0.16), 0 6px 18px rgba(15,23,42,0.09), 0 1px 2px rgba(15,23,42,0.05), inset 0 2px 3px rgba(255,255,255,0.72), inset 0 -2px 4px rgba(15,23,42,0.08)';
+              '0 24px 56px rgba(15,23,42,0.20), 0 8px 22px rgba(15,23,42,0.12), 0 2px 5px rgba(15,23,42,0.06), inset 0 2px 5px rgba(255,255,255,0.75), inset 0 -2px 5px rgba(15,23,42,0.09)';
           }}
         >
           <div style={circleInner}>
-            <div style={{
-              position: 'absolute', top: 16, left: '20%', width: '60%', height: '30%',
-              borderRadius: '50%',
-              background: 'radial-gradient(ellipse, rgba(255,255,255,0.12) 0%, transparent 70%)',
-              pointerEvents: 'none',
-            }} />
             <span style={{
               fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 500,
-              fontSize: 20, letterSpacing: '0.28em', color: '#6B7684',
+              fontSize: 18, letterSpacing: '0.30em', color: '#636B78',
               textTransform: 'uppercase', userSelect: 'none', position: 'relative',
-              textShadow: '0 1px 2px rgba(255,255,255,0.50), 0 -1px 0 rgba(15,23,42,0.10)',
+              textShadow: '0 1px 2px rgba(255,255,255,0.55), 0 -1px 0 rgba(15,23,42,0.08)',
             }}>
               NEGIS
             </span>
