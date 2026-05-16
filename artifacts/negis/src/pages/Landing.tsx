@@ -135,55 +135,55 @@ export default function Landing() {
     setResetMsg(`Письмо отправлено на ${email}`);
   };
 
-  /* ── Circle styles ──
-     Reference: raised white cylinder with a thin machined groove + bright flat disc.
-     3 layers: circleOuter (ring) → groove → circleInner (disc).
+  /* ── Physical industrial activation core ──
+     2 layers: circleOuter (precision-machined ring) → circleInner (control surface).
+     No scale animation — inner surface sinks on press. Tight shadow creates mass.
   ── */
 
-  /* Drop shadow cast downward-right, simulating overhead light */
+  /* Tight drop shadow — creates ground weight, not float */
   const dropShadow = pressed
-    ? '0 8px 22px rgba(0,0,0,0.16), 0 3px 8px rgba(0,0,0,0.10)'
-    : '0 32px 72px rgba(0,0,0,0.22), 0 14px 32px rgba(0,0,0,0.13), 0 4px 10px rgba(0,0,0,0.07)';
+    ? '0 4px 10px rgba(15,23,42,0.18), 0 1px 3px rgba(15,23,42,0.12)'
+    : '0 10px 28px rgba(15,23,42,0.18), 0 4px 10px rgba(15,23,42,0.10), 0 1px 3px rgba(15,23,42,0.06)';
 
   const circleOuter: React.CSSProperties = {
     width: 320, height: 320, borderRadius: '50%',
     cursor: 'pointer', border: 'none',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     position: 'relative',
-    transition: 'transform 0.22s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 0.22s ease',
-    transform: pressed ? 'scale(0.967)' : 'scale(1)',
-    /* White cylinder ring — specular highlight top-left, slightly darker bottom-right */
-    background: 'linear-gradient(145deg, #FFFFFF 0%, #F4F4F4 35%, #E6E6E6 65%, #DCDCDC 100%)',
+    /* No scale — physical objects don't shrink. Shadow tightens on press only. */
+    transition: 'box-shadow 0.18s ease',
+    transform: 'none',
+    /* Precision-machined aluminum/ceramic ring — #D8DEE6 base, soft top highlight */
+    background: 'linear-gradient(170deg, #DDE3EB 0%, #D8DEE6 40%, #CDD4DD 100%)',
     boxShadow: [
       dropShadow,
-      /* inner top-left rim highlight (bevel edge of raised cylinder) */
-      'inset 0 3px 6px rgba(255,255,255,0.95)',
-      /* inner bottom-right shadow (cylinder depth) */
-      'inset 0 -3px 8px rgba(0,0,0,0.10)',
+      /* subtle top bevel highlight — precision edge */
+      'inset 0 1px 0 rgba(255,255,255,0.72)',
+      /* bottom inner edge shadow — material depth */
+      'inset 0 -1px 3px rgba(15,23,42,0.10)',
+      /* inner rim where ring meets recess */
+      'inset 0 0 0 1px rgba(15,23,42,0.06)',
     ].join(', '),
   };
 
-  /* Groove: thin machined channel, ~6px wide per side — thin dark line separating ring from disc */
-  const groove: React.CSSProperties = {
-    width: 214, height: 214, borderRadius: '50%',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: 'linear-gradient(145deg, #AEAEB2 0%, #BCBCC0 50%, #C8C8CC 100%)',
-    boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.28), inset 0 -1px 3px rgba(255,255,255,0.25)',
-    flexShrink: 0,
-  };
-
   const circleInner: React.CSSProperties = {
-    width: 202, height: 202, borderRadius: '50%',
+    width: 210, height: 210, borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    /* Bright flat white disc — the elevated face of the button */
-    background: pressed
-      ? 'linear-gradient(160deg, #F0F0F0 0%, #F7F7F7 50%, #F9F9F9 100%)'
-      : 'linear-gradient(160deg, #F8F8F8 0%, #FAFAFA 40%, #FFFFFF 100%)',
-    /* Very subtle inset — disc sits fractionally below ring top, top edge slightly shaded */
+    /* Control surface — #EEF2F6, slightly recessed, not flat, not convex */
+    background: pressed ? '#E8ECF2' : '#EEF2F6',
+    /* Recessed control surface: inset shadow simulates shallow well depth */
     boxShadow: pressed
-      ? 'inset 0 4px 12px rgba(0,0,0,0.12), inset 2px 2px 6px rgba(0,0,0,0.06)'
-      : 'inset 0 2px 6px rgba(0,0,0,0.07), inset 1px 1px 3px rgba(0,0,0,0.04)',
-    transition: 'box-shadow 0.22s ease, background 0.22s ease',
+      ? [
+          'inset 0 3px 10px rgba(15,23,42,0.13)',
+          'inset 0 1px 4px rgba(15,23,42,0.08)',
+          'inset 0 -1px 2px rgba(255,255,255,0.50)',
+        ].join(', ')
+      : [
+          'inset 0 2px 7px rgba(15,23,42,0.08)',
+          'inset 0 1px 3px rgba(15,23,42,0.05)',
+          'inset 0 -1px 3px rgba(255,255,255,0.60)',
+        ].join(', '),
+    transition: 'box-shadow 0.18s ease, background 0.18s ease',
     position: 'relative',
     flexShrink: 0,
   };
@@ -219,7 +219,7 @@ export default function Landing() {
   return (
     <div
       className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden"
-      style={{ background: '#EDEEF0' }}
+      style={{ background: '#F4F7FB' }}
     >
       {/* Crosshair */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg" style={{ zIndex: 0 }}>
@@ -241,25 +241,22 @@ export default function Landing() {
           style={circleOuter}
           onMouseEnter={e => {
             if (!pressed) (e.currentTarget as HTMLButtonElement).style.boxShadow =
-              '0 38px 80px rgba(0,0,0,0.26), 0 16px 36px rgba(0,0,0,0.15), 0 4px 10px rgba(0,0,0,0.07), inset 0 3px 6px rgba(255,255,255,0.95), inset 0 -3px 8px rgba(0,0,0,0.10)';
+              '0 14px 34px rgba(15,23,42,0.21), 0 5px 12px rgba(15,23,42,0.12), 0 1px 3px rgba(15,23,42,0.06), inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 3px rgba(15,23,42,0.10), inset 0 0 0 1px rgba(15,23,42,0.06)';
           }}
           onMouseLeave={e => {
             if (!pressed) (e.currentTarget as HTMLButtonElement).style.boxShadow =
-              '0 32px 72px rgba(0,0,0,0.22), 0 14px 32px rgba(0,0,0,0.13), 0 4px 10px rgba(0,0,0,0.07), inset 0 3px 6px rgba(255,255,255,0.95), inset 0 -3px 8px rgba(0,0,0,0.10)';
+              '0 10px 28px rgba(15,23,42,0.18), 0 4px 10px rgba(15,23,42,0.10), 0 1px 3px rgba(15,23,42,0.06), inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 3px rgba(15,23,42,0.10), inset 0 0 0 1px rgba(15,23,42,0.06)';
           }}
         >
-          {/* Groove ring — thin machined channel between ring face and disc */}
-          <div style={groove}>
-            <div style={circleInner}>
-              <span style={{
-                fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 500,
-                fontSize: 18, letterSpacing: '0.30em', color: '#787E87',
-                textTransform: 'uppercase', userSelect: 'none', position: 'relative',
-                textShadow: '0 1px 2px rgba(255,255,255,0.80)',
-              }}>
-                NEGIS
-              </span>
-            </div>
+          <div style={circleInner}>
+            <span style={{
+              fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 500,
+              fontSize: 17, letterSpacing: '0.28em', color: '#475569',
+              textTransform: 'uppercase', userSelect: 'none', position: 'relative',
+              textShadow: '0 1px 0 rgba(255,255,255,0.70)',
+            }}>
+              NEGIS
+            </span>
           </div>
         </button>
 
