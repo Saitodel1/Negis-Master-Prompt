@@ -158,7 +158,12 @@ export default function Sales() {
   const statusColor = (lead: Lead) => lead.lead_statuses?.color ?? '#94A3B8';
   const statusName  = (lead: Lead) => lead.lead_statuses?.name ?? '—';
   const displayName = (lead: Lead) => lead.full_name || '—';
-  const agentName   = (lead: Lead) => agents.find(a => a.id === lead.assigned_to)?.name ?? '—';
+  /* Try agents.id match first; fall back to agents.user_id match
+     (Negis Control may store auth user_id in assigned_to) */
+  const agentName = (lead: Lead) =>
+    agents.find(a => a.id === lead.assigned_to)?.name ??
+    agents.find(a => a.user_id === lead.assigned_to)?.name ??
+    '—';
 
   /* ── UI ─────────────────────────────────────────────── */
   const IS: React.CSSProperties = {

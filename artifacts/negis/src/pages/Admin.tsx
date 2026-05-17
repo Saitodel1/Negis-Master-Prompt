@@ -24,8 +24,10 @@ const PERMISSIONS = [
   { key: 'booking',    label: 'Запись' },
   { key: 'reception',  label: 'Ресепшн' },
   { key: 'crm',        label: 'CRM' },
-  { key: 'admin',      label: 'Админ-панель' },
+  { key: 'admin',      label: 'Админ' },
   { key: 'reports',    label: 'Отчёты' },
+  { key: 'ads',        label: 'Реклама' },
+  { key: 'settings',   label: 'Настройки' },
 ];
 
 const DEFAULT_LEAD_STATUSES = [
