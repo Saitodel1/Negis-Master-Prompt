@@ -17,6 +17,8 @@ import Admin from "@/pages/Admin";
 import Ads from "@/pages/Ads";
 import AdsCallback from "@/pages/AdsCallback";
 import Privacy from "@/pages/Privacy";
+import Terms from "@/pages/Terms";
+import DataDeletion from "@/pages/DataDeletion";
 import NotFound from "@/pages/not-found";
 import FbPixelInit from "@/components/FbPixelInit";
 
@@ -76,6 +78,8 @@ function Router() {
       <Route path="/ads" component={Ads} />
       <Route path="/ads/callback" component={AdsCallback} />
       <Route path="/privacy" component={Privacy} />
+      <Route path="/terms" component={Terms} />
+      <Route path="/data-deletion" component={DataDeletion} />
       <Route component={NotFound} />
     </Switch>
   );
