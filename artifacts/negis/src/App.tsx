@@ -17,6 +17,7 @@ import Admin from "@/pages/Admin";
 import Ads from "@/pages/Ads";
 import AdsCallback from "@/pages/AdsCallback";
 import NotFound from "@/pages/not-found";
+import FbPixelInit from "@/components/FbPixelInit";
 
 const queryClient = new QueryClient();
 
@@ -85,6 +86,7 @@ function App() {
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <AuthProvider>
           <TooltipProvider>
+            <FbPixelInit />
             <ImpersonationBanner />
             <Router />
             <Toaster position="bottom-right" />

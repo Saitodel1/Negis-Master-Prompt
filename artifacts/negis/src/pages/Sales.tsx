@@ -4,6 +4,7 @@ import { Search, Plus, X, Check, ArrowUpDown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { trackEvent } from '@/lib/fbpixel';
 
 /* ── Types ─────────────────────────────────────────────── */
 interface Lead {
@@ -119,6 +120,7 @@ export default function Sales() {
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('Лид создан');
+    trackEvent('Lead');
     setShowNew(false);
     setForm(emptyForm);
     init();

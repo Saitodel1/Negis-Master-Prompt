@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { trackEvent } from '@/lib/fbpixel';
 import { ArrowLeft } from 'lucide-react';
 
 const registerSchema = z.object({
@@ -69,6 +70,7 @@ export default function Register() {
       if (roleError) throw roleError;
 
       toast.success('Клиника успешно зарегистрирована!');
+      trackEvent('CompleteRegistration');
       setLocation('/onboarding');
       
     } catch (error: any) {

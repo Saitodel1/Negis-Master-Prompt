@@ -8,6 +8,7 @@ import { CalendarDays, X, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { trackEvent } from '@/lib/fbpixel';
 
 /* ── Constants ────────────────────────────────────────────── */
 const SLOT_HOURS = [10, 11, 12, 13, 14, 15, 16, 17]; // 10:00–17:00, each 1h, max 3
@@ -122,6 +123,7 @@ export default function Booking() {
       toast.error(error.message);
     } else {
       toast.success('Запись добавлена');
+      trackEvent('Schedule');
       setModal(null);
       loadBookings();
     }
