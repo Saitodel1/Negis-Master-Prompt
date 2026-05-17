@@ -262,7 +262,7 @@ export default function Landing() {
       </svg>
 
       {/* Core circle */}
-      <div className="relative flex flex-col items-center gap-5" style={{ zIndex: 1 }}>
+      <div className="relative flex flex-col items-center gap-6" style={{ zIndex: 1 }}>
         <button
           onClick={handleCircleClick}
           data-testid="button-negis-main"
@@ -294,6 +294,59 @@ export default function Landing() {
         }}>
           v1.0.0 — BUILD 2026
         </span>
+
+        {/* ── Action buttons — always visible ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: 280 }}>
+          <button
+            data-testid="button-landing-login"
+            onClick={() => { setError(''); setSuccessMsg(''); loginForm.reset(); setModalState('login'); }}
+            style={{
+              background: '#1E325C', color: '#FFFFFF',
+              border: '1px solid #1E325C', borderRadius: 14,
+              fontFamily: "'Inter', sans-serif", fontWeight: 600,
+              fontSize: 15, padding: '13px 20px',
+              cursor: 'pointer', letterSpacing: '0.01em',
+              boxShadow: '0 4px 12px rgba(30,50,92,0.22)',
+              transition: 'background 0.15s, box-shadow 0.15s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#25407A'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#1E325C'; }}
+          >
+            Войти
+          </button>
+          <button
+            data-testid="button-landing-register"
+            onClick={() => { setError(''); setSuccessMsg(''); registerForm.reset(); setModalState('register'); }}
+            style={{
+              background: 'transparent', color: '#1E325C',
+              border: '1.5px solid #CBD5E1', borderRadius: 14,
+              fontFamily: "'Inter', sans-serif", fontWeight: 600,
+              fontSize: 15, padding: '12px 20px',
+              cursor: 'pointer', letterSpacing: '0.01em',
+              transition: 'border-color 0.15s, background 0.15s',
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = '#94A3B8';
+              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(30,50,92,0.04)';
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = '#CBD5E1';
+              (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+            }}
+          >
+            Создать клинику
+          </button>
+          <a
+            href="/privacy"
+            style={{
+              textAlign: 'center', fontSize: 11, color: '#B0BAC6',
+              fontFamily: "'Inter', sans-serif", textDecoration: 'none',
+              marginTop: 4, letterSpacing: '0.02em',
+            }}
+          >
+            Политика конфиденциальности
+          </a>
+        </div>
       </div>
 
       {/* Modal */}

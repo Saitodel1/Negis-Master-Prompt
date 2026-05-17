@@ -64,6 +64,7 @@ export default function Admin() {
     { id: 'roles', label: 'Роли' },
     { id: 'services', label: 'Услуги' },
     { id: 'statuses', label: 'Статусы' },
+    { id: 'branches', label: 'Филиалы' },
     { id: 'shifts', label: 'Смены' },
     { id: 'whatsapp', label: 'WhatsApp' },
     { id: 'export', label: 'Импорт / Экспорт' },
@@ -97,6 +98,7 @@ export default function Admin() {
           {activeTab === 'roles' && <RolesTab clinicId={clinicId} />}
           {activeTab === 'services' && <ServicesTab clinicId={clinicId} />}
           {activeTab === 'statuses' && <StatusesTab clinicId={clinicId} />}
+          {activeTab === 'branches' && <BranchesTab clinicId={clinicId} />}
           {activeTab === 'shifts' && <ShiftsTab clinicId={clinicId} />}
           {activeTab === 'whatsapp' && <WhatsAppTab clinicId={clinicId} />}
           {activeTab === 'export' && <ExportTab clinicId={clinicId} />}
@@ -1127,7 +1129,7 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
         rows = XLSX.utils.sheet_to_json<Record<string, string>>(wb.Sheets[wb.SheetNames[0]], { defval: '' });
       }
       const [{ data: statuses }, { data: agentsList }] = await Promise.all([
-        supabase.from('lead_statuses').select('id').eq('clinic_id', clinicId).order('position').limit(1),
+        supabase.from('lead_statuses').select('id').eq('clinic_id', clinicId).order('sort_order').limit(1),
         supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
       ]);
       const defaultStatusId = statuses?.[0]?.id ?? null;
@@ -1137,19 +1139,23 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
         const n = name.trim().toLowerCase();
         return agentsList.find(a => a.name.toLowerCase() === n)?.id ?? null;
       };
-      const insert = rows.map(r => ({
-        clinic_id: clinicId,
-        first_name: r['Имя']       || r['first_name'] || r['name']        || r['First Name']  || null,
-        last_name:  r['Фамилия']   || r['last_name']  || r['Last Name']   || null,
-        phone:      r['Телефон']   || r['phone']       || r['Phone']       || r['Phone Number'] || null,
-        email:      r['Email']     || r['email']       || r['E-MAIL']      || null,
-        company:    r['Компания']  || r['company']     || r['Company']     || r['Company Name'] || null,
-        age:        (r['Возраст']  || r['age']) ? (parseInt(r['Возраст'] || r['age']) || null) : null,
-        source:     r['Источник']  || r['source']      || r['Lead Source'] || 'Вручную',
-        comment:    r['Комментарий'] || r['Примечание'] || r['comment']   || r['Notes'] || null,
-        agent_id:   agentByName(r['Ответственный'] || r['Owner'] || r['ОТВЕТСТВЕННЫЙ']),
-        status_id:  defaultStatusId,
-      })).filter(r => r.phone);
+      const insert = rows.map(r => {
+        const firstName = r['Имя'] || r['first_name'] || r['name'] || r['First Name'] || '';
+        const lastName  = r['Фамилия'] || r['last_name'] || r['Last Name'] || '';
+        const fullName  = [firstName, lastName].filter(Boolean).join(' ') || null;
+        return {
+          clinic_id:   clinicId,
+          full_name:   fullName,
+          phone:       r['Телефон']   || r['phone']   || r['Phone']       || r['Phone Number'] || null,
+          email:       r['Email']     || r['email']   || r['E-MAIL']      || null,
+          company:     r['Компания']  || r['company'] || r['Company']     || r['Company Name'] || null,
+          age:         (r['Возраст']  || r['age']) ? (parseInt(r['Возраст'] || r['age']) || null) : null,
+          source:      r['Источник']  || r['source']  || r['Lead Source'] || 'Вручную',
+          comment:     r['Комментарий'] || r['Примечание'] || r['comment'] || r['Notes'] || null,
+          assigned_to: agentByName(r['Ответственный'] || r['Owner'] || r['ОТВЕТСТВЕННЫЙ']),
+          status_id:   defaultStatusId,
+        };
+      }).filter(r => r.phone);
       if (!insert.length) { toast.error('Нет строк с номером телефона'); return; }
       const { error } = await supabase.from('leads').insert(insert);
       if (error) { toast.error(error.message); return; }
@@ -1203,7 +1209,7 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
     const [{ data, error }, { data: agentsData }] = await Promise.all([
       supabase
         .from('leads')
-        .select('first_name, last_name, phone, email, company, age, source, comment, created_at, agent_id, lead_statuses(name)')
+        .select('full_name, phone, email, company, age, source, comment, created_at, assigned_to, status_id, lead_statuses(name)')
         .eq('clinic_id', clinicId)
         .order('created_at', { ascending: false }),
       supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
@@ -1212,11 +1218,11 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
     if (error) { toast.error(error.message); return; }
     const agentMap = Object.fromEntries((agentsData ?? []).map(a => [a.id, a.name]));
     const rows = (data ?? []).map((r: any) => ({
-      'Имя': r.first_name ?? '', 'Фамилия': r.last_name ?? '',
+      'Имя': r.full_name ?? '',
       'Телефон': r.phone ?? '', 'Email': r.email ?? '',
       'Компания': r.company ?? '', 'Возраст': r.age ?? '',
       'Источник': r.source ?? '', 'Статус': r.lead_statuses?.name ?? '',
-      'Ответственный': r.agent_id ? (agentMap[r.agent_id] ?? '—') : '—',
+      'Ответственный': r.assigned_to ? (agentMap[r.assigned_to] ?? '—') : '—',
       'Комментарий': r.comment ?? '',
       'Дата создания': new Date(r.created_at).toLocaleDateString('ru-RU'),
     }));
@@ -1358,6 +1364,167 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ─── Branches Tab ───────────────────────────────────────── */
+interface Branch {
+  id: string; name: string; address: string | null; city: string | null;
+  phone: string | null; is_main: boolean; is_active: boolean;
+}
+
+function BranchesTab({ clinicId }: { clinicId: string | null }) {
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<Branch | null>(null);
+  const [showNew, setShowNew] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const emptyForm = { name: '', address: '', city: '', phone: '' };
+  const [form, setForm] = useState(emptyForm);
+
+  useEffect(() => { if (clinicId) load(); }, [clinicId]);
+
+  const load = async () => {
+    if (!clinicId) return;
+    setLoading(true);
+    const { data } = await supabase.from('branches').select('*').eq('clinic_id', clinicId).order('is_main', { ascending: false });
+    setBranches(data ?? []);
+    setLoading(false);
+  };
+
+  const save = async () => {
+    if (!form.name.trim()) { toast.error('Введите название'); return; }
+    setSaving(true);
+    if (editing) {
+      const { error } = await supabase.from('branches').update({
+        name: form.name, address: form.address || null, city: form.city || null, phone: form.phone || null,
+      }).eq('id', editing.id);
+      if (error) { toast.error(error.message); setSaving(false); return; }
+      toast.success('Филиал обновлён');
+    } else {
+      const { error } = await supabase.from('branches').insert({
+        clinic_id: clinicId, name: form.name,
+        address: form.address || null, city: form.city || null, phone: form.phone || null,
+      });
+      if (error) { toast.error(error.message); setSaving(false); return; }
+      toast.success('Филиал добавлен');
+    }
+    setSaving(false);
+    setEditing(null); setShowNew(false); setForm(emptyForm);
+    load();
+  };
+
+  const del = async (id: string) => {
+    const { error } = await supabase.from('branches').delete().eq('id', id);
+    if (error) { toast.error(error.message); return; }
+    toast.success('Филиал удалён');
+    setDeletingId(null);
+    load();
+  };
+
+  const openEdit = (b: Branch) => {
+    setEditing(b);
+    setForm({ name: b.name, address: b.address ?? '', city: b.city ?? '', phone: b.phone ?? '' });
+    setShowNew(true);
+  };
+
+  const IS: React.CSSProperties = {
+    background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 10,
+    padding: '9px 13px', fontSize: 13, color: '#0B1220', outline: 'none', width: '100%',
+    fontFamily: "'Inter', sans-serif",
+  };
+
+  return (
+    <div className="p-6 space-y-5">
+      {deletingId && (
+        <ConfirmDialog msg="Удалить филиал?" onConfirm={() => del(deletingId)} onCancel={() => setDeletingId(null)} />
+      )}
+
+      <div className="flex justify-between items-center">
+        <h3 className="font-bold text-lg text-[#0B1220]">Филиалы</h3>
+        <button className="neu-btn-primary flex items-center gap-2 text-sm" onClick={() => { setEditing(null); setForm(emptyForm); setShowNew(true); }}>
+          <Plus size={14} /> Добавить филиал
+        </button>
+      </div>
+
+      {showNew && (
+        <div className="neu-sm p-5 space-y-3">
+          <h4 className="font-semibold text-sm text-[#0B1220]">{editing ? 'Редактировать' : 'Новый'} филиал</h4>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-[#64748B] mb-1 block">Название *</label>
+              <input style={IS} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Основной филиал" />
+            </div>
+            <div>
+              <label className="text-xs text-[#64748B] mb-1 block">Город</label>
+              <input style={IS} value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} placeholder="Астана" />
+            </div>
+            <div>
+              <label className="text-xs text-[#64748B] mb-1 block">Адрес</label>
+              <input style={IS} value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="ул. Республика, 15" />
+            </div>
+            <div>
+              <label className="text-xs text-[#64748B] mb-1 block">Телефон</label>
+              <input style={IS} value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+7 700 000 0000" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button className="neu-btn-primary text-sm px-5" onClick={save} disabled={saving}>{saving ? '...' : 'Сохранить'}</button>
+            <button className="neu-btn text-sm px-4" onClick={() => { setShowNew(false); setEditing(null); }}>Отмена</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-sm text-[#94A3B8]">Загрузка...</p>
+      ) : branches.length === 0 ? (
+        <div className="neu-sm p-6 text-center">
+          <p className="text-[#94A3B8] text-sm">Филиалы не добавлены</p>
+          <p className="text-xs text-[#B0BAC6] mt-1">Добавьте первый филиал, чтобы начать работу</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {branches.map(b => (
+            <div key={b.id} className="neu-sm p-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                {b.is_main && (
+                  <span style={{ background: '#DBEAFE', color: '#1D4ED8', borderRadius: 99, padding: '2px 9px', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+                    Основной
+                  </span>
+                )}
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm text-[#0B1220] truncate">{b.name}</p>
+                  <p className="text-xs text-[#64748B] truncate">
+                    {[b.city, b.address, b.phone].filter(Boolean).join(' · ') || 'Адрес не указан'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span style={{
+                  background: b.is_active ? '#DCFCE7' : '#FEE2E2',
+                  color: b.is_active ? '#15803D' : '#B91C1C',
+                  borderRadius: 99, padding: '2px 9px', fontSize: 11, fontWeight: 600,
+                }}>
+                  {b.is_active ? 'Активен' : 'Неактивен'}
+                </span>
+                <button className="neu-icon-btn h-8 w-8" onClick={() => openEdit(b)}><Edit2 size={14} /></button>
+                {!b.is_main && (
+                  <button className="neu-icon-btn h-8 w-8 text-destructive" onClick={() => setDeletingId(b.id)}><Trash2 size={14} /></button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="neu-sm p-4 border-l-4 border-[#3B82F6]">
+        <p className="text-xs font-semibold text-[#1D4ED8] mb-1">Требуется миграция базы данных</p>
+        <p className="text-xs text-[#475569]">
+          Для работы филиалов выполните SQL-миграцию из файла <code className="bg-[#F1F5F9] px-1 rounded">migrations/001_branches_leads_tariffs.sql</code> в Supabase Dashboard.
+        </p>
+      </div>
     </div>
   );
 }
