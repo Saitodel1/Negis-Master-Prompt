@@ -980,6 +980,10 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
   const [copiedSecret, setCopiedSecret] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
+  const [tiktokAppId, setTiktokAppId] = useState('');
+  const [tiktokAppSecret, setTiktokAppSecret] = useState('');
+  const [savingTiktok, setSavingTiktok] = useState(false);
+
   const webhookUrl = clinicId
     ? `${window.location.origin}${BASE_URL}/api/leads/webhook/${clinicId}`
     : '';
@@ -999,6 +1003,8 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
       });
     supabase.from('ad_accounts').select('id, platform, account_name, account_id, is_active').eq('clinic_id', clinicId).eq('is_active', true)
       .then(({ data }) => setAdAccounts(data ?? []));
+    supabase.from('platform_configs').select('app_id, app_secret').eq('clinic_id', clinicId).eq('platform', 'tiktok').maybeSingle()
+      .then(({ data }) => { if (data) { setTiktokAppId(data.app_id ?? ''); setTiktokAppSecret(data.app_secret ?? ''); } });
   }, [clinicId]);
 
   const save = async () => {
@@ -1036,6 +1042,18 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
     await supabase.from('ad_accounts').update({ is_active: false }).eq('id', id);
     setAdAccounts(prev => prev.filter(a => a.id !== id));
     toast.success('Аккаунт отключён');
+  };
+
+  const saveTiktokConfig = async () => {
+    if (!clinicId) return;
+    setSavingTiktok(true);
+    const { error } = await supabase.from('platform_configs').upsert(
+      { clinic_id: clinicId, platform: 'tiktok', app_id: tiktokAppId.trim(), app_secret: tiktokAppSecret.trim() },
+      { onConflict: 'clinic_id,platform' },
+    );
+    if (error) toast.error(error.message);
+    else toast.success('Настройки TikTok сохранены');
+    setSavingTiktok(false);
   };
 
   if (loading) return <p className="text-center text-[#64748B] py-12">Загрузка...</p>;
@@ -1177,6 +1195,52 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
               ))}
             </div>
           )}
+        </div>
+
+        {/* TikTok App Configuration */}
+        <div className="border-t border-[#E7ECF3] pt-6">
+          <h4 className="font-bold text-[#1E293B] mb-1">TikTok Business App</h4>
+          <p className="text-sm text-[#64748B] mb-4">
+            Введите App ID и App Secret из{' '}
+            <a
+              href="https://business-api.tiktok.com/portal/apps"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#1A56DB] inline-flex items-center gap-0.5 hover:underline"
+            >
+              TikTok Developer Portal <ExternalLink size={11} />
+            </a>
+            . Эти данные используются для OAuth-подключения рекламных аккаунтов TikTok.
+          </p>
+          <div className="space-y-3 max-w-md">
+            <div>
+              <label className="block text-xs font-medium text-[#64748B] mb-1">App ID</label>
+              <input
+                className="neu-input font-mono text-sm"
+                placeholder="7000000000000000000"
+                value={tiktokAppId}
+                onChange={e => setTiktokAppId(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#64748B] mb-1">App Secret</label>
+              <input
+                type="password"
+                className="neu-input font-mono text-sm"
+                placeholder="••••••••••••••••••••••••••••••••"
+                value={tiktokAppSecret}
+                onChange={e => setTiktokAppSecret(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={saveTiktokConfig}
+              disabled={savingTiktok || !tiktokAppId.trim() || !tiktokAppSecret.trim()}
+              className="neu-btn-primary flex items-center gap-2 text-sm px-5"
+            >
+              <Check size={14} />
+              {savingTiktok ? 'Сохранение...' : 'Сохранить'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

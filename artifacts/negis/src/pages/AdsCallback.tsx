@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 
-/* ── Types ────────────────────────────────────────────────── */
-type Status = 'processing' | 'success' | 'error';
+const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
 
 /* ── Styles ───────────────────────────────────────────────── */
 const Wrap: React.CSSProperties = {
@@ -41,26 +41,27 @@ const LinkBtn: React.CSSProperties = {
   fontWeight: 600,
   border: 'none',
   cursor: 'pointer',
-  textDecoration: 'none',
 };
 
 /* ═══════════════════════════════════════════════════════════
-   AdsCallback
+   AdsCallback — handles TikTok OAuth redirect
 ═══════════════════════════════════════════════════════════ */
 export default function AdsCallback() {
   const [, setLocation] = useLocation();
-  const [status, setStatus] = useState<Status>('processing');
+  const { clinicId } = useAuth();
+  const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     handleCallback();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCallback = async () => {
     /* 1. Parse URL params */
     const params = new URLSearchParams(window.location.search);
     const code      = params.get('code');
-    const state     = params.get('state'); // contains clinic_id
+    const state     = params.get('state'); // clinic_id passed as state
     const errorCode = params.get('error');
 
     if (errorCode) {
@@ -70,86 +71,51 @@ export default function AdsCallback() {
     }
 
     if (!code) {
-      setErrorMsg('Параметр "code" не найден в URL');
+      setErrorMsg('Параметр "code" отсутствует в URL');
       setStatus('error');
       return;
     }
 
-    const clinicId = state;
-    if (!clinicId) {
-      setErrorMsg('Параметр "state" (clinic_id) не найден в URL');
+    /* Use state param as clinic_id (set during OAuth initiation),
+       fall back to clinicId from auth context */
+    const resolvedClinicId = state || clinicId;
+    if (!resolvedClinicId) {
+      setErrorMsg('Не удалось определить clinic_id. Попробуйте подключить TikTok снова.');
       setStatus('error');
       return;
     }
 
-    /* 2. Exchange code for access token via TikTok API */
-    const appId     = import.meta.env.VITE_TIKTOK_APP_ID as string | undefined;
-    const appSecret = import.meta.env.VITE_TIKTOK_APP_SECRET as string | undefined;
-
-    if (!appId || !appSecret) {
-      setErrorMsg('VITE_TIKTOK_APP_ID или VITE_TIKTOK_APP_SECRET не настроены');
-      setStatus('error');
-      return;
-    }
-
+    /* 2. Exchange code for access token via API server (server-side, secret stays safe) */
     let accessToken = '';
     let advertiserId = '';
     let accountName = '';
 
     try {
-      const tokenRes = await fetch(
-        'https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            app_id:    appId,
-            secret:    appSecret,
-            auth_code: code,
-          }),
-        },
-      );
+      const res = await fetch(`${BASE_URL}/api/ads/tiktok/callback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, clinic_id: resolvedClinicId }),
+      });
 
-      if (!tokenRes.ok) {
-        throw new Error(`HTTP ${tokenRes.status}: ${tokenRes.statusText}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || `Ошибка сервера: ${res.status}`);
       }
 
-      const tokenData = await tokenRes.json();
-
-      if (tokenData.code !== 0) {
-        throw new Error(tokenData.message || `TikTok error code ${tokenData.code}`);
-      }
-
-      accessToken  = tokenData.data?.access_token ?? '';
-      const ids: string[] = tokenData.data?.advertiser_ids ?? [];
-      advertiserId = ids[0] ?? '';
-
-      if (!accessToken || !advertiserId) {
-        throw new Error('Не удалось получить access_token или advertiser_id из ответа TikTok');
-      }
-
-      /* 3. Try to fetch account name from TikTok */
-      try {
-        const infoRes = await fetch(
-          `https://business-api.tiktok.com/open_api/v1.3/oauth2/advertiser/get/?advertiser_ids=["${advertiserId}"]&fields=["advertiser_id","advertiser_name","status"]`,
-          { headers: { 'Access-Token': accessToken } },
-        );
-        const infoData = await infoRes.json();
-        const list: any[] = infoData.data?.list ?? [];
-        accountName = list[0]?.advertiser_name ?? advertiserId;
-      } catch {
-        accountName = advertiserId;
-      }
+      accessToken  = data.access_token;
+      advertiserId = data.advertiser_id;
+      accountName  = data.account_name ?? advertiserId;
     } catch (e: any) {
       setErrorMsg(e.message || 'Ошибка при обмене кода на токен');
       setStatus('error');
       return;
     }
 
-    /* 4. Save access token to ad_accounts table */
+    /* 3. Save to ad_accounts table */
     try {
       const { error: dbError } = await supabase.from('ad_accounts').insert({
-        clinic_id:    clinicId,
+        clinic_id:    resolvedClinicId,
         platform:     'tiktok',
         account_id:   advertiserId,
         account_name: accountName,
@@ -157,16 +123,14 @@ export default function AdsCallback() {
         is_active:    true,
       });
 
-      if (dbError) {
-        throw new Error(dbError.message);
-      }
+      if (dbError) throw new Error(dbError.message);
     } catch (e: any) {
-      setErrorMsg(`Ошибка сохранения в базу данных: ${e.message}`);
+      setErrorMsg(`Ошибка сохранения: ${e.message}`);
       setStatus('error');
       return;
     }
 
-    /* 5. Redirect to /ads with success message */
+    /* 4. Redirect to /ads with success toast */
     setStatus('success');
     toast.success(`TikTok Ads подключён: ${accountName}`);
     setTimeout(() => setLocation('/ads'), 1500);
@@ -219,17 +183,13 @@ export default function AdsCallback() {
             <p style={{ fontSize: 14, color: '#64748B', lineHeight: 1.6, marginBottom: 4 }}>
               {errorMsg}
             </p>
-            <button
-              style={LinkBtn}
-              onClick={() => setLocation('/ads')}
-            >
+            <button style={LinkBtn} onClick={() => setLocation('/ads')}>
               Вернуться в Рекламу
             </button>
           </>
         )}
       </div>
 
-      {/* Spinner keyframes */}
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
