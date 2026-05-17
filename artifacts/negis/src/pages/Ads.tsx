@@ -440,6 +440,16 @@ function ReportsTab({ clinicId, usdToKzt }: { clinicId: string; usdToKzt: number
 
   /* ── No accounts — show connect cards ── */
   if (accounts.length === 0) {
+    const handleTikTokOAuth = () => {
+      if (!tiktokAppId) return;
+      const callbackUrl = `${window.location.origin}${BASE_URL}/ads/callback`;
+      window.location.href =
+        `https://business-api.tiktok.com/open_api/v1.3/oauth2/authorize/` +
+        `?app_id=${encodeURIComponent(tiktokAppId)}` +
+        `&state=${encodeURIComponent(clinicId)}` +
+        `&redirect_uri=${encodeURIComponent(callbackUrl)}`;
+    };
+
     return (
       <div>
         {connectPlatform && (
@@ -475,8 +485,18 @@ function ReportsTab({ clinicId, usdToKzt }: { clinicId: string; usdToKzt: number
             <div>
               <p className="font-bold text-[#0B1220]">TikTok Ads</p>
               <p className="text-xs text-[#64748B] mt-1">Импорт статистики из TikTok Business</p>
+              {!tiktokAppId && (
+                <span style={{ display: 'inline-block', marginTop: 6, padding: '2px 8px', borderRadius: 99, background: '#FEF3C7', color: '#92400E', fontSize: 11, fontWeight: 600 }}>
+                  Ожидает одобрения
+                </span>
+              )}
             </div>
-            <button onClick={() => setConnectPlatform('tiktok')} className="neu-btn-primary w-full">
+            <button
+              onClick={handleTikTokOAuth}
+              disabled={!tiktokAppId}
+              className="neu-btn-primary w-full"
+              style={{ opacity: tiktokAppId ? 1 : 0.45, cursor: tiktokAppId ? 'pointer' : 'not-allowed' }}
+            >
               Подключить
             </button>
           </div>
