@@ -968,7 +968,7 @@ interface AdAccountRow {
 }
 
 function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
-  const [form, setForm] = useState({ name: '', work_start: '10:00', work_end: '18:00', slot_limit: 3, whatsapp_number: '', telegram_chat_id: '', fb_pixel_id: '' });
+  const [form, setForm] = useState({ name: '', work_start: '10:00', work_end: '18:00', slot_limit: 3, whatsapp_number: '', telegram_chat_id: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -984,11 +984,11 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
   useEffect(() => {
     if (!clinicId) return;
     supabase.from('clinics')
-      .select('name, work_start, work_end, slot_limit, whatsapp_number, telegram_chat_id, webhook_secret, fb_pixel_id')
+      .select('name, work_start, work_end, slot_limit, whatsapp_number, telegram_chat_id, webhook_secret')
       .eq('id', clinicId).single()
       .then(({ data }) => {
         if (data) {
-          setForm({ name: data.name || '', work_start: data.work_start || '10:00', work_end: data.work_end || '18:00', slot_limit: data.slot_limit || 3, whatsapp_number: data.whatsapp_number || '', telegram_chat_id: data.telegram_chat_id || '', fb_pixel_id: data.fb_pixel_id || '' });
+          setForm({ name: data.name || '', work_start: data.work_start || '10:00', work_end: data.work_end || '18:00', slot_limit: data.slot_limit || 3, whatsapp_number: data.whatsapp_number || '', telegram_chat_id: data.telegram_chat_id || '' });
           setWebhookSecret(data.webhook_secret || '');
         }
         setLoading(false);
@@ -1051,16 +1051,6 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
         <div>
           <label className="block text-sm font-medium text-[#64748B] mb-1">Telegram Chat ID</label>
           <input className="neu-input" value={form.telegram_chat_id} onChange={e => setForm(f => ({ ...f, telegram_chat_id: e.target.value }))} data-testid="input-telegram-chat-id" />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-[#64748B] mb-1">Facebook Pixel ID</label>
-          <input
-            className="neu-input"
-            placeholder="1234567890123456"
-            value={form.fb_pixel_id}
-            onChange={e => setForm(f => ({ ...f, fb_pixel_id: e.target.value }))}
-          />
-          <p className="text-xs text-[#94A3B8] mt-1">Каждая клиника может иметь свой Pixel для отслеживания пациентов.</p>
         </div>
         <button onClick={save} disabled={saving} className="neu-btn-primary mt-2" data-testid="button-save-settings">
           {saving ? 'Сохранение...' : 'Сохранить'}

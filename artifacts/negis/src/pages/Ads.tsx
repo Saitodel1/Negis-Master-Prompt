@@ -847,6 +847,9 @@ function AdsSettingsTab({ clinicId }: { clinicId: string }) {
   const [appSecret, setAppSecret] = useState('');
   const [savingTiktok, setSavingTiktok] = useState(false);
 
+  const [pixelId, setPixelId] = useState('');
+  const [savingPixel, setSavingPixel] = useState(false);
+
   const [usdToKzt, setUsdToKzt] = useState(450);
   const [savingUsd, setSavingUsd] = useState(false);
 
@@ -858,14 +861,25 @@ function AdsSettingsTab({ clinicId }: { clinicId: string }) {
       .eq('clinic_id', clinicId).eq('platform', 'tiktok').maybeSingle()
       .then(({ data }) => { if (data) { setAppId(data.app_id ?? ''); setAppSecret(data.app_secret ?? ''); } });
 
-    supabase.from('clinics').select('usd_to_kzt').eq('id', clinicId).single()
-      .then(({ data }) => { if (data?.usd_to_kzt) setUsdToKzt(data.usd_to_kzt); });
+    supabase.from('clinics').select('usd_to_kzt, fb_pixel_id').eq('id', clinicId).single()
+      .then(({ data }) => {
+        if (data?.usd_to_kzt) setUsdToKzt(data.usd_to_kzt);
+        if (data?.fb_pixel_id) setPixelId(data.fb_pixel_id);
+      });
 
     supabase.from('ad_accounts')
       .select('id, clinic_id, platform, account_id, account_name, access_token, is_active, created_at')
       .eq('clinic_id', clinicId).eq('is_active', true)
       .then(({ data }) => setAccounts((data ?? []) as AdAccount[]));
   }, [clinicId]);
+
+  const savePixel = async () => {
+    setSavingPixel(true);
+    const { error } = await supabase.from('clinics').update({ fb_pixel_id: pixelId.trim() }).eq('id', clinicId);
+    if (error) toast.error(error.message);
+    else toast.success('Facebook Pixel ID сохранён');
+    setSavingPixel(false);
+  };
 
   const saveTiktok = async () => {
     setSavingTiktok(true);
@@ -935,6 +949,31 @@ function AdsSettingsTab({ clinicId }: { clinicId: string }) {
           >
             <Check size={14} />
             {savingTiktok ? 'Сохранение...' : 'Сохранить'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Facebook Pixel ── */}
+      <div className="border-t border-[#E7ECF3] pt-6">
+        <h3 className="font-bold text-[#1E293B] mb-1">Facebook Pixel</h3>
+        <p className="text-sm text-[#64748B] mb-3">
+          Pixel ID из{' '}
+          <a href="https://business.facebook.com/events_manager" target="_blank" rel="noopener noreferrer"
+            className="text-[#1A56DB] inline-flex items-center gap-0.5 hover:underline">
+            Events Manager <ExternalLink size={11} />
+          </a>
+          . Используется для отслеживания записей и лидов с рекламы.
+        </p>
+        <div className="flex gap-2 max-w-md">
+          <input
+            className="neu-input font-mono text-sm flex-1"
+            placeholder="1234567890123456"
+            value={pixelId}
+            onChange={e => setPixelId(e.target.value)}
+          />
+          <button onClick={savePixel} disabled={savingPixel} className="neu-btn-primary flex items-center gap-1.5 text-sm px-4 whitespace-nowrap">
+            <Check size={14} />
+            {savingPixel ? 'Сохранение...' : 'Сохранить'}
           </button>
         </div>
       </div>
