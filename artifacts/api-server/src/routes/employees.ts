@@ -10,7 +10,7 @@ router.get("/admin/employees", async (req, res) => {
 
   const { data: agents, error } = await supabaseAdmin
     .from("agents")
-    .select("id, name, email, hourly_rate, weekly_target, user_id")
+    .select("id, name, email, hourly_rate, weekly_target, user_id, role_id")
     .eq("clinic_id", clinic_id)
     .order("created_at");
 
@@ -38,7 +38,7 @@ router.get("/admin/employees", async (req, res) => {
 
 /* ── Create employee ── */
 router.post("/admin/employees", async (req, res) => {
-  const { clinic_id, name, email, password, role, hourly_rate, weekly_target } = req.body as {
+  const { clinic_id, name, email, password, role, hourly_rate, weekly_target, role_id } = req.body as {
     clinic_id: string;
     name: string;
     email: string;
@@ -46,6 +46,7 @@ router.post("/admin/employees", async (req, res) => {
     role: string;
     hourly_rate?: number;
     weekly_target?: number;
+    role_id?: string | null;
   };
 
   if (!clinic_id || !name || !email || !password || !role) {
@@ -70,6 +71,7 @@ router.post("/admin/employees", async (req, res) => {
     email,
     hourly_rate: hourly_rate ?? 0,
     weekly_target: weekly_target ?? 20,
+    role_id: role_id ?? null,
   });
 
   if (agentError) {
@@ -94,18 +96,20 @@ router.post("/admin/employees", async (req, res) => {
 /* ── Update employee (name, role, hourly_rate, weekly_target) ── */
 router.patch("/admin/employees/:id", async (req, res) => {
   const { id } = req.params;
-  const { name, role, hourly_rate, weekly_target, clinic_id } = req.body as {
+  const { name, role, hourly_rate, weekly_target, clinic_id, role_id } = req.body as {
     name?: string;
     role?: string;
     hourly_rate?: number;
     weekly_target?: number;
     clinic_id: string;
+    role_id?: string | null;
   };
 
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name;
   if (hourly_rate !== undefined) updates.hourly_rate = hourly_rate;
   if (weekly_target !== undefined) updates.weekly_target = weekly_target;
+  if (role_id !== undefined) updates.role_id = role_id;
 
   if (Object.keys(updates).length > 0) {
     const { error } = await supabaseAdmin.from("agents").update(updates).eq("id", id);

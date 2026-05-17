@@ -7,8 +7,9 @@ import { toast } from 'sonner';
 
 /* ── Types ─────────────────────────────────────────────── */
 interface Lead {
-  id: string; clinic_id: string; agent_id: string | null;
-  first_name: string | null; last_name: string | null;
+  id: string; clinic_id: string;
+  full_name: string | null;
+  assigned_to: string | null;
   phone: string | null; email: string | null; company: string | null;
   age: number | null;
   source: string | null; status_id: string | null; comment: string | null;
@@ -23,7 +24,7 @@ const SORT_OPTIONS = [
   { value: 'created_at_desc', label: 'Дата (новые)' },
   { value: 'created_at_asc',  label: 'Дата (старые)' },
   { value: 'phone_asc',       label: 'Телефон (А→Я)' },
-  { value: 'agent_asc',       label: 'Ответственный' },
+  { value: 'name_asc',        label: 'Имя (А→Я)' },
 ];
 
 export default function Sales() {
@@ -43,8 +44,8 @@ export default function Sales() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [showNew, setShowNew] = useState(false);
 
-  /* form for new lead */
-  const [form, setForm] = useState({ first_name: '', last_name: '', phone: '', email: '', company: '', age: '', source: 'Вручную', status_id: '', agent_id: '', comment: '' });
+  const emptyForm = { full_name: '', phone: '', email: '', company: '', age: '', source: 'Вручную', status_id: '', assigned_to: '', comment: '' };
+  const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { if (clinicId) init(); }, [clinicId]);
@@ -53,7 +54,7 @@ export default function Sales() {
     if (!clinicId) return;
     setLoading(true);
     const [{ data: sl }, { data: ag }] = await Promise.all([
-      supabase.from('lead_statuses').select('id, name, color').eq('clinic_id', clinicId).order('position'),
+      supabase.from('lead_statuses').select('id, name, color').eq('clinic_id', clinicId).order('sort_order'),
       supabase.from('agents').select('id, name, user_id').eq('clinic_id', clinicId).order('name'),
     ]);
     setStatuses(sl ?? []);
@@ -66,20 +67,21 @@ export default function Sales() {
     setLoading(false);
   };
 
-  const loadLeads = async (sl: LeadStatus[], ag: Agent[]) => {
+  const loadLeads = async (sl: LeadStatus[], _ag: Agent[]) => {
     if (!clinicId) return;
     let q = supabase
       .from('leads')
       .select('*, lead_statuses(name, color)')
       .eq('clinic_id', clinicId);
 
-    if (userRole === 'agent' && myAgentId) q = q.eq('agent_id', myAgentId);
+    if (userRole === 'agent' && myAgentId) q = q.eq('assigned_to', myAgentId);
 
-    const [field, dir] = sortBy === 'created_at_desc' ? ['created_at', false]
+    const [field, asc] = sortBy === 'created_at_desc' ? ['created_at', false]
       : sortBy === 'created_at_asc' ? ['created_at', true]
       : sortBy === 'phone_asc' ? ['phone', true]
+      : sortBy === 'name_asc' ? ['full_name', true]
       : ['created_at', false];
-    q = q.order(field, { ascending: dir });
+    q = q.order(field, { ascending: asc });
 
     const { data, error } = await q;
     if (error) { toast.error(error.message); return; }
@@ -90,10 +92,10 @@ export default function Sales() {
 
   /* filtered display */
   const displayed = leads.filter(l => {
-    const name = `${l.first_name ?? ''} ${l.last_name ?? ''}`.toLowerCase();
+    const name = (l.full_name ?? '').toLowerCase();
     if (search && !name.includes(search.toLowerCase()) && !(l.phone ?? '').includes(search)) return false;
     if (filterStatus && l.status_id !== filterStatus) return false;
-    if (filterAgent && l.agent_id !== filterAgent) return false;
+    if (filterAgent && l.assigned_to !== filterAgent) return false;
     if (filterSource && l.source !== filterSource) return false;
     return true;
   });
@@ -104,22 +106,21 @@ export default function Sales() {
     setSaving(true);
     const { error } = await supabase.from('leads').insert({
       clinic_id: clinicId,
-      agent_id: form.agent_id || myAgentId,
-      first_name: form.first_name || null,
-      last_name: form.last_name || null,
+      full_name: form.full_name || null,
       phone: form.phone,
       email: form.email || null,
       company: form.company || null,
       age: form.age ? parseInt(form.age) : null,
       source: form.source,
       status_id: form.status_id || statuses[0]?.id || null,
+      assigned_to: form.assigned_to || myAgentId || null,
       comment: form.comment || null,
     });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('Лид создан');
     setShowNew(false);
-    setForm({ first_name: '', last_name: '', phone: '', email: '', company: '', age: '', source: 'Вручную', status_id: '', agent_id: '', comment: '' });
+    setForm(emptyForm);
     init();
   };
 
@@ -128,15 +129,14 @@ export default function Sales() {
     if (!selectedLead) return;
     setSaving(true);
     const { error } = await supabase.from('leads').update({
-      first_name: selectedLead.first_name,
-      last_name: selectedLead.last_name,
+      full_name: selectedLead.full_name,
       phone: selectedLead.phone,
       email: selectedLead.email,
       company: selectedLead.company,
       age: selectedLead.age,
       source: selectedLead.source,
       status_id: selectedLead.status_id,
-      agent_id: selectedLead.agent_id,
+      assigned_to: selectedLead.assigned_to,
       comment: selectedLead.comment,
     }).eq('id', selectedLead.id);
     setSaving(false);
@@ -156,9 +156,9 @@ export default function Sales() {
   };
 
   const statusColor = (lead: Lead) => lead.lead_statuses?.color ?? '#94A3B8';
-  const statusName = (lead: Lead) => lead.lead_statuses?.name ?? '—';
-  const fullName = (lead: Lead) => [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '—';
-  const agentName = (lead: Lead) => agents.find(a => a.id === lead.agent_id)?.name ?? '—';
+  const statusName  = (lead: Lead) => lead.lead_statuses?.name ?? '—';
+  const displayName = (lead: Lead) => lead.full_name || '—';
+  const agentName   = (lead: Lead) => agents.find(a => a.id === lead.assigned_to)?.name ?? '—';
 
   /* ── UI ─────────────────────────────────────────────── */
   const IS: React.CSSProperties = {
@@ -234,7 +234,7 @@ export default function Sales() {
                     className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] cursor-pointer transition-colors text-sm"
                     onClick={() => setSelectedLead(lead)}
                   >
-                    <td className="p-4 font-medium text-[#0B1220]">{fullName(lead)}</td>
+                    <td className="p-4 font-medium text-[#0B1220]">{displayName(lead)}</td>
                     <td className="p-4 text-[#64748B]">{lead.phone ?? '—'}</td>
                     <td className="p-4 text-[#64748B]">{lead.source ?? '—'}</td>
                     <td className="p-4">
@@ -276,15 +276,9 @@ export default function Sales() {
                 </button>
               </div>
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-[#64748B] font-medium block mb-1.5">Имя</label>
-                    <input style={IS} placeholder="Имя" value={form.first_name} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-[#64748B] font-medium block mb-1.5">Фамилия</label>
-                    <input style={IS} placeholder="Фамилия" value={form.last_name} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} />
-                  </div>
+                <div>
+                  <label className="text-xs text-[#64748B] font-medium block mb-1.5">Полное имя</label>
+                  <input style={IS} placeholder="Иванов Иван" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -318,7 +312,7 @@ export default function Sales() {
                 {(userRole === 'owner' || userRole === 'manager') && (
                   <div>
                     <label className="text-xs text-[#64748B] font-medium block mb-1.5">Ответственный</label>
-                    <select style={IS} value={form.agent_id} onChange={e => setForm(f => ({ ...f, agent_id: e.target.value }))}>
+                    <select style={IS} value={form.assigned_to} onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))}>
                       <option value="">— выбрать —</option>
                       {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                     </select>
@@ -348,16 +342,20 @@ export default function Sales() {
           <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white w-full max-w-2xl max-h-[90vh] rounded-[20px] shadow-2xl flex flex-col overflow-hidden border border-[#E7ECF3]">
               <div className="flex items-center justify-between px-7 py-5 border-b border-[#E7ECF3]">
-                <h3 className="text-base font-bold text-[#0B1220]">{fullName(selectedLead)}</h3>
+                <h3 className="text-base font-bold text-[#0B1220]">{displayName(selectedLead)}</h3>
                 <button onClick={() => setSelectedLead(null)} style={{ background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 8, padding: 6, cursor: 'pointer' }}>
                   <X size={15} color="#64748B" />
                 </button>
               </div>
               <div className="overflow-y-auto flex-1 p-7">
                 <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <label className="text-xs text-[#64748B] font-medium block mb-1.5">Полное имя</label>
+                    <input type="text" style={IS}
+                      value={selectedLead.full_name ?? ''}
+                      onChange={e => setSelectedLead(l => l ? { ...l, full_name: e.target.value || null } : l)} />
+                  </div>
                   {[
-                    { label: 'Имя', key: 'first_name', type: 'text' },
-                    { label: 'Фамилия', key: 'last_name', type: 'text' },
                     { label: 'Телефон', key: 'phone', type: 'text' },
                     { label: 'Email', key: 'email', type: 'email' },
                     { label: 'Компания', key: 'company', type: 'text' },
@@ -386,7 +384,7 @@ export default function Sales() {
                   {(userRole === 'owner' || userRole === 'manager') && (
                     <div className="col-span-2">
                       <label className="text-xs text-[#64748B] font-medium block mb-1.5">Ответственный</label>
-                      <select style={IS} value={selectedLead.agent_id ?? ''} onChange={e => setSelectedLead(l => l ? { ...l, agent_id: e.target.value || null } : l)}>
+                      <select style={IS} value={selectedLead.assigned_to ?? ''} onChange={e => setSelectedLead(l => l ? { ...l, assigned_to: e.target.value || null } : l)}>
                         <option value="">— выбрать —</option>
                         {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                       </select>

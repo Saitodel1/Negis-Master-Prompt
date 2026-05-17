@@ -10,8 +10,8 @@ import { toast } from 'sonner';
 /* ─── Types ──────────────────────────────────────────────── */
 interface Role { id: string; name: string; permissions: Record<string, boolean> }
 interface Service { id: string; name: string; price: number }
-interface BookingStatus { id: string; name: string; color: string; position: number }
-interface LeadStatus { id: string; name: string; color: string; position: number }
+interface BookingStatus { id: string; name: string; color: string; sort_order: number }
+interface LeadStatus { id: string; name: string; color: string; sort_order: number }
 interface Shift {
   id: string; agent_id: string; start_time: string; end_time: string | null;
   duration_minutes: number; bookings_count: number; earnings: number;
@@ -20,12 +20,12 @@ interface Shift {
 interface Agent { id: string; name: string }
 
 const PERMISSIONS = [
-  { key: 'view_all_leads', label: 'Просмотр лидов — все' },
-  { key: 'create_bookings', label: 'Создание записей' },
-  { key: 'change_responsible', label: 'Смена ответственного' },
-  { key: 'access_admin', label: 'Доступ в админку' },
-  { key: 'view_finances', label: 'Просмотр финансов' },
-  { key: 'export_data', label: 'Экспорт данных' },
+  { key: 'dashboard',  label: 'Дашборд' },
+  { key: 'booking',    label: 'Запись' },
+  { key: 'reception',  label: 'Ресепшн' },
+  { key: 'crm',        label: 'CRM' },
+  { key: 'admin',      label: 'Админ-панель' },
+  { key: 'reports',    label: 'Отчёты' },
 ];
 
 const DEFAULT_LEAD_STATUSES = [
@@ -113,6 +113,7 @@ interface Employee {
   hourly_rate: number;
   weekly_target: number;
   user_id: string | null;
+  role_id: string | null;
   user_roles?: { role: string }[] | null;
 }
 
@@ -128,6 +129,7 @@ const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
 /* ─── Agents Tab ─────────────────────────────────────────── */
 function AgentsTab({ clinicId }: { clinicId: string | null }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [customRoles, setCustomRoles] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Employee | null>(null);
@@ -138,10 +140,17 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('agent');
+  const [roleId, setRoleId] = useState('');
   const [hourlyRate, setHourlyRate] = useState('0');
   const [weeklyTarget, setWeeklyTarget] = useState('20');
 
-  useEffect(() => { if (clinicId) loadEmployees(); }, [clinicId]);
+  useEffect(() => { if (clinicId) { loadEmployees(); loadCustomRoles(); } }, [clinicId]);
+
+  const loadCustomRoles = async () => {
+    if (!clinicId) return;
+    const { data } = await supabase.from('roles').select('id, name').eq('clinic_id', clinicId).order('created_at');
+    setCustomRoles(data ?? []);
+  };
 
   const loadEmployees = async () => {
     if (!clinicId) return;
@@ -157,7 +166,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
   const openCreate = () => {
     setEditing(null);
     setName(''); setEmail(''); setPassword('');
-    setRole('agent'); setHourlyRate('0'); setWeeklyTarget('20');
+    setRole('agent'); setRoleId(''); setHourlyRate('0'); setWeeklyTarget('20');
     setShowModal(true);
   };
 
@@ -167,6 +176,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
     setEmail(emp.email);
     setPassword('');
     setRole(emp.user_roles?.[0]?.role ?? 'agent');
+    setRoleId(emp.role_id ?? '');
     setHourlyRate(String(emp.hourly_rate ?? 0));
     setWeeklyTarget(String(emp.weekly_target ?? 20));
     setShowModal(true);
@@ -185,6 +195,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             clinic_id: clinicId, name, role,
+            role_id: roleId || null,
             hourly_rate: parseFloat(hourlyRate) || 0,
             weekly_target: parseInt(weeklyTarget) || 20,
           }),
@@ -198,6 +209,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             clinic_id: clinicId, name, email, password, role,
+            role_id: roleId || null,
             hourly_rate: parseFloat(hourlyRate) || 0,
             weekly_target: parseInt(weeklyTarget) || 20,
           }),
@@ -220,8 +232,14 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
     setDeletingId(null);
   };
 
-  const roleLabel = (emp: Employee) =>
-    SYSTEM_ROLES.find(r => r.value === (emp.user_roles?.[0]?.role ?? ''))?.label ?? '—';
+  /* Show custom role name if set, otherwise fall back to system role */
+  const roleLabel = (emp: Employee) => {
+    if (emp.role_id) {
+      const cr = customRoles.find(r => r.id === emp.role_id);
+      if (cr) return cr.name;
+    }
+    return SYSTEM_ROLES.find(r => r.value === (emp.user_roles?.[0]?.role ?? ''))?.label ?? '—';
+  };
 
   return (
     <div className="space-y-6">
@@ -330,7 +348,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
                 </>
               )}
 
-              <FieldRow label="Роль">
+              <FieldRow label="Системная роль">
                 <select
                   className="neu-input w-full"
                   value={role}
@@ -341,6 +359,21 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
                   ))}
                 </select>
               </FieldRow>
+
+              {customRoles.length > 0 && (
+                <FieldRow label="Должность (кастомная роль)">
+                  <select
+                    className="neu-input w-full"
+                    value={roleId}
+                    onChange={e => setRoleId(e.target.value)}
+                  >
+                    <option value="">— не выбрано —</option>
+                    {customRoles.map(r => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </select>
+                </FieldRow>
+              )}
 
               <FieldRow label="Ставка (₸/ч)">
                 <input
@@ -645,8 +678,8 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
   const load = async () => {
     setLoading(true);
     const [bs, ls] = await Promise.all([
-      supabase.from('booking_statuses').select('*').eq('clinic_id', clinicId).order('position'),
-      supabase.from('lead_statuses').select('*').eq('clinic_id', clinicId).order('position'),
+      supabase.from('booking_statuses').select('*').eq('clinic_id', clinicId).order('sort_order'),
+      supabase.from('lead_statuses').select('*').eq('clinic_id', clinicId).order('sort_order'),
     ]);
     setBookingStatuses(bs.data || []);
     setLeadStatuses(ls.data || []);
@@ -654,7 +687,7 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
   };
 
   const seedLeadStatuses = async () => {
-    const inserts = DEFAULT_LEAD_STATUSES.map((s, i) => ({ clinic_id: clinicId, ...s, position: i }));
+    const inserts = DEFAULT_LEAD_STATUSES.map((s, i) => ({ clinic_id: clinicId, ...s, sort_order: i }));
     const { error } = await supabase.from('lead_statuses').insert(inserts);
     if (error) toast.error(error.message); else { toast.success('Статусы лидов созданы'); load(); }
   };
@@ -677,7 +710,7 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
     } else {
       const count = showModal === 'booking' ? bookingStatuses.length : leadStatuses.length;
       if (count >= 10) { toast.error('Максимум 10 статусов'); setSaving(false); return; }
-      const { error } = await supabase.from(table).insert({ clinic_id: clinicId, name: sName, color: sColor, position: count });
+      const { error } = await supabase.from(table).insert({ clinic_id: clinicId, name: sName, color: sColor, sort_order: count });
       if (error) toast.error(error.message); else toast.success('Статус добавлен');
     }
     setSaving(false); setShowModal(null); load();
