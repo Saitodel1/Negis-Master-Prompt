@@ -55,8 +55,15 @@ export default function Landing() {
   const [error,      setError]      = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [, setLocation] = useLocation();
-  const { session, userRole } = useAuth();
+  const { session, userRole, isLoading: authLoading, clinicId } = useAuth();
   const modalRef = useRef<HTMLDivElement>(null);
+
+  /* Auto-redirect if already authenticated (e.g. after dev login or page refresh) */
+  useEffect(() => {
+    if (!authLoading && session && clinicId) {
+      setLocation(roleRoute(userRole));
+    }
+  }, [authLoading, session, clinicId, userRole]);
 
   const loginForm       = useForm<LoginValues>      ({ resolver: zodResolver(loginSchema) });
   const registerForm    = useForm<RegisterValues>   ({ resolver: zodResolver(registerSchema) });

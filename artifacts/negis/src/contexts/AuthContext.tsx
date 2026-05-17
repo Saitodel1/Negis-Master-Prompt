@@ -87,14 +87,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const initAuth = async () => {
     const params = new URLSearchParams(window.location.search);
     const token  = params.get('impersonate_token');
+    const testHash = params.get('test_token_hash');
 
-    /* A) Fresh impersonation via URL token */
+    /* A) E2E test login via access/refresh tokens (URL params) */
+    const devAccessToken  = params.get('dev_access_token');
+    const devRefreshToken = params.get('dev_refresh_token');
+    if (devAccessToken && devRefreshToken) {
+      cleanUrl();
+      const { error } = await supabase.auth.setSession({
+        access_token:  devAccessToken,
+        refresh_token: devRefreshToken,
+      });
+      if (error) {
+        toast.error('Тестовый вход не удался: ' + error.message);
+      }
+      /* Session established via SDK — setupSupabaseAuth will pick it up */
+      await setupSupabaseAuth();
+      return;
+    }
+
+    /* B) Fresh impersonation via URL token */
     if (token) {
       await handleImpersonationToken(token);
       return;
     }
 
-    /* B) Restore existing impersonation session (page refresh) */
+    /* C) Restore existing impersonation session (page refresh) */
     const stored = loadStoredImpersonation();
     if (stored) {
       applyImpersonationState(stored);
@@ -103,7 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    /* C) Normal Supabase auth */
+    /* D) Normal Supabase auth */
     await setupSupabaseAuth();
   };
 
