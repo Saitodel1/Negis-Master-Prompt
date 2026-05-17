@@ -15,6 +15,7 @@ import Sales from "@/pages/Sales";
 import Agent from "@/pages/Agent";
 import Admin from "@/pages/Admin";
 import Ads from "@/pages/Ads";
+import AdsCallback from "@/pages/AdsCallback";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -71,6 +72,7 @@ function Router() {
       <Route path="/agent" component={Agent} />
       <Route path="/admin" component={Admin} />
       <Route path="/ads" component={Ads} />
+      <Route path="/ads/callback" component={AdsCallback} />
       <Route component={NotFound} />
     </Switch>
   );
