@@ -58,12 +58,114 @@ function periodDates(period: string): { start: string; end: string } {
   return { start: d.toISOString().split('T')[0], end };
 }
 
+const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
+
 /* ── Styles ──────────────────────────────────────────────────── */
 const IS: React.CSSProperties = {
   background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 10,
   padding: '10px 13px', fontSize: 13, color: '#0B1220',
   fontFamily: "'Inter', sans-serif", outline: 'none', width: '100%',
 };
+
+/* ═══════════════════════════════════════════════════════════════
+   PLATFORM PICKER MODAL
+═══════════════════════════════════════════════════════════════ */
+function PlatformPickerModal({
+  clinicId,
+  tiktokAppId,
+  onClose,
+  onSelectFacebook,
+}: {
+  clinicId: string;
+  tiktokAppId: string;
+  onClose: () => void;
+  onSelectFacebook: () => void;
+}) {
+  const tiktokReady = !!tiktokAppId;
+
+  const handleTikTok = () => {
+    if (!tiktokReady) return;
+    const callbackUrl = `${window.location.origin}${BASE_URL}/ads/callback`;
+    const url =
+      `https://business-api.tiktok.com/open_api/v1.3/oauth2/authorize/` +
+      `?app_id=${encodeURIComponent(tiktokAppId)}` +
+      `&state=${encodeURIComponent(clinicId)}` +
+      `&redirect_uri=${encodeURIComponent(callbackUrl)}`;
+    window.location.href = url;
+  };
+
+  const FB_ICON = (
+    <div style={{ width: 48, height: 48, borderRadius: 14, background: '#1877F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <svg viewBox="0 0 24 24" fill="white" width={24} height={24}><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+    </div>
+  );
+
+  const TT_ICON = (
+    <div style={{ width: 48, height: 48, borderRadius: 14, background: '#010101', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <svg viewBox="0 0 24 24" fill="white" width={24} height={24}><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.18 8.18 0 004.79 1.53V6.77a4.85 4.85 0 01-1.02-.08z"/></svg>
+    </div>
+  );
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{
+        background: '#FFFFFF', border: '1px solid #E7ECF3', borderRadius: 20,
+        boxShadow: '0 24px 64px rgba(15,23,42,0.14)', width: '100%', maxWidth: 480, padding: '32px 28px',
+      }}>
+        {/* Header */}
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-base font-bold text-[#0B1220]">Выберите платформу</h3>
+          <button onClick={onClose} style={{ background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 8, padding: 6, cursor: 'pointer' }}>
+            <X size={15} color="#64748B" />
+          </button>
+        </div>
+
+        {/* Cards */}
+        <div className="grid grid-cols-2 gap-4">
+          {/* Facebook */}
+          <div style={{ background: '#F8FAFC', border: '1px solid #E7ECF3', borderRadius: 16, padding: '24px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center' }}>
+            {FB_ICON}
+            <div>
+              <p className="font-bold text-[#0B1220] text-sm">Facebook Ads</p>
+              <p className="text-xs text-[#64748B] mt-1 leading-relaxed">Meta Business API — импорт лидов и расходов</p>
+            </div>
+            <button
+              onClick={() => { onClose(); onSelectFacebook(); }}
+              className="neu-btn-primary w-full text-sm py-2"
+            >
+              Подключить
+            </button>
+          </div>
+
+          {/* TikTok */}
+          <div style={{ background: '#F8FAFC', border: '1px solid #E7ECF3', borderRadius: 16, padding: '24px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center' }}>
+            {TT_ICON}
+            <div>
+              <p className="font-bold text-[#0B1220] text-sm">TikTok Ads</p>
+              <p className="text-xs text-[#64748B] mt-1 leading-relaxed">TikTok Business API — импорт статистики</p>
+              {!tiktokReady && (
+                <span style={{ display: 'inline-block', marginTop: 6, padding: '2px 8px', borderRadius: 99, background: '#FEF3C7', color: '#92400E', fontSize: 11, fontWeight: 600 }}>
+                  Ожидает одобрения
+                </span>
+              )}
+            </div>
+            <button
+              onClick={handleTikTok}
+              disabled={!tiktokReady}
+              className="neu-btn-primary w-full text-sm py-2"
+              style={{ opacity: tiktokReady ? 1 : 0.45, cursor: tiktokReady ? 'pointer' : 'not-allowed' }}
+            >
+              Подключить
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ═══════════════════════════════════════════════════════════════
    CONNECT MODAL
@@ -193,6 +295,8 @@ function ReportsTab({ clinicId, usdToKzt }: { clinicId: string; usdToKzt: number
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [connectPlatform, setConnectPlatform] = useState<'facebook' | 'tiktok' | null>(null);
+  const [showPlatformPicker, setShowPlatformPicker] = useState(false);
+  const [tiktokAppId, setTiktokAppId] = useState('');
   const [period, setPeriod] = useState('7');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [report, setReport] = useState<AdReport | null>(null);
@@ -201,7 +305,11 @@ function ReportsTab({ clinicId, usdToKzt }: { clinicId: string; usdToKzt: number
   const [sortKey, setSortKey] = useState<SortableCampaignKey>('spend');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
-  useEffect(() => { loadAccounts(); }, [clinicId]);
+  useEffect(() => {
+    loadAccounts();
+    supabase.from('platform_configs').select('app_id').eq('clinic_id', clinicId).eq('platform', 'tiktok').maybeSingle()
+      .then(({ data }) => setTiktokAppId(data?.app_id ?? ''));
+  }, [clinicId]);
 
   const loadAccounts = async () => {
     const { data } = await supabase.from('ad_accounts').select('*').eq('clinic_id', clinicId).eq('is_active', true);
@@ -389,6 +497,15 @@ function ReportsTab({ clinicId, usdToKzt }: { clinicId: string; usdToKzt: number
         />
       )}
 
+      {showPlatformPicker && (
+        <PlatformPickerModal
+          clinicId={clinicId}
+          tiktokAppId={tiktokAppId}
+          onClose={() => setShowPlatformPicker(false)}
+          onSelectFacebook={() => setConnectPlatform('facebook')}
+        />
+      )}
+
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex gap-2">
@@ -415,7 +532,7 @@ function ReportsTab({ clinicId, usdToKzt }: { clinicId: string; usdToKzt: number
           <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
           Обновить данные
         </button>
-        <button onClick={() => setConnectPlatform('facebook')} className="neu-btn text-sm flex items-center gap-2">
+        <button onClick={() => setShowPlatformPicker(true)} className="neu-btn text-sm flex items-center gap-2">
           <Megaphone size={14} /> Добавить аккаунт
         </button>
       </div>
