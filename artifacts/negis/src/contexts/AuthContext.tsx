@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 
-/* ── Types ── */
+/* ── Types ────────────────────────────────────────────────── */
 interface ImpersonationData {
   active: boolean;
   clinic_id: string;
@@ -24,10 +24,10 @@ interface AuthContextType {
   signOut: () => Promise<void>;
 }
 
-/* ── Constants ── */
-const IMP_KEY      = 'negis_impersonation';
-const CLINIC_KEY   = 'negis_clinic_id';
-const SESSION_KEY  = 'negis_session';
+/* ── Constants ────────────────────────────────────────────── */
+const IMP_KEY     = 'negis_impersonation';
+const CLINIC_KEY  = 'negis_clinic_id';
+const SESSION_KEY = 'negis_session';
 
 function clearImpersonationStorage() {
   localStorage.removeItem(IMP_KEY);
@@ -36,11 +36,24 @@ function clearImpersonationStorage() {
 }
 
 function cleanUrl() {
-  window.history.replaceState({}, document.title,
-    window.location.origin + window.location.pathname);
+  window.history.replaceState(
+    {}, document.title,
+    window.location.origin + window.location.pathname,
+  );
 }
 
-/* ── Context ── */
+function loadStoredImpersonation(): ImpersonationData | null {
+  try {
+    const raw = localStorage.getItem(IMP_KEY);
+    if (!raw) return null;
+    const d: ImpersonationData = JSON.parse(raw);
+    return d.active && d.clinic_id ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+/* ── Context ──────────────────────────────────────────────── */
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -60,121 +73,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { subscriptionRef.current?.unsubscribe(); };
   }, []);
 
-  /* ── 1. Main init ── */
+  /* ── Helpers ──────────────────────────────────────────── */
+
+  /** Apply stored impersonation state to React state (idempotent). */
+  const applyImpersonationState = (d: ImpersonationData) => {
+    setIsImpersonation(true);
+    setClinicId(d.clinic_id);
+    setImpersonationClinicName(d.clinic_name);
+    setUserRole('owner');
+  };
+
+  /* ── 1. Init ──────────────────────────────────────────── */
   const initAuth = async () => {
     const params = new URLSearchParams(window.location.search);
     const token  = params.get('impersonate_token');
 
-    /* A) URL contains impersonation token → verify it */
+    /* A) Fresh impersonation via URL token */
     if (token) {
       await handleImpersonationToken(token);
       return;
     }
 
-    /* B) localStorage has an active impersonation session (page refresh) */
-    const stored = localStorage.getItem(IMP_KEY);
+    /* B) Restore existing impersonation session (page refresh) */
+    const stored = loadStoredImpersonation();
     if (stored) {
-      try {
-        const data: ImpersonationData = JSON.parse(stored);
-        if (data.active && data.clinic_id) {
-          setIsImpersonation(true);
-          setClinicId(data.clinic_id);
-          setImpersonationClinicName(data.clinic_name);
-          setUserRole('owner');
-          setIsLoading(false);
-          return;
-        }
-      } catch {
-        clearImpersonationStorage();
-      }
+      applyImpersonationState(stored);
+      /* Also restore the real Supabase session so RLS works */
+      await setupSupabaseAuth();
+      return;
     }
 
     /* C) Normal Supabase auth */
-    setupSupabaseAuth();
+    await setupSupabaseAuth();
   };
 
-  /* ── 2. Verify impersonation token with Negis Control ── */
-  const handleImpersonationToken = async (token: string) => {
-    const apiUrl =
-      (import.meta.env.VITE_NEGIS_CONTROL_API_URL as string | undefined)
-      || 'https://admin.negis.online';
+  /* ── 2. Supabase subscription setup ───────────────────── */
+  const setupSupabaseAuth = async () => {
+    /* Set up the persistent listener FIRST so we don't miss events */
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
+      setSession(sess);
+      setUser(sess?.user ?? null);
 
-    try {
-      let res: Response;
-      try {
-        res = await fetch(`${apiUrl}/api/impersonation/verify`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token }),
-        });
-      } catch {
-        cleanUrl();
-        toast.error('Не удалось проверить доступ через Negis Control');
+      /* If impersonation is active, keep its context (skip normal role fetch) */
+      const imp = loadStoredImpersonation();
+      if (imp) {
+        applyImpersonationState(imp);
         setIsLoading(false);
         return;
       }
 
-      if (res.status === 401 || res.status === 403) throw new Error('expired_token');
-      if (!res.ok) throw new Error('invalid_token');
-
-      const data: { clinicId: string; clinicName: string; ownerEmail: string; issuedBy: string } = await res.json();
-
-      /* Persist impersonation session */
-      const impData: ImpersonationData = {
-        active:       true,
-        clinic_id:    data.clinicId,
-        clinic_name:  data.clinicName,
-        owner_email:  data.ownerEmail,
-        issued_by:    data.issuedBy,
-      };
-      localStorage.setItem(IMP_KEY,     JSON.stringify(impData));
-      localStorage.setItem(CLINIC_KEY,  data.clinicId);
-      localStorage.setItem(SESSION_KEY, JSON.stringify({
-        mode:       'impersonation',
-        role:       'owner',
-        clinic_id:  data.clinicId,
-        clinic_name: data.clinicName,
-        email:      data.ownerEmail,
-        issued_by:  data.issuedBy,
-        started_at: new Date().toISOString(),
-      }));
-
-      cleanUrl();
-
-      setIsImpersonation(true);
-      setClinicId(data.clinicId);
-      setImpersonationClinicName(data.clinicName);
-      setUserRole('owner');
-      setIsLoading(false);
-      setLocation('/dashboard');
-    } catch (err: any) {
-      cleanUrl();
-      clearImpersonationStorage();
-      const msg = err?.message === 'expired_token'
-        ? 'Доступ по ссылке истёк. Войдите снова из Negis Control.'
-        : 'Не удалось проверить доступ через Negis Control.';
-      toast.error(msg);
-      setIsLoading(false);
-      setLocation('/');
-    }
-  };
-
-  /* ── 3. Normal Supabase auth flow ── */
-  const setupSupabaseAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    setSession(session);
-    setUser(session?.user ?? null);
-    if (session?.user) {
-      await fetchUserRole(session.user.id);
-    } else {
-      setIsLoading(false);
-    }
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchUserRole(session.user.id);
+      if (sess?.user) {
+        fetchUserRole(sess.user.id);
       } else {
         setClinicId(null);
         setUserRole(null);
@@ -182,8 +131,125 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
     subscriptionRef.current = subscription;
+
+    /* Then check the current session */
+    const { data: { session: sess } } = await supabase.auth.getSession();
+    setSession(sess);
+    setUser(sess?.user ?? null);
+
+    const imp = loadStoredImpersonation();
+    if (imp) {
+      /* Session may or may not be present — either way, use impersonation data */
+      applyImpersonationState(imp);
+      setIsLoading(false);
+      return;
+    }
+
+    if (sess?.user) {
+      await fetchUserRole(sess.user.id);
+    } else {
+      setIsLoading(false);
+    }
   };
 
+  /* ── 3. Handle fresh impersonation token from URL ─────── */
+  const handleImpersonationToken = async (token: string) => {
+    const controlApiUrl =
+      (import.meta.env.VITE_NEGIS_CONTROL_API_URL as string | undefined)
+      || 'https://admin.negis.online';
+
+    try {
+      /* Step 1: verify with Negis Control */
+      let verifyRes: Response;
+      try {
+        verifyRes = await fetch(`${controlApiUrl}/api/impersonation/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+      } catch {
+        cleanUrl();
+        toast.error('Не удалось проверить доступ через Negis Control');
+        await setupSupabaseAuth();
+        return;
+      }
+
+      if (verifyRes.status === 401 || verifyRes.status === 403) throw new Error('expired_token');
+      if (!verifyRes.ok) throw new Error('invalid_token');
+
+      const data: {
+        clinicId: string;
+        clinicName: string;
+        ownerEmail: string;
+        issuedBy: string;
+      } = await verifyRes.json();
+
+      /* Step 2: persist impersonation metadata */
+      const impData: ImpersonationData = {
+        active:      true,
+        clinic_id:   data.clinicId,
+        clinic_name: data.clinicName,
+        owner_email: data.ownerEmail,
+        issued_by:   data.issuedBy,
+      };
+      localStorage.setItem(IMP_KEY,    JSON.stringify(impData));
+      localStorage.setItem(CLINIC_KEY, data.clinicId);
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        mode: 'impersonation', role: 'owner',
+        clinic_id: data.clinicId, clinic_name: data.clinicName,
+        email: data.ownerEmail, issued_by: data.issuedBy,
+        started_at: new Date().toISOString(),
+      }));
+
+      /* Step 3: apply UI state */
+      applyImpersonationState(impData);
+      cleanUrl();
+
+      /* Step 4: obtain a real Supabase session from the API server
+         so that Supabase RLS policies work exactly like normal login. */
+      try {
+        const base = (import.meta.env.BASE_URL as string) || '/';
+        const sessionRes = await fetch(`${base}api/impersonation/session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            impersonateToken: token,
+            ownerEmail: data.ownerEmail,
+          }),
+        });
+
+        if (sessionRes.ok) {
+          const { tokenHash } = await sessionRes.json() as { tokenHash?: string };
+          if (tokenHash) {
+            /* Exchange the magic-link hash for a real access/refresh token pair */
+            await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'email' });
+          }
+        }
+      } catch {
+        /* Non-fatal: banner + clinic_id still work, but RLS queries will be empty */
+        toast.warning('Сессия загружена частично — обновите страницу если данные не отображаются');
+      }
+
+      /* Step 5: set up the Supabase subscription (respects impersonation) */
+      await setupSupabaseAuth();
+
+      setIsLoading(false);
+      setLocation('/dashboard');
+    } catch (err: any) {
+      cleanUrl();
+      clearImpersonationStorage();
+      toast.error(
+        err?.message === 'expired_token'
+          ? 'Доступ по ссылке истёк. Войдите снова из Negis Control.'
+          : 'Не удалось проверить доступ через Negis Control.',
+      );
+      await setupSupabaseAuth();
+      setIsLoading(false);
+      setLocation('/');
+    }
+  };
+
+  /* ── 4. Fetch user role (normal auth only) ────────────── */
   const fetchUserRole = async (userId: string) => {
     try {
       const { data, error } = await supabase
@@ -205,7 +271,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  /* ── 4. Sign out (handles both modes) ── */
+  /* ── 5. Sign out ──────────────────────────────────────── */
   const signOut = async () => {
     if (isImpersonation) {
       clearImpersonationStorage();
@@ -213,6 +279,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setImpersonationClinicName(null);
       setClinicId(null);
       setUserRole(null);
+      /* Also terminate the Supabase session created for RLS */
+      await supabase.auth.signOut();
       setLocation('/');
       return;
     }
