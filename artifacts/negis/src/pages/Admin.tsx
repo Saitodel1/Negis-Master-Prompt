@@ -1109,17 +1109,57 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
 }
 
 /* ─── Export Tab ─────────────────────────────────────────── */
+
+/** Normalize phone: strip spaces/dashes/parens, keep leading + */
+function normalizePhone(raw: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  const hasPlus = trimmed.startsWith('+');
+  const digits = trimmed.replace(/\D/g, '');
+  return (hasPlus ? '+' : '') + digits;
+}
+
+/** Pick the first non-empty value from an object by trying a list of keys (case-insensitive) */
+function pickField(row: Record<string, string>, keys: string[]): string {
+  const lower = Object.fromEntries(Object.entries(row).map(([k, v]) => [k.toLowerCase().trim(), v]));
+  for (const key of keys) {
+    const val = lower[key.toLowerCase()];
+    if (val && String(val).trim()) return String(val).trim();
+  }
+  return '';
+}
+
+interface ImportPreview {
+  ready: ImportRow[];
+  errors: string[];
+}
+interface ImportRow {
+  clinic_id: string;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+  company: string | null;
+  age: number | null;
+  source: string;
+  comment: string | null;
+  assigned_to: string | null;
+  status_id: string | null;
+}
+
 function ExportTab({ clinicId }: { clinicId: string | null }) {
   const [loading, setLoading] = useState<string | null>(null);
   const [importLoading, setImportLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleImportLeads = async (file: File) => {
     if (!clinicId) return;
     setImportLoading(true);
+    setPreview(null);
     try {
       let rows: Record<string, string>[] = [];
-      if (file.name.endsWith('.csv')) {
+      if (file.name.toLowerCase().endsWith('.csv')) {
         const text = await file.text();
         const result = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true });
         rows = result.data;
@@ -1128,42 +1168,107 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
         const wb = XLSX.read(buf);
         rows = XLSX.utils.sheet_to_json<Record<string, string>>(wb.Sheets[wb.SheetNames[0]], { defval: '' });
       }
+
       const [{ data: statuses }, { data: agentsList }] = await Promise.all([
         supabase.from('lead_statuses').select('id').eq('clinic_id', clinicId).order('sort_order').limit(1),
         supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
       ]);
       const defaultStatusId = statuses?.[0]?.id ?? null;
-      /* Map agent name → id for "Ответственный" / "Owner" column */
-      const agentByName = (name: string | undefined) => {
+
+      const agentByName = (name: string) => {
         if (!name || !agentsList) return null;
-        const n = name.trim().toLowerCase();
+        const n = name.toLowerCase();
         return agentsList.find(a => a.name.toLowerCase() === n)?.id ?? null;
       };
-      const insert = rows.map(r => {
-        const firstName = r['Имя'] || r['first_name'] || r['name'] || r['First Name'] || '';
-        const lastName  = r['Фамилия'] || r['last_name'] || r['Last Name'] || '';
-        const fullName  = [firstName, lastName].filter(Boolean).join(' ') || null;
-        return {
+
+      const NAME_KEYS   = ['full_name','fullname','фио','клиент','пациент','полное имя','name','имя'];
+      const FNAME_KEYS  = ['first_name','firstname','имя'];
+      const LNAME_KEYS  = ['last_name','lastname','фамилия'];
+      const PHONE_KEYS  = ['phone','телефон','номер','whatsapp','contact','contact_phone','mobile','phone number'];
+      const EMAIL_KEYS  = ['email','e-mail','почта'];
+      const COMPANY_KEYS= ['company','компания','организация','company name'];
+      const AGE_KEYS    = ['age','возраст'];
+      const SOURCE_KEYS = ['source','источник','lead source'];
+      const COMMENT_KEYS= ['comment','комментарий','примечание','notes'];
+      const AGENT_KEYS  = ['assigned_to','ответственный','owner','агент'];
+
+      const ready: ImportRow[] = [];
+      const errors: string[] = [];
+
+      rows.forEach((r, idx) => {
+        const rowNum = idx + 2; // 1-based, +1 for header
+
+        // ── Resolve full_name ──
+        let fullName = pickField(r, NAME_KEYS);
+        if (!fullName) {
+          const fn = pickField(r, FNAME_KEYS);
+          const ln = pickField(r, LNAME_KEYS);
+          fullName = [fn, ln].filter(Boolean).join(' ');
+        }
+
+        // ── Resolve phone ──
+        const rawPhone = pickField(r, PHONE_KEYS);
+        const phone = rawPhone ? normalizePhone(rawPhone) || null : null;
+
+        // ── Fallback: no name but has phone ──
+        if (!fullName && phone) fullName = `Клиент ${phone}`;
+
+        // ── Fallback: no name but has email ──
+        const email = pickField(r, EMAIL_KEYS) || null;
+        if (!fullName && email) fullName = `Клиент ${email}`;
+
+        // ── Skip row if still no name ──
+        if (!fullName.trim()) {
+          errors.push(`Строка ${rowNum}: нет имени и телефона`);
+          return;
+        }
+
+        const rawAge = pickField(r, AGE_KEYS);
+        ready.push({
           clinic_id:   clinicId,
-          full_name:   fullName,
-          phone:       r['Телефон']   || r['phone']   || r['Phone']       || r['Phone Number'] || null,
-          email:       r['Email']     || r['email']   || r['E-MAIL']      || null,
-          company:     r['Компания']  || r['company'] || r['Company']     || r['Company Name'] || null,
-          age:         (r['Возраст']  || r['age']) ? (parseInt(r['Возраст'] || r['age']) || null) : null,
-          source:      r['Источник']  || r['source']  || r['Lead Source'] || 'Вручную',
-          comment:     r['Комментарий'] || r['Примечание'] || r['comment'] || r['Notes'] || null,
-          assigned_to: agentByName(r['Ответственный'] || r['Owner'] || r['ОТВЕТСТВЕННЫЙ']),
+          full_name:   fullName.trim(),
+          phone,
+          email,
+          company:     pickField(r, COMPANY_KEYS) || null,
+          age:         rawAge ? (parseInt(rawAge) || null) : null,
+          source:      pickField(r, SOURCE_KEYS)  || 'Import',
+          comment:     pickField(r, COMMENT_KEYS) || null,
+          assigned_to: agentByName(pickField(r, AGENT_KEYS)),
           status_id:   defaultStatusId,
-        };
-      }).filter(r => r.phone);
-      if (!insert.length) { toast.error('Нет строк с номером телефона'); return; }
-      const { error } = await supabase.from('leads').insert(insert);
-      if (error) { toast.error(error.message); return; }
-      toast.success(`Импортировано ${insert.length} лидов`);
+        });
+      });
+
+      if (ready.length === 0 && errors.length === 0) {
+        toast.error('Файл пустой или не содержит данных');
+        return;
+      }
+
+      setPreview({ ready, errors });
+    } catch (e: any) {
+      toast.error(e.message || 'Ошибка при чтении файла');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const confirmImport = async () => {
+    if (!preview || !preview.ready.length) return;
+    setImporting(true);
+    const CHUNK = 100;
+    let imported = 0;
+    try {
+      for (let i = 0; i < preview.ready.length; i += CHUNK) {
+        const chunk = preview.ready.slice(i, i + CHUNK);
+        const { error } = await supabase.from('leads').insert(chunk);
+        if (error) { toast.error(`Ошибка на строке ~${i + 1}: ${error.message}`); setImporting(false); return; }
+        imported += chunk.length;
+      }
+      toast.success(`Импортировано ${imported} лидов`);
+      setPreview(null);
     } catch (e: any) {
       toast.error(e.message || 'Ошибка импорта');
     } finally {
-      setImportLoading(false);
+      setImporting(false);
     }
   };
 
@@ -1313,8 +1418,11 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
       {/* ── Import section ── */}
       <div>
         <h4 className="font-bold text-[#1E293B] mb-1">Импорт лидов</h4>
-        <p className="text-sm text-[#64748B] mb-3">
-          Загрузите CSV или Excel. Колонки: <span className="font-mono bg-[#F1F5F9] px-1 rounded text-xs">Имя, Фамилия, Телефон, Возраст, Источник, Комментарий</span>
+        <p className="text-sm text-[#64748B] mb-1">
+          Загрузите CSV или Excel. Поддерживаемые колонки имени:
+        </p>
+        <p className="text-xs text-[#94A3B8] font-mono mb-3">
+          full_name / ФИО / Имя / Клиент / Пациент / name · Телефон / phone / whatsapp / mobile
         </p>
         <input
           ref={fileRef}
@@ -1329,8 +1437,91 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
           className="neu-btn flex items-center gap-2 text-sm px-5 py-2.5"
         >
           <Upload size={15} />
-          {importLoading ? 'Импорт...' : 'Выбрать файл'}
+          {importLoading ? 'Анализ файла...' : 'Выбрать файл'}
         </button>
+
+        {/* ── Preview panel ── */}
+        {preview && (
+          <div className="mt-4 space-y-3">
+            <div className="neu-sm p-4 flex flex-wrap gap-4">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-[#0B1220]">{preview.ready.length + preview.errors.length}</p>
+                <p className="text-xs text-[#94A3B8]">строк найдено</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-[#16A34A]">{preview.ready.length}</p>
+                <p className="text-xs text-[#94A3B8]">готово к импорту</p>
+              </div>
+              {preview.errors.length > 0 && (
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-[#DC2626]">{preview.errors.length}</p>
+                  <p className="text-xs text-[#94A3B8]">строк с ошибками</p>
+                </div>
+              )}
+            </div>
+
+            {preview.errors.length > 0 && (
+              <div className="neu-sm p-4 border-l-4 border-[#DC2626]">
+                <p className="text-xs font-semibold text-[#DC2626] mb-2">Строки пропущены (нет имени и телефона):</p>
+                <ul className="space-y-0.5">
+                  {preview.errors.slice(0, 5).map((e, i) => (
+                    <li key={i} className="text-xs text-[#475569]">{e}</li>
+                  ))}
+                  {preview.errors.length > 5 && (
+                    <li className="text-xs text-[#94A3B8]">...и ещё {preview.errors.length - 5}</li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {preview.ready.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-[#94A3B8] border-b border-[#E7ECF3]">
+                      <th className="text-left pb-1 pr-3 font-medium">Имя</th>
+                      <th className="text-left pb-1 pr-3 font-medium">Телефон</th>
+                      <th className="text-left pb-1 pr-3 font-medium">Email</th>
+                      <th className="text-left pb-1 font-medium">Источник</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.ready.slice(0, 5).map((r, i) => (
+                      <tr key={i} className="border-b border-[#F1F5F9]">
+                        <td className="py-1 pr-3 text-[#0B1220]">{r.full_name}</td>
+                        <td className="py-1 pr-3 text-[#475569]">{r.phone ?? '—'}</td>
+                        <td className="py-1 pr-3 text-[#475569]">{r.email ?? '—'}</td>
+                        <td className="py-1 text-[#475569]">{r.source}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {preview.ready.length > 5 && (
+                  <p className="text-xs text-[#94A3B8] mt-1">...и ещё {preview.ready.length - 5} строк</p>
+                )}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              {preview.ready.length > 0 && (
+                <button
+                  onClick={confirmImport}
+                  disabled={importing}
+                  className="neu-btn-primary flex items-center gap-2 text-sm px-5"
+                >
+                  <Upload size={14} />
+                  {importing ? 'Импорт...' : `Импортировать ${preview.ready.length} лидов`}
+                </button>
+              )}
+              <button
+                onClick={() => { setPreview(null); if (fileRef.current) fileRef.current.value = ''; }}
+                className="neu-btn text-sm px-4"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="border-t border-[#E7ECF3] pt-5">
