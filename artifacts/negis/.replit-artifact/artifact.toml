@@ -23,6 +23,30 @@ publicDir = "artifacts/negis/dist/public"
 serve = "static"
 
 [[services.production.rewrites]]
+from = "/privacy"
+to = "/privacy/index.html"
+
+[[services.production.rewrites]]
+from = "/privacy/"
+to = "/privacy/index.html"
+
+[[services.production.rewrites]]
+from = "/terms"
+to = "/terms/index.html"
+
+[[services.production.rewrites]]
+from = "/terms/"
+to = "/terms/index.html"
+
+[[services.production.rewrites]]
+from = "/data-deletion"
+to = "/data-deletion/index.html"
+
+[[services.production.rewrites]]
+from = "/data-deletion/"
+to = "/data-deletion/index.html"
+
+[[services.production.rewrites]]
 from = "/*"
 to = "/index.html"
 
