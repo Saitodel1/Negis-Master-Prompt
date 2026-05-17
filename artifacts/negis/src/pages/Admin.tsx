@@ -973,16 +973,9 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
   const [saving, setSaving] = useState(false);
 
   const [webhookSecret, setWebhookSecret] = useState('');
-  const [usdToKzt, setUsdToKzt] = useState(450);
-  const [savingAds, setSavingAds] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
-  const [adAccounts, setAdAccounts] = useState<AdAccountRow[]>([]);
   const [copiedSecret, setCopiedSecret] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
-
-  const [tiktokAppId, setTiktokAppId] = useState('');
-  const [tiktokAppSecret, setTiktokAppSecret] = useState('');
-  const [savingTiktok, setSavingTiktok] = useState(false);
 
   const webhookUrl = clinicId
     ? `${window.location.origin}${BASE_URL}/api/leads/webhook/${clinicId}`
@@ -991,20 +984,15 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
   useEffect(() => {
     if (!clinicId) return;
     supabase.from('clinics')
-      .select('name, work_start, work_end, slot_limit, whatsapp_number, telegram_chat_id, webhook_secret, usd_to_kzt, fb_pixel_id')
+      .select('name, work_start, work_end, slot_limit, whatsapp_number, telegram_chat_id, webhook_secret, fb_pixel_id')
       .eq('id', clinicId).single()
       .then(({ data }) => {
         if (data) {
           setForm({ name: data.name || '', work_start: data.work_start || '10:00', work_end: data.work_end || '18:00', slot_limit: data.slot_limit || 3, whatsapp_number: data.whatsapp_number || '', telegram_chat_id: data.telegram_chat_id || '', fb_pixel_id: data.fb_pixel_id || '' });
           setWebhookSecret(data.webhook_secret || '');
-          setUsdToKzt(data.usd_to_kzt || 450);
         }
         setLoading(false);
       });
-    supabase.from('ad_accounts').select('id, platform, account_name, account_id, is_active').eq('clinic_id', clinicId).eq('is_active', true)
-      .then(({ data }) => setAdAccounts(data ?? []));
-    supabase.from('platform_configs').select('app_id, app_secret').eq('clinic_id', clinicId).eq('platform', 'tiktok').maybeSingle()
-      .then(({ data }) => { if (data) { setTiktokAppId(data.app_id ?? ''); setTiktokAppSecret(data.app_secret ?? ''); } });
   }, [clinicId]);
 
   const save = async () => {
@@ -1012,13 +1000,6 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
     const { error } = await supabase.from('clinics').update(form).eq('id', clinicId);
     if (error) toast.error(error.message); else toast.success('Настройки сохранены');
     setSaving(false);
-  };
-
-  const saveAds = async () => {
-    setSavingAds(true);
-    const { error } = await supabase.from('clinics').update({ usd_to_kzt: usdToKzt }).eq('id', clinicId);
-    if (error) toast.error(error.message); else toast.success('Настройки рекламы сохранены');
-    setSavingAds(false);
   };
 
   const regenerateSecret = async () => {
@@ -1036,24 +1017,6 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
     if (which === 'secret') { setCopiedSecret(true); setTimeout(() => setCopiedSecret(false), 2000); }
     else { setCopiedUrl(true); setTimeout(() => setCopiedUrl(false), 2000); }
     toast.success('Скопировано');
-  };
-
-  const disconnectAccount = async (id: string) => {
-    await supabase.from('ad_accounts').update({ is_active: false }).eq('id', id);
-    setAdAccounts(prev => prev.filter(a => a.id !== id));
-    toast.success('Аккаунт отключён');
-  };
-
-  const saveTiktokConfig = async () => {
-    if (!clinicId) return;
-    setSavingTiktok(true);
-    const { error } = await supabase.from('platform_configs').upsert(
-      { clinic_id: clinicId, platform: 'tiktok', app_id: tiktokAppId.trim(), app_secret: tiktokAppSecret.trim() },
-      { onConflict: 'clinic_id,platform' },
-    );
-    if (error) toast.error(error.message);
-    else toast.success('Настройки TikTok сохранены');
-    setSavingTiktok(false);
   };
 
   if (loading) return <p className="text-center text-[#64748B] py-12">Загрузка...</p>;
@@ -1104,11 +1067,11 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
         </button>
       </div>
 
-      {/* ── Реклама и интеграции ── */}
+      {/* ── Webhook ── */}
       <div className="max-w-2xl space-y-5 border-t border-[#E7ECF3] pt-8">
         <div>
-          <h3 className="text-lg font-bold">Реклама и интеграции</h3>
-          <p className="text-sm text-[#64748B] mt-0.5">Настройки webhook и рекламных аккаунтов</p>
+          <h3 className="text-lg font-bold">Webhook</h3>
+          <p className="text-sm text-[#64748B] mt-0.5">Приём лидов от внешних источников</p>
         </div>
 
         {/* Webhook URL */}
@@ -1122,15 +1085,8 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
             </a>
           </p>
           <div className="flex gap-2">
-            <input
-              readOnly
-              className="neu-input text-xs font-mono flex-1"
-              value={webhookUrl}
-            />
-            <button
-              onClick={() => copyText(webhookUrl, 'url')}
-              className="neu-btn flex items-center gap-1.5 text-sm px-4"
-            >
+            <input readOnly className="neu-input text-xs font-mono flex-1" value={webhookUrl} />
+            <button onClick={() => copyText(webhookUrl, 'url')} className="neu-btn flex items-center gap-1.5 text-sm px-4">
               {copiedUrl ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
               {copiedUrl ? 'Скопировано' : 'Копировать'}
             </button>
@@ -1144,12 +1100,7 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
             Передавайте в заголовке <span className="font-mono bg-[#F1F5F9] px-1 rounded">X-Webhook-Secret</span> для аутентификации.
           </p>
           <div className="flex gap-2">
-            <input
-              readOnly
-              type="password"
-              className="neu-input font-mono text-sm flex-1"
-              value={webhookSecret}
-            />
+            <input readOnly type="password" className="neu-input font-mono text-sm flex-1" value={webhookSecret} />
             <button onClick={() => copyText(webhookSecret, 'secret')} className="neu-btn flex items-center gap-1.5 text-sm px-4">
               {copiedSecret ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
               {copiedSecret ? 'Скопировано' : 'Показать'}
@@ -1157,98 +1108,6 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
             <button onClick={regenerateSecret} disabled={regenerating} className="neu-btn flex items-center gap-1.5 text-sm px-4">
               <RefreshCw size={14} className={regenerating ? 'animate-spin' : ''} />
               Обновить
-            </button>
-          </div>
-        </div>
-
-        {/* Курс USD → ₸ */}
-        <div className="max-w-xs">
-          <label className="block text-sm font-medium text-[#64748B] mb-1">Курс USD → ₸</label>
-          <p className="text-xs text-[#94A3B8] mb-2">Используется для перерасчёта расходов из Facebook / TikTok в тенге.</p>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min={1}
-              className="neu-input"
-              value={usdToKzt}
-              onChange={e => setUsdToKzt(Number(e.target.value))}
-            />
-            <button onClick={saveAds} disabled={savingAds} className="neu-btn-primary flex items-center gap-1.5 text-sm px-4 whitespace-nowrap">
-              <Check size={14} />
-              {savingAds ? 'Сохранение...' : 'Сохранить'}
-            </button>
-          </div>
-        </div>
-
-        {/* Connected Ad Accounts */}
-        <div>
-          <label className="block text-sm font-medium text-[#64748B] mb-3">Подключённые рекламные аккаунты</label>
-          {adAccounts.length === 0 ? (
-            <p className="text-sm text-[#94A3B8] neu-sm p-4">
-              Нет подключённых аккаунтов. Подключите их на странице{' '}
-              <a href={`${BASE_URL}/ads`} className="text-[#1A56DB] hover:underline">Реклама</a>.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {adAccounts.map(acc => (
-                <div key={acc.id} className="neu-sm p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${acc.platform === 'facebook' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-700'}`}>
-                      {acc.platform === 'facebook' ? 'Facebook' : 'TikTok'}
-                    </span>
-                    <span className="text-sm font-medium text-[#0B1220]">{acc.account_name || acc.account_id}</span>
-                  </div>
-                  <button onClick={() => disconnectAccount(acc.id)} className="neu-btn text-xs text-red-500 hover:text-red-700 px-3 py-1.5">
-                    Отключить
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* TikTok App Configuration */}
-        <div className="border-t border-[#E7ECF3] pt-6">
-          <h4 className="font-bold text-[#1E293B] mb-1">TikTok Business App</h4>
-          <p className="text-sm text-[#64748B] mb-4">
-            Введите App ID и App Secret из{' '}
-            <a
-              href="https://business-api.tiktok.com/portal/apps"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[#1A56DB] inline-flex items-center gap-0.5 hover:underline"
-            >
-              TikTok Developer Portal <ExternalLink size={11} />
-            </a>
-            . Эти данные используются для OAuth-подключения рекламных аккаунтов TikTok.
-          </p>
-          <div className="space-y-3 max-w-md">
-            <div>
-              <label className="block text-xs font-medium text-[#64748B] mb-1">App ID</label>
-              <input
-                className="neu-input font-mono text-sm"
-                placeholder="7000000000000000000"
-                value={tiktokAppId}
-                onChange={e => setTiktokAppId(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[#64748B] mb-1">App Secret</label>
-              <input
-                type="password"
-                className="neu-input font-mono text-sm"
-                placeholder="••••••••••••••••••••••••••••••••"
-                value={tiktokAppSecret}
-                onChange={e => setTiktokAppSecret(e.target.value)}
-              />
-            </div>
-            <button
-              onClick={saveTiktokConfig}
-              disabled={savingTiktok || !tiktokAppId.trim() || !tiktokAppSecret.trim()}
-              className="neu-btn-primary flex items-center gap-2 text-sm px-5"
-            >
-              <Check size={14} />
-              {savingTiktok ? 'Сохранение...' : 'Сохранить'}
             </button>
           </div>
         </div>

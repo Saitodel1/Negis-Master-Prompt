@@ -838,11 +838,159 @@ function ConversionTab({ clinicId }: { clinicId: string }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   SETTINGS TAB
+═══════════════════════════════════════════════════════════════ */
+const BASE_URL_ADS = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
+
+function AdsSettingsTab({ clinicId }: { clinicId: string }) {
+  const [appId, setAppId] = useState('');
+  const [appSecret, setAppSecret] = useState('');
+  const [savingTiktok, setSavingTiktok] = useState(false);
+
+  const [usdToKzt, setUsdToKzt] = useState(450);
+  const [savingUsd, setSavingUsd] = useState(false);
+
+  const [accounts, setAccounts] = useState<AdAccount[]>([]);
+
+  useEffect(() => {
+    supabase.from('platform_configs')
+      .select('app_id, app_secret')
+      .eq('clinic_id', clinicId).eq('platform', 'tiktok').maybeSingle()
+      .then(({ data }) => { if (data) { setAppId(data.app_id ?? ''); setAppSecret(data.app_secret ?? ''); } });
+
+    supabase.from('clinics').select('usd_to_kzt').eq('id', clinicId).single()
+      .then(({ data }) => { if (data?.usd_to_kzt) setUsdToKzt(data.usd_to_kzt); });
+
+    supabase.from('ad_accounts')
+      .select('id, clinic_id, platform, account_id, account_name, access_token, is_active, created_at')
+      .eq('clinic_id', clinicId).eq('is_active', true)
+      .then(({ data }) => setAccounts((data ?? []) as AdAccount[]));
+  }, [clinicId]);
+
+  const saveTiktok = async () => {
+    setSavingTiktok(true);
+    const { error } = await supabase.from('platform_configs').upsert(
+      { clinic_id: clinicId, platform: 'tiktok', app_id: appId.trim(), app_secret: appSecret.trim() },
+      { onConflict: 'clinic_id,platform' },
+    );
+    if (error) toast.error(error.message);
+    else toast.success('Настройки TikTok сохранены');
+    setSavingTiktok(false);
+  };
+
+  const saveUsd = async () => {
+    setSavingUsd(true);
+    const { error } = await supabase.from('clinics').update({ usd_to_kzt: usdToKzt }).eq('id', clinicId);
+    if (error) toast.error(error.message);
+    else toast.success('Курс сохранён');
+    setSavingUsd(false);
+  };
+
+  const disconnect = async (id: string) => {
+    await supabase.from('ad_accounts').update({ is_active: false }).eq('id', id);
+    setAccounts(prev => prev.filter(a => a.id !== id));
+    toast.success('Аккаунт отключён');
+  };
+
+  return (
+    <div className="space-y-8">
+
+      {/* ── TikTok Business App ── */}
+      <div>
+        <h3 className="font-bold text-[#1E293B] mb-1">TikTok Business App</h3>
+        <p className="text-sm text-[#64748B] mb-4">
+          Введите App ID и App Secret из{' '}
+          <a href="https://business-api.tiktok.com/portal/apps" target="_blank" rel="noopener noreferrer"
+            className="text-[#1A56DB] inline-flex items-center gap-0.5 hover:underline">
+            TikTok Developer Portal <ExternalLink size={11} />
+          </a>
+          . Нужны для OAuth-подключения рекламных аккаунтов TikTok.
+        </p>
+        <div className="space-y-3 max-w-md">
+          <div>
+            <label className="block text-xs font-medium text-[#64748B] mb-1">App ID</label>
+            <input
+              className="neu-input font-mono text-sm"
+              placeholder="7000000000000000000"
+              value={appId}
+              onChange={e => setAppId(e.target.value)}
+            />
+            <p className="text-xs text-[#94A3B8] mt-1">Числовой ID приложения из настроек TikTok Business App</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[#64748B] mb-1">App Secret</label>
+            <input
+              type="password"
+              className="neu-input font-mono text-sm"
+              placeholder="••••••••••••••••••••••••••••••••"
+              value={appSecret}
+              onChange={e => setAppSecret(e.target.value)}
+            />
+            <p className="text-xs text-[#94A3B8] mt-1">Секретный ключ из раздела App Info → Basic Info</p>
+          </div>
+          <button
+            onClick={saveTiktok}
+            disabled={savingTiktok || !appId.trim() || !appSecret.trim()}
+            className="neu-btn-primary flex items-center gap-2 text-sm px-5"
+          >
+            <Check size={14} />
+            {savingTiktok ? 'Сохранение...' : 'Сохранить'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Курс USD → ₸ ── */}
+      <div className="border-t border-[#E7ECF3] pt-6">
+        <h3 className="font-bold text-[#1E293B] mb-1">Курс USD → ₸</h3>
+        <p className="text-sm text-[#64748B] mb-3">Перерасчёт расходов Facebook / TikTok в тенге.</p>
+        <div className="flex gap-2 max-w-xs">
+          <input
+            type="number" min={1}
+            className="neu-input"
+            value={usdToKzt}
+            onChange={e => setUsdToKzt(Number(e.target.value))}
+          />
+          <button onClick={saveUsd} disabled={savingUsd} className="neu-btn-primary flex items-center gap-1.5 text-sm px-4 whitespace-nowrap">
+            <Check size={14} />
+            {savingUsd ? 'Сохранение...' : 'Сохранить'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Подключённые аккаунты ── */}
+      <div className="border-t border-[#E7ECF3] pt-6">
+        <h3 className="font-bold text-[#1E293B] mb-4">Подключённые аккаунты</h3>
+        {accounts.length === 0 ? (
+          <p className="text-sm text-[#94A3B8] neu-sm p-4">Нет подключённых аккаунтов</p>
+        ) : (
+          <div className="space-y-2 max-w-lg">
+            {accounts.map(acc => (
+              <div key={acc.id} className="neu-sm p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${acc.platform === 'facebook' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-700'}`}>
+                    {acc.platform === 'facebook' ? 'Facebook' : 'TikTok'}
+                  </span>
+                  <span className="font-medium text-sm text-[#0B1220]">{acc.account_name || acc.account_id}</span>
+                </div>
+                <button onClick={() => disconnect(acc.id)} className="neu-btn text-xs text-red-500 hover:text-red-700 px-3 py-1.5">
+                  Отключить
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
    MAIN ADS PAGE
 ═══════════════════════════════════════════════════════════════ */
 export default function Ads() {
   const { clinicId } = useAuth();
-  const [tab, setTab] = useState<'reports' | 'conversion'>('reports');
+  const [tab, setTab] = useState<'reports' | 'conversion' | 'settings'>('reports');
   const [usdToKzt, setUsdToKzt] = useState(450);
 
   useEffect(() => {
@@ -862,6 +1010,7 @@ export default function Ads() {
             {[
               { id: 'reports' as const, label: 'Отчёты' },
               { id: 'conversion' as const, label: 'Конверсия' },
+              { id: 'settings' as const, label: 'Настройки' },
             ].map(({ id, label }) => (
               <button
                 key={id}
@@ -879,6 +1028,7 @@ export default function Ads() {
         <div className="neu-card min-h-[500px]">
           {tab === 'reports' && <ReportsTab clinicId={clinicId} usdToKzt={usdToKzt} />}
           {tab === 'conversion' && <ConversionTab clinicId={clinicId} />}
+          {tab === 'settings' && <AdsSettingsTab clinicId={clinicId} />}
         </div>
       </div>
     </PageLayout>
