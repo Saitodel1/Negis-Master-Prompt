@@ -1125,6 +1125,7 @@ function AdsSettingsTab({ clinicId }: { clinicId: string }) {
   const [appId, setAppId] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [savingTiktok, setSavingTiktok] = useState(false);
+  const [tiktokSaved, setTiktokSaved] = useState(false);
 
   const [pixelId, setPixelId] = useState('');
   const [savingPixel, setSavingPixel] = useState(false);
@@ -1167,8 +1168,18 @@ function AdsSettingsTab({ clinicId }: { clinicId: string }) {
       { onConflict: 'clinic_id,platform' },
     );
     if (error) toast.error(error.message);
-    else toast.success('Настройки TikTok сохранены');
+    else { toast.success('Настройки TikTok сохранены'); setTiktokSaved(true); }
     setSavingTiktok(false);
+  };
+
+  const handleTikTokOAuth = () => {
+    if (!appId.trim()) return;
+    const callbackUrl = `${window.location.origin}${BASE_URL_ADS}/ads/callback`;
+    window.location.href =
+      `https://business-api.tiktok.com/open_api/v1.3/oauth2/authorize/` +
+      `?app_id=${encodeURIComponent(appId.trim())}` +
+      `&state=${encodeURIComponent(clinicId)}` +
+      `&redirect_uri=${encodeURIComponent(callbackUrl)}`;
   };
 
   const saveUsd = async () => {
@@ -1221,14 +1232,32 @@ function AdsSettingsTab({ clinicId }: { clinicId: string }) {
             />
             <p className="text-xs text-[#94A3B8] mt-1">Секретный ключ из раздела App Info → Basic Info</p>
           </div>
-          <button
-            onClick={saveTiktok}
-            disabled={savingTiktok || !appId.trim() || !appSecret.trim()}
-            className="neu-btn-primary flex items-center gap-2 text-sm px-5"
-          >
-            <Check size={14} />
-            {savingTiktok ? 'Сохранение...' : 'Сохранить'}
-          </button>
+          <div className="flex gap-3 flex-wrap">
+            <button
+              onClick={saveTiktok}
+              disabled={savingTiktok || !appId.trim() || !appSecret.trim()}
+              className="neu-btn-primary flex items-center gap-2 text-sm px-5"
+            >
+              <Check size={14} />
+              {savingTiktok ? 'Сохранение...' : 'Сохранить'}
+            </button>
+            {(tiktokSaved || appId.trim()) && (
+              <button
+                onClick={handleTikTokOAuth}
+                disabled={!appId.trim()}
+                className="neu-btn flex items-center gap-2 text-sm px-5"
+                style={{ borderColor: '#010101', color: '#010101' }}
+              >
+                {TT_ICON_SM}
+                Подключить аккаунт TikTok
+              </button>
+            )}
+          </div>
+          {(tiktokSaved || appId.trim()) && (
+            <p className="text-xs text-[#94A3B8]">
+              После нажатия «Подключить» TikTok откроет страницу авторизации. Разрешите доступ и вы вернётесь обратно.
+            </p>
+          )}
         </div>
       </div>
 
@@ -1299,6 +1328,94 @@ function AdsSettingsTab({ clinicId }: { clinicId: string }) {
         )}
       </div>
 
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   WEBHOOK SECTION (used inside LeadsImportTab)
+═══════════════════════════════════════════════════════════════ */
+function WebhookSection({ clinicId }: { clinicId: string }) {
+  const [webhookSecret, setWebhookSecret] = useState('');
+  const [regenerating, setRegenerating] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedSecret, setCopiedSecret] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+
+  const webhookUrl = `${window.location.origin}${BASE_URL}/api/leads/webhook/${clinicId}`;
+
+  useEffect(() => {
+    supabase.from('clinics').select('webhook_secret').eq('id', clinicId).single()
+      .then(({ data }) => { if (data?.webhook_secret) setWebhookSecret(data.webhook_secret); });
+  }, [clinicId]);
+
+  const copy = async (text: string, which: 'url' | 'secret') => {
+    await navigator.clipboard.writeText(text);
+    if (which === 'url') { setCopiedUrl(true); setTimeout(() => setCopiedUrl(false), 2000); }
+    else { setCopiedSecret(true); setTimeout(() => setCopiedSecret(false), 2000); }
+    toast.success('Скопировано');
+  };
+
+  const regenerate = async () => {
+    setRegenerating(true);
+    const arr = new Uint8Array(32);
+    crypto.getRandomValues(arr);
+    const newSecret = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+    const { error } = await supabase.from('clinics').update({ webhook_secret: newSecret }).eq('id', clinicId);
+    if (error) toast.error(error.message);
+    else { setWebhookSecret(newSecret); toast.success('Секрет обновлён'); }
+    setRegenerating(false);
+  };
+
+  return (
+    <div className="border-t border-[#E7ECF3] pt-6 space-y-5">
+      <div>
+        <h3 className="font-bold text-[#1E293B] text-sm">Webhook — внешние источники лидов</h3>
+        <p className="text-xs text-[#64748B] mt-1">
+          Отправляйте POST-запрос на этот URL из любого источника: лендинг, Instagram, CRM, Zapier и т.д.
+          Лид появится в CRM автоматически.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Webhook URL</label>
+        <div className="flex gap-2">
+          <input readOnly className="neu-input text-xs font-mono flex-1" value={webhookUrl} />
+          <button onClick={() => copy(webhookUrl, 'url')} className="neu-btn flex items-center gap-1.5 text-sm px-4 whitespace-nowrap">
+            {copiedUrl ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
+            {copiedUrl ? 'Скопировано' : 'Копировать'}
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Webhook Secret</label>
+        <p className="text-xs text-[#94A3B8] mb-2">
+          Передавайте в заголовке{' '}
+          <span className="font-mono bg-[#F1F5F9] px-1 rounded">X-Webhook-Secret</span> для аутентификации.
+        </p>
+        <div className="flex gap-2">
+          <input
+            readOnly
+            type={showSecret ? 'text' : 'password'}
+            className="neu-input font-mono text-sm flex-1"
+            value={webhookSecret || '(не задан)'}
+          />
+          <button onClick={() => setShowSecret(s => !s)} className="neu-btn text-sm px-3">
+            {showSecret ? 'Скрыть' : 'Показать'}
+          </button>
+          {webhookSecret && (
+            <button onClick={() => copy(webhookSecret, 'secret')} className="neu-btn flex items-center gap-1.5 text-sm px-4 whitespace-nowrap">
+              {copiedSecret ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
+              {copiedSecret ? 'Скопировано' : 'Копировать'}
+            </button>
+          )}
+          <button onClick={regenerate} disabled={regenerating} className="neu-btn flex items-center gap-1.5 text-sm px-4 whitespace-nowrap">
+            <RefreshCw size={14} className={regenerating ? 'animate-spin' : ''} />
+            {webhookSecret ? 'Обновить' : 'Создать'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1570,6 +1687,9 @@ function LeadsImportTab({ clinicId }: { clinicId: string }) {
           </div>
         </div>
       )}
+
+      {/* Webhook */}
+      <WebhookSection clinicId={clinicId} />
 
       {/* Requirements */}
       <div className="border-t border-[#E7ECF3] pt-6">

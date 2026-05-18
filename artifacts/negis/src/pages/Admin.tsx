@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { Plus, Trash2, Edit2, Settings, Check, Download, Upload, Copy, RefreshCw, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, Edit2, Settings, Check, Download, Upload, ExternalLink } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import { supabase } from '@/lib/supabase';
@@ -1021,24 +1021,14 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [webhookSecret, setWebhookSecret] = useState('');
-  const [regenerating, setRegenerating] = useState(false);
-  const [copiedSecret, setCopiedSecret] = useState(false);
-  const [copiedUrl, setCopiedUrl] = useState(false);
-
-  const webhookUrl = clinicId
-    ? `${window.location.origin}${BASE_URL}/api/leads/webhook/${clinicId}`
-    : '';
-
   useEffect(() => {
     if (!clinicId) return;
     supabase.from('clinics')
-      .select('name, work_start, work_end, slot_limit, whatsapp_number, telegram_chat_id, webhook_secret')
+      .select('name, work_start, work_end, slot_limit, whatsapp_number, telegram_chat_id')
       .eq('id', clinicId).single()
       .then(({ data }) => {
         if (data) {
           setForm({ name: data.name || '', work_start: data.work_start || '10:00', work_end: data.work_end || '18:00', slot_limit: data.slot_limit || 3, whatsapp_number: data.whatsapp_number || '', telegram_chat_id: data.telegram_chat_id || '' });
-          setWebhookSecret(data.webhook_secret || '');
         }
         setLoading(false);
       });
@@ -1049,23 +1039,6 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
     const { error } = await supabase.from('clinics').update(form).eq('id', clinicId);
     if (error) toast.error(error.message); else toast.success('Настройки сохранены');
     setSaving(false);
-  };
-
-  const regenerateSecret = async () => {
-    setRegenerating(true);
-    const arr = new Uint8Array(32);
-    crypto.getRandomValues(arr);
-    const newSecret = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
-    const { error } = await supabase.from('clinics').update({ webhook_secret: newSecret }).eq('id', clinicId);
-    if (error) { toast.error(error.message); } else { setWebhookSecret(newSecret); toast.success('Секрет обновлён'); }
-    setRegenerating(false);
-  };
-
-  const copyText = async (text: string, which: 'secret' | 'url') => {
-    await navigator.clipboard.writeText(text);
-    if (which === 'secret') { setCopiedSecret(true); setTimeout(() => setCopiedSecret(false), 2000); }
-    else { setCopiedUrl(true); setTimeout(() => setCopiedUrl(false), 2000); }
-    toast.success('Скопировано');
   };
 
   if (loading) return <p className="text-center text-[#64748B] py-12">Загрузка...</p>;
@@ -1106,51 +1079,6 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
         </button>
       </div>
 
-      {/* ── Webhook ── */}
-      <div className="max-w-2xl space-y-5 border-t border-[#E7ECF3] pt-8">
-        <div>
-          <h3 className="text-lg font-bold">Webhook</h3>
-          <p className="text-sm text-[#64748B] mt-0.5">Приём лидов от внешних источников</p>
-        </div>
-
-        {/* Webhook URL */}
-        <div>
-          <label className="block text-sm font-medium text-[#64748B] mb-1">Webhook URL</label>
-          <p className="text-xs text-[#94A3B8] mb-2">
-            Отправляйте POST-запрос на этот URL, чтобы создавать лидов автоматически.{' '}
-            <a href="https://negis.app/docs/webhook" target="_blank" rel="noopener noreferrer"
-              className="text-[#1A56DB] inline-flex items-center gap-0.5 hover:underline">
-              Документация <ExternalLink size={11} />
-            </a>
-          </p>
-          <div className="flex gap-2">
-            <input readOnly className="neu-input text-xs font-mono flex-1" value={webhookUrl} />
-            <button onClick={() => copyText(webhookUrl, 'url')} className="neu-btn flex items-center gap-1.5 text-sm px-4">
-              {copiedUrl ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
-              {copiedUrl ? 'Скопировано' : 'Копировать'}
-            </button>
-          </div>
-        </div>
-
-        {/* Webhook Secret */}
-        <div>
-          <label className="block text-sm font-medium text-[#64748B] mb-1">Webhook Secret</label>
-          <p className="text-xs text-[#94A3B8] mb-2">
-            Передавайте в заголовке <span className="font-mono bg-[#F1F5F9] px-1 rounded">X-Webhook-Secret</span> для аутентификации.
-          </p>
-          <div className="flex gap-2">
-            <input readOnly type="password" className="neu-input font-mono text-sm flex-1" value={webhookSecret} />
-            <button onClick={() => copyText(webhookSecret, 'secret')} className="neu-btn flex items-center gap-1.5 text-sm px-4">
-              {copiedSecret ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
-              {copiedSecret ? 'Скопировано' : 'Показать'}
-            </button>
-            <button onClick={regenerateSecret} disabled={regenerating} className="neu-btn flex items-center gap-1.5 text-sm px-4">
-              <RefreshCw size={14} className={regenerating ? 'animate-spin' : ''} />
-              Обновить
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
