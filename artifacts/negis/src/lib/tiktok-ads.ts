@@ -73,3 +73,35 @@ export async function verifyTikTokAccount(advertiserId: string, accessToken: str
   const info = data.data?.list?.[0];
   return { name: info?.advertiser_name || advertiserId };
 }
+
+/* ── Lead Generation: fetch leads from TikTok Lead Gen ── */
+export async function fetchTikTokLeads(
+  advertiserId: string,
+  accessToken: string,
+  page = 1
+): Promise<any[]> {
+  const body = { advertiser_id: advertiserId, page, page_size: 100 };
+  const response = await fetch(`${TIKTOK_API_BASE}/lead/get/`, {
+    method: 'POST',
+    headers: { 'Access-Token': accessToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (data.code !== 0) throw new Error(data.message);
+  return data.data?.list || [];
+}
+
+/* ── Parse a raw TikTok lead into { name, phone, email } ── */
+export function parseTikTokLead(raw: any): { name: string | null; phone: string | null; email: string | null } {
+  const fields: Record<string, string> = {};
+  for (const f of (raw.field_values || [])) {
+    fields[String(f.name).toUpperCase()] = f.value || '';
+  }
+  const name =
+    fields['FULL_NAME'] ||
+    [fields['FIRST_NAME'], fields['LAST_NAME']].filter(Boolean).join(' ') ||
+    null;
+  const phone = fields['PHONE_NUMBER'] || fields['PHONE'] || null;
+  const email = fields['EMAIL'] || null;
+  return { name: name || null, phone: phone || null, email: email || null };
+}

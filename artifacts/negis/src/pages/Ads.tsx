@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import {
   RefreshCw, Copy, Check, X, ExternalLink, TrendingUp, TrendingDown,
-  ArrowUpDown, Megaphone, ChevronDown, ChevronUp,
+  ArrowUpDown, Megaphone, ChevronDown, ChevronUp, Users, UserPlus, AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
@@ -11,8 +11,14 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
-import { fetchFacebookReport, fetchFacebookCampaigns, verifyFacebookAccount } from '@/lib/facebook-ads';
-import { fetchTikTokReport, fetchTikTokCampaigns, verifyTikTokAccount } from '@/lib/tiktok-ads';
+import {
+  fetchFacebookReport, fetchFacebookCampaigns, verifyFacebookAccount,
+  fetchFacebookPages, fetchFacebookLeadForms, fetchFacebookFormLeads, parseFacebookLead,
+} from '@/lib/facebook-ads';
+import {
+  fetchTikTokReport, fetchTikTokCampaigns, verifyTikTokAccount,
+  fetchTikTokLeads, parseTikTokLead,
+} from '@/lib/tiktok-ads';
 import { getConversionBySource, getConversionSummary } from '@/lib/conversion';
 
 /* ── Types ─────────────────────────────────────────────────── */
@@ -1298,11 +1304,307 @@ function AdsSettingsTab({ clinicId }: { clinicId: string }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   LEADS IMPORT TAB
+═══════════════════════════════════════════════════════════════ */
+interface SyncLogEntry {
+  accountName: string;
+  platform: 'facebook' | 'tiktok';
+  added: number;
+  skipped: number;
+  error?: string;
+}
+
+function LeadsImportTab({ clinicId }: { clinicId: string }) {
+  const [accounts, setAccounts] = useState<AdAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState<string | 'all' | null>(null);
+  const [pipeline, setPipeline] = useState<'sales' | 'booking'>('sales');
+  const [daysBack, setDaysBack] = useState<7 | 30 | 90>(30);
+  const [syncLog, setSyncLog] = useState<SyncLogEntry[]>([]);
+
+  useEffect(() => {
+    supabase.from('ad_accounts').select('*').eq('clinic_id', clinicId).eq('is_active', true)
+      .then(({ data }) => { setAccounts(data ?? []); setLoading(false); });
+  }, [clinicId]);
+
+  /* ── fetch existing phones to deduplicate ── */
+  const loadExistingPhones = async (): Promise<Set<string>> => {
+    const { data } = await supabase.from('leads').select('phone').eq('clinic_id', clinicId).not('phone', 'is', null);
+    return new Set((data ?? []).map((r: any) => String(r.phone).replace(/\D/g, '')));
+  };
+
+  /* ── insert a batch of leads, return {added, skipped} ── */
+  const insertLeads = async (
+    rawLeads: { name: string | null; phone: string | null; email: string | null; source: string }[],
+    existingPhones: Set<string>,
+    defaultStatuses: { id: string }[],
+  ) => {
+    let added = 0, skipped = 0;
+    const defaultStatusId = defaultStatuses[0]?.id ?? null;
+    for (const lead of rawLeads) {
+      const norm = lead.phone ? lead.phone.replace(/\D/g, '') : null;
+      if (norm && existingPhones.has(norm)) { skipped++; continue; }
+      const { error } = await supabase.from('leads').insert({
+        clinic_id: clinicId,
+        name: lead.name,
+        phone: lead.phone,
+        source: lead.source,
+        pipeline,
+        status_id: defaultStatusId,
+      });
+      if (!error) {
+        added++;
+        if (norm) existingPhones.add(norm);
+      }
+    }
+    return { added, skipped };
+  };
+
+  /* ── sync a single Facebook account ── */
+  const syncFacebook = async (acc: AdAccount, existingPhones: Set<string>, defaultStatuses: { id: string }[]) => {
+    const rawLeads: { name: string | null; phone: string | null; email: string | null; source: string }[] = [];
+    const sinceTs = Math.floor((Date.now() - daysBack * 86400_000) / 1000);
+    const pages = await fetchFacebookPages(acc.access_token);
+    for (const page of pages) {
+      const forms = await fetchFacebookLeadForms(page.id, page.access_token);
+      for (const form of forms) {
+        const leads = await fetchFacebookFormLeads(form.id, page.access_token, sinceTs);
+        for (const raw of leads) {
+          const parsed = parseFacebookLead(raw);
+          rawLeads.push({ ...parsed, source: `Facebook — ${form.name || 'Lead Form'}` });
+        }
+      }
+    }
+    return insertLeads(rawLeads, existingPhones, defaultStatuses);
+  };
+
+  /* ── sync a single TikTok account ── */
+  const syncTikTok = async (acc: AdAccount, existingPhones: Set<string>, defaultStatuses: { id: string }[]) => {
+    const rawLeads: { name: string | null; phone: string | null; email: string | null; source: string }[] = [];
+    const cutoff = Date.now() - daysBack * 86400_000;
+    let page = 1;
+    while (true) {
+      const batch = await fetchTikTokLeads(acc.account_id, acc.access_token, page);
+      if (batch.length === 0) break;
+      for (const raw of batch) {
+        const ts = (raw.create_time || 0) * 1000;
+        if (ts < cutoff) continue;
+        const parsed = parseTikTokLead(raw);
+        rawLeads.push({ ...parsed, source: 'TikTok Lead Gen' });
+      }
+      if (batch.length < 100) break;
+      page++;
+      if (page > 10) break;
+    }
+    return insertLeads(rawLeads, existingPhones, defaultStatuses);
+  };
+
+  const syncAccount = async (acc: AdAccount) => {
+    setSyncing(acc.id);
+    try {
+      const [existingPhones, { data: statuses }] = await Promise.all([
+        loadExistingPhones(),
+        supabase.from('lead_statuses').select('id').eq('clinic_id', clinicId).eq('pipeline', pipeline).order('sort_order').limit(1),
+      ]);
+      const defaultStatuses = statuses ?? [];
+      let result: { added: number; skipped: number };
+      if (acc.platform === 'facebook') {
+        result = await syncFacebook(acc, existingPhones, defaultStatuses);
+      } else {
+        result = await syncTikTok(acc, existingPhones, defaultStatuses);
+      }
+      setSyncLog(prev => [{
+        accountName: acc.account_name || acc.account_id,
+        platform: acc.platform,
+        ...result,
+      }, ...prev]);
+      toast.success(`${acc.account_name || acc.account_id}: добавлено ${result.added} лидов`);
+    } catch (e: any) {
+      setSyncLog(prev => [{
+        accountName: acc.account_name || acc.account_id,
+        platform: acc.platform,
+        added: 0, skipped: 0,
+        error: e.message || 'Ошибка синхронизации',
+      }, ...prev]);
+      toast.error(`${acc.account_name || acc.account_id}: ${e.message}`);
+    } finally {
+      setSyncing(null);
+    }
+  };
+
+  const syncAll = async () => {
+    setSyncing('all');
+    const [existingPhones, { data: statuses }] = await Promise.all([
+      loadExistingPhones(),
+      supabase.from('lead_statuses').select('id').eq('clinic_id', clinicId).eq('pipeline', pipeline).order('sort_order').limit(1),
+    ]);
+    const defaultStatuses = statuses ?? [];
+    const entries: SyncLogEntry[] = [];
+    for (const acc of accounts) {
+      try {
+        let result: { added: number; skipped: number };
+        if (acc.platform === 'facebook') {
+          result = await syncFacebook(acc, existingPhones, defaultStatuses);
+        } else {
+          result = await syncTikTok(acc, existingPhones, defaultStatuses);
+        }
+        entries.push({ accountName: acc.account_name || acc.account_id, platform: acc.platform, ...result });
+      } catch (e: any) {
+        entries.push({ accountName: acc.account_name || acc.account_id, platform: acc.platform, added: 0, skipped: 0, error: e.message });
+      }
+    }
+    const totalAdded = entries.reduce((s, e) => s + e.added, 0);
+    setSyncLog(prev => [...entries, ...prev]);
+    toast.success(`Синхронизация завершена: добавлено ${totalAdded} лидов`);
+    setSyncing(null);
+  };
+
+  if (loading) return <p className="py-12 text-center text-[#94A3B8] text-sm">Загрузка...</p>;
+
+  return (
+    <div className="space-y-8">
+      {/* Description */}
+      <div className="neu-sm p-5 flex gap-4 items-start">
+        <div style={{ width: 40, height: 40, borderRadius: 12, background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <UserPlus size={20} color="#1A56DB" />
+        </div>
+        <div>
+          <h3 className="font-bold text-[#0B1220] mb-1">Импорт лидов из рекламы</h3>
+          <p className="text-sm text-[#64748B] leading-relaxed">
+            Вытягивает реальные контакты из Facebook Lead Ads форм и TikTok Lead Generation прямо в CRM.
+            Использует разрешения <span className="font-mono text-xs bg-[#F1F5F9] px-1.5 py-0.5 rounded">leads_retrieval</span>.
+            Дубликаты по номеру телефона автоматически пропускаются.
+          </p>
+        </div>
+      </div>
+
+      {/* Settings */}
+      <div className="flex flex-wrap gap-6 items-end">
+        <div>
+          <label className="block text-xs font-semibold text-[#64748B] mb-2">Куда добавлять лиды</label>
+          <div className="flex gap-2">
+            {([['sales', 'CRM продаж'], ['booking', 'Лиды записей']] as const).map(([v, l]) => (
+              <button key={v} onClick={() => setPipeline(v)}
+                className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${pipeline === v ? 'neu-pressed-sm text-[#1A56DB]' : 'neu-sm text-[#64748B]'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-[#64748B] mb-2">Период синхронизации</label>
+          <div className="flex gap-2">
+            {([7, 30, 90] as const).map(d => (
+              <button key={d} onClick={() => setDaysBack(d)}
+                className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${daysBack === d ? 'neu-pressed-sm text-[#1A56DB]' : 'neu-sm text-[#64748B]'}`}>
+                {d} дней
+              </button>
+            ))}
+          </div>
+        </div>
+        <button
+          onClick={syncAll}
+          disabled={syncing !== null || accounts.length === 0}
+          className="neu-btn-primary flex items-center gap-2 text-sm px-6 py-2.5"
+          style={{ opacity: syncing !== null || accounts.length === 0 ? 0.6 : 1, cursor: syncing !== null || accounts.length === 0 ? 'not-allowed' : 'pointer' }}
+        >
+          <RefreshCw size={14} className={syncing === 'all' ? 'animate-spin' : ''} />
+          Синхронизировать всё
+        </button>
+      </div>
+
+      {/* Accounts */}
+      {accounts.length === 0 ? (
+        <div className="neu-sm p-6 text-center">
+          <Users size={32} className="mx-auto mb-2 text-[#CBD5E1]" />
+          <p className="text-sm text-[#94A3B8]">Нет подключённых рекламных аккаунтов. Перейдите в Настройки и подключите Facebook или TikTok.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <h3 className="font-bold text-[#1E293B] text-sm">Подключённые аккаунты</h3>
+          {accounts.map(acc => (
+            <div key={acc.id} className="neu-sm p-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                {acc.platform === 'facebook' ? FB_ICON_SM : TT_ICON_SM}
+                <div>
+                  <p className="font-semibold text-sm text-[#0B1220]">{acc.account_name || acc.account_id}</p>
+                  <p className="text-xs text-[#94A3B8]">{acc.platform === 'facebook' ? 'Facebook Lead Ads' : 'TikTok Lead Gen'} · ID: {acc.account_id}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => syncAccount(acc)}
+                disabled={syncing !== null}
+                className="neu-btn flex items-center gap-2 text-sm px-4 py-2"
+                style={{ opacity: syncing !== null ? 0.6 : 1, cursor: syncing !== null ? 'not-allowed' : 'pointer' }}
+              >
+                <RefreshCw size={13} className={syncing === acc.id ? 'animate-spin' : ''} />
+                {syncing === acc.id ? 'Синхронизация...' : 'Синхронизировать'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Sync log */}
+      {syncLog.length > 0 && (
+        <div>
+          <h3 className="font-bold text-[#1E293B] text-sm mb-3">Журнал синхронизации</h3>
+          <div className="space-y-2">
+            {syncLog.slice(0, 20).map((entry, i) => (
+              <div key={i} className={`neu-sm p-4 flex items-center gap-4 ${entry.error ? 'border border-red-100' : ''}`}>
+                {entry.platform === 'facebook' ? FB_ICON_SM : TT_ICON_SM}
+                <div className="flex-1">
+                  <p className="font-semibold text-sm text-[#0B1220]">{entry.accountName}</p>
+                  {entry.error ? (
+                    <p className="text-xs text-red-500 flex items-center gap-1 mt-0.5"><AlertCircle size={11} />{entry.error}</p>
+                  ) : (
+                    <p className="text-xs text-[#64748B] mt-0.5">
+                      Добавлено: <span className="font-bold text-green-600">{entry.added}</span>
+                      {' · '}
+                      Пропущено (дубли): <span className="font-bold text-[#94A3B8]">{entry.skipped}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Requirements */}
+      <div className="border-t border-[#E7ECF3] pt-6">
+        <h3 className="font-bold text-[#1E293B] text-sm mb-3">Необходимые разрешения</h3>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { perm: 'leads_retrieval', desc: 'Доступ к лидам из Lead Ads форм', platform: 'Facebook' },
+            { perm: 'ads_read', desc: 'Чтение статистики рекламных кампаний', platform: 'Facebook' },
+            { perm: 'ads_management', desc: 'Управление рекламными объявлениями', platform: 'Facebook' },
+            { perm: 'pages_manage_metadata', desc: 'Доступ к страницам и формам', platform: 'Facebook' },
+            { perm: 'business_management', desc: 'Доступ к Business Manager', platform: 'Facebook' },
+            { perm: 'lead.get', desc: 'Получение лидов из Lead Generation', platform: 'TikTok' },
+          ].map(({ perm, desc, platform }) => (
+            <div key={perm} className="neu-sm p-3 flex items-start gap-3">
+              <span className={`mt-0.5 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${platform === 'Facebook' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-700'}`}>
+                {platform}
+              </span>
+              <div>
+                <p className="font-mono text-xs font-semibold text-[#0B1220]">{perm}</p>
+                <p className="text-xs text-[#64748B] mt-0.5">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
    MAIN ADS PAGE
 ═══════════════════════════════════════════════════════════════ */
 export default function Ads() {
   const { clinicId } = useAuth();
-  const [tab, setTab] = useState<'reports' | 'conversion' | 'settings'>('reports');
+  const [tab, setTab] = useState<'reports' | 'leads' | 'conversion' | 'settings'>('reports');
   const [usdToKzt, setUsdToKzt] = useState(450);
 
   useEffect(() => {
@@ -1321,6 +1623,7 @@ export default function Ads() {
           <div className="flex gap-2">
             {[
               { id: 'reports' as const, label: 'Отчёты' },
+              { id: 'leads' as const, label: 'Лиды из рекламы' },
               { id: 'conversion' as const, label: 'Конверсия' },
               { id: 'settings' as const, label: 'Настройки' },
             ].map(({ id, label }) => (
@@ -1339,6 +1642,7 @@ export default function Ads() {
 
         <div className="neu-card min-h-[500px]">
           {tab === 'reports' && <ReportsTab clinicId={clinicId} usdToKzt={usdToKzt} />}
+          {tab === 'leads' && <LeadsImportTab clinicId={clinicId} />}
           {tab === 'conversion' && <ConversionTab clinicId={clinicId} />}
           {tab === 'settings' && <AdsSettingsTab clinicId={clinicId} />}
         </div>
