@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { Search, Plus, X, Check, ArrowUpDown } from 'lucide-react';
+import { Search, Plus, X, Check, ArrowUpDown, Calendar, Trash2, User, Tag } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -20,7 +20,8 @@ interface Lead {
 interface LeadStatus { id: string; name: string; color: string }
 interface Agent { id: string; name: string; user_id: string | null }
 
-const SOURCES = ['Instagram', 'Google', 'WhatsApp', '2GIS', 'Вручную', 'Webhook'];
+const SOURCES = ['Instagram', 'Google', 'WhatsApp', '2GIS', 'Вручную', 'Webhook', 'Import'];
+
 const SORT_OPTIONS = [
   { value: 'created_at_desc', label: 'Дата (новые)' },
   { value: 'created_at_asc',  label: 'Дата (старые)' },
@@ -28,25 +29,93 @@ const SORT_OPTIONS = [
   { value: 'name_asc',        label: 'Имя (А→Я)' },
 ];
 
+const PERIOD_OPTIONS = [
+  { value: 'all',       label: 'Все даты' },
+  { value: 'today',     label: 'Сегодня' },
+  { value: 'yesterday', label: 'Вчера' },
+  { value: '7days',     label: 'Последние 7 дней' },
+  { value: '30days',    label: 'Последние 30 дней' },
+  { value: 'month',     label: 'Этот месяц' },
+  { value: 'lastmonth', label: 'Прошлый месяц' },
+  { value: 'custom',    label: 'Произвольный период' },
+];
+
+/* ── Date range helper ──────────────────────────────────── */
+function getDateRange(period: string, dateFrom: string, dateTo: string): { from: Date | null; to: Date | null } {
+  const now  = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endOfDay = (d: Date) => new Date(d.getTime() + 86400000 - 1);
+
+  switch (period) {
+    case 'today':     return { from: today, to: endOfDay(today) };
+    case 'yesterday': {
+      const y = new Date(today.getTime() - 86400000);
+      return { from: y, to: endOfDay(y) };
+    }
+    case '7days':     return { from: new Date(today.getTime() - 6 * 86400000), to: endOfDay(today) };
+    case '30days':    return { from: new Date(today.getTime() - 29 * 86400000), to: endOfDay(today) };
+    case 'month':     return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: endOfDay(today) };
+    case 'lastmonth': return {
+      from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      to:   new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59),
+    };
+    case 'custom':    return {
+      from: dateFrom ? new Date(dateFrom + 'T00:00:00') : null,
+      to:   dateTo   ? new Date(dateTo   + 'T23:59:59') : null,
+    };
+    default: return { from: null, to: null };
+  }
+}
+
+/* ── Indeterminate checkbox ─────────────────────────────── */
+function IndeterminateCheckbox({ checked, indeterminate, onChange }: {
+  checked: boolean; indeterminate: boolean; onChange: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (ref.current) ref.current.indeterminate = indeterminate; }, [indeterminate]);
+  return (
+    <input
+      ref={ref} type="checkbox" checked={checked} onChange={onChange}
+      style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E325C' }}
+      onClick={e => e.stopPropagation()}
+    />
+  );
+}
+
+/* ═══════════════════════════════════════════════════════ */
 export default function Sales() {
   const { clinicId, user, userRole } = useAuth();
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [leads, setLeads]       = useState<Lead[]>([]);
   const [statuses, setStatuses] = useState<LeadStatus[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agents, setAgents]     = useState<Agent[]>([]);
   const [myAgentId, setMyAgentId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]   = useState(true);
 
-  const [search, setSearch] = useState('');
+  /* ── Filters ── */
+  const [search, setSearch]           = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-  const [filterAgent, setFilterAgent] = useState('');
+  const [filterAgent, setFilterAgent]   = useState('');
   const [filterSource, setFilterSource] = useState('');
-  const [sortBy, setSortBy] = useState('created_at_desc');
+  const [sortBy, setSortBy]             = useState('created_at_desc');
+  const [periodFilter, setPeriodFilter] = useState('all');
+  const [dateFrom, setDateFrom]         = useState('');
+  const [dateTo, setDateTo]             = useState('');
 
+  /* ── Selection ── */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  /* ── Bulk action panel state ── */
+  const [bulkPanel, setBulkPanel]     = useState<'status' | 'agent' | 'source' | 'delete' | null>(null);
+  const [bulkStatusId, setBulkStatusId] = useState('');
+  const [bulkAgentId, setBulkAgentId]   = useState('');
+  const [bulkSource, setBulkSource]     = useState('');
+  const [bulkLoading, setBulkLoading]   = useState(false);
+
+  /* ── Lead forms ── */
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [showNew, setShowNew] = useState(false);
-
+  const [showNew, setShowNew]           = useState(false);
   const emptyForm = { full_name: '', phone: '', email: '', company: '', age: '', source: 'Вручную', status_id: '', assigned_to: '', comment: '' };
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm]   = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { if (clinicId) init(); }, [clinicId]);
@@ -64,55 +133,97 @@ export default function Sales() {
       const mine = ag.find(a => a.user_id === user.id);
       setMyAgentId(mine?.id ?? null);
     }
-    await loadLeads(sl ?? [], ag ?? []);
+    await loadLeads(sl ?? []);
     setLoading(false);
   };
 
-  const loadLeads = async (sl: LeadStatus[], _ag: Agent[]) => {
+  const loadLeads = async (_sl?: LeadStatus[]) => {
     if (!clinicId) return;
-    let q = supabase
-      .from('leads')
-      .select('*, lead_statuses(name, color)')
-      .eq('clinic_id', clinicId);
-
+    let q = supabase.from('leads').select('*, lead_statuses(name, color)').eq('clinic_id', clinicId);
     if (userRole === 'agent' && myAgentId) q = q.eq('assigned_to', myAgentId);
-
     const [field, asc] = sortBy === 'created_at_desc' ? ['created_at', false]
-      : sortBy === 'created_at_asc' ? ['created_at', true]
-      : sortBy === 'phone_asc' ? ['phone', true]
-      : sortBy === 'name_asc' ? ['full_name', true]
-      : ['created_at', false];
+      : sortBy === 'created_at_asc'  ? ['created_at', true]
+      : sortBy === 'phone_asc'       ? ['phone', true]
+      : ['full_name', true];
     q = q.order(field, { ascending: asc });
-
     const { data, error } = await q;
     if (error) { toast.error(error.message); return; }
     setLeads(data ?? []);
+    setSelectedIds(new Set());
   };
 
-  useEffect(() => { if (clinicId && !loading) loadLeads(statuses, agents); }, [sortBy, myAgentId]);
+  useEffect(() => { if (clinicId && !loading) loadLeads(); }, [sortBy, myAgentId]);
 
-  /* filtered display */
+  /* ── Client-side filtering ── */
   const displayed = leads.filter(l => {
-    const name = (l.full_name ?? '').toLowerCase();
-    if (search && !name.includes(search.toLowerCase()) && !(l.phone ?? '').includes(search)) return false;
+    if (search && !(l.full_name ?? '').toLowerCase().includes(search.toLowerCase()) && !(l.phone ?? '').includes(search)) return false;
     if (filterStatus && l.status_id !== filterStatus) return false;
     if (filterAgent && l.assigned_to !== filterAgent) return false;
     if (filterSource && l.source !== filterSource) return false;
+    if (periodFilter !== 'all') {
+      const { from, to } = getDateRange(periodFilter, dateFrom, dateTo);
+      const created = new Date(l.created_at);
+      if (from && created < from) return false;
+      if (to   && created > to)   return false;
+    }
     return true;
   });
 
-  /* ── Create lead ── */
+  /* ── Selection helpers ── */
+  const allSelected = displayed.length > 0 && displayed.every(l => selectedIds.has(l.id));
+  const someSelected = displayed.some(l => selectedIds.has(l.id));
+  const indeterminate = someSelected && !allSelected;
+
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(displayed.map(l => l.id)));
+    }
+  };
+  const toggleOne = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => { setSelectedIds(new Set()); setBulkPanel(null); };
+
+  /* ── Bulk actions ── */
+  const bulkUpdate = async (patch: Record<string, unknown>) => {
+    if (!clinicId || selectedIds.size === 0) return;
+    setBulkLoading(true);
+    const ids = Array.from(selectedIds);
+    const { error } = await supabase.from('leads').update(patch).eq('clinic_id', clinicId).in('id', ids);
+    setBulkLoading(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`Обновлено ${ids.length} лидов`);
+    clearSelection();
+    loadLeads();
+  };
+
+  const bulkDelete = async () => {
+    if (!clinicId || selectedIds.size === 0) return;
+    setBulkLoading(true);
+    const ids = Array.from(selectedIds);
+    const { error } = await supabase.from('leads').delete().eq('clinic_id', clinicId).in('id', ids);
+    setBulkLoading(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`Удалено ${ids.length} лидов`);
+    clearSelection();
+    loadLeads();
+  };
+
+  /* ── Lead CRUD ── */
   const createLead = async () => {
     if (!form.phone.trim()) { toast.error('Введите телефон'); return; }
     setSaving(true);
     const { error } = await supabase.from('leads').insert({
       clinic_id: clinicId,
-      full_name: form.full_name || null,
-      phone: form.phone,
-      email: form.email || null,
-      company: form.company || null,
-      age: form.age ? parseInt(form.age) : null,
-      source: form.source,
+      full_name: form.full_name || null, phone: form.phone,
+      email: form.email || null, company: form.company || null,
+      age: form.age ? parseInt(form.age) : null, source: form.source,
       status_id: form.status_id || statuses[0]?.id || null,
       assigned_to: form.assigned_to || myAgentId || null,
       comment: form.comment || null,
@@ -121,63 +232,52 @@ export default function Sales() {
     if (error) { toast.error(error.message); return; }
     toast.success('Лид создан');
     trackEvent('Lead');
-    setShowNew(false);
-    setForm(emptyForm);
-    init();
+    setShowNew(false); setForm(emptyForm); init();
   };
 
-  /* ── Update lead ── */
   const updateLead = async () => {
     if (!selectedLead) return;
     setSaving(true);
     const { error } = await supabase.from('leads').update({
-      full_name: selectedLead.full_name,
-      phone: selectedLead.phone,
-      email: selectedLead.email,
-      company: selectedLead.company,
-      age: selectedLead.age,
-      source: selectedLead.source,
-      status_id: selectedLead.status_id,
-      assigned_to: selectedLead.assigned_to,
+      full_name: selectedLead.full_name, phone: selectedLead.phone,
+      email: selectedLead.email, company: selectedLead.company,
+      age: selectedLead.age, source: selectedLead.source,
+      status_id: selectedLead.status_id, assigned_to: selectedLead.assigned_to,
       comment: selectedLead.comment,
     }).eq('id', selectedLead.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
-    toast.success('Лид обновлён');
-    setSelectedLead(null);
-    init();
+    toast.success('Лид обновлён'); setSelectedLead(null); init();
   };
 
-  /* ── Delete lead ── */
   const deleteLead = async (id: string) => {
     const { error } = await supabase.from('leads').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
-    toast.success('Лид удалён');
-    setSelectedLead(null);
-    init();
+    toast.success('Лид удалён'); setSelectedLead(null); init();
   };
 
+  /* ── Helpers ── */
   const statusColor = (lead: Lead) => lead.lead_statuses?.color ?? '#94A3B8';
-  const statusName  = (lead: Lead) => lead.lead_statuses?.name ?? '—';
+  const statusName  = (lead: Lead) => lead.lead_statuses?.name  ?? '—';
   const displayName = (lead: Lead) => lead.full_name || '—';
-  /* Try agents.id match first; fall back to agents.user_id match
-     (Negis Control may store auth user_id in assigned_to) */
-  const agentName = (lead: Lead) =>
+  const agentName   = (lead: Lead) =>
     agents.find(a => a.id === lead.assigned_to)?.name ??
-    agents.find(a => a.user_id === lead.assigned_to)?.name ??
-    '—';
+    agents.find(a => a.user_id === lead.assigned_to)?.name ?? '—';
 
-  /* ── UI ─────────────────────────────────────────────── */
   const IS: React.CSSProperties = {
     background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 10,
     padding: '9px 13px', fontSize: 13, color: '#0B1220',
     fontFamily: "'Inter', sans-serif", outline: 'none', width: '100%',
   };
+  const BSEL: React.CSSProperties = { ...IS, padding: '7px 10px', width: 'auto', minWidth: 160 };
+
+  const colSpan = 8; // checkbox + 6 cols + actions
 
   return (
     <PageLayout>
       <div className="space-y-5 h-full flex flex-col">
-        {/* Header */}
+
+        {/* ── Header ── */}
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold">Negis CRM</h2>
           <button className="neu-btn-primary flex items-center gap-2" onClick={() => setShowNew(true)}>
@@ -185,41 +285,144 @@ export default function Sales() {
           </button>
         </div>
 
-        {/* Filters */}
+        {/* ── Filters ── */}
         <div className="neu-card p-4 flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-48">
+          <div className="relative flex-1 min-w-40">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
             <input type="text" placeholder="Имя или телефон"
               className="neu-input pl-9 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <select className="neu-input text-sm w-40" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+          <select className="neu-input text-sm w-36" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
             <option value="">Все статусы</option>
             {statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           {(userRole === 'owner' || userRole === 'manager') && (
-            <select className="neu-input text-sm w-44" value={filterAgent} onChange={e => setFilterAgent(e.target.value)}>
+            <select className="neu-input text-sm w-40" value={filterAgent} onChange={e => setFilterAgent(e.target.value)}>
               <option value="">Все агенты</option>
               {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           )}
-          <select className="neu-input text-sm w-40" value={filterSource} onChange={e => setFilterSource(e.target.value)}>
+          <select className="neu-input text-sm w-36" value={filterSource} onChange={e => setFilterSource(e.target.value)}>
             <option value="">Все источники</option>
             {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          <div className="flex items-center gap-1.5 text-sm text-[#64748B]">
-            <ArrowUpDown size={14} />
-            <select className="neu-input text-sm w-44" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+          <div className="flex items-center gap-1.5">
+            <ArrowUpDown size={13} className="text-[#94A3B8]" />
+            <select className="neu-input text-sm w-40" value={sortBy} onChange={e => setSortBy(e.target.value)}>
               {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
+          {/* ── Period filter ── */}
+          <div className="flex items-center gap-1.5">
+            <Calendar size={13} className="text-[#94A3B8]" />
+            <select className="neu-input text-sm w-44" value={periodFilter} onChange={e => { setPeriodFilter(e.target.value); setDateFrom(''); setDateTo(''); }}>
+              {PERIOD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          {periodFilter === 'custom' && (
+            <>
+              <input type="date" className="neu-input text-sm w-36" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+              <span className="text-[#94A3B8] text-sm">—</span>
+              <input type="date" className="neu-input text-sm w-36" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+            </>
+          )}
         </div>
 
-        {/* Table */}
+        {/* ── Bulk action bar ── */}
+        {selectedIds.size > 0 && (
+          <div style={{
+            background: '#1E325C', borderRadius: 12, padding: '10px 16px',
+            display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center',
+          }}>
+            <span style={{ color: '#93C5FD', fontSize: 13, fontWeight: 600, marginRight: 4 }}>
+              Выбрано: {selectedIds.size}
+            </span>
+
+            {/* Status */}
+            {bulkPanel === 'status' ? (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <select style={BSEL} value={bulkStatusId} onChange={e => setBulkStatusId(e.target.value)}>
+                  <option value="">— статус —</option>
+                  {statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <BulkConfirmBtn disabled={!bulkStatusId || bulkLoading} onClick={() => bulkUpdate({ status_id: bulkStatusId })}>
+                  {bulkLoading ? '...' : 'Применить'}
+                </BulkConfirmBtn>
+                <BulkCancelBtn onClick={() => setBulkPanel(null)} />
+              </div>
+            ) : bulkPanel === 'agent' ? (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <select style={BSEL} value={bulkAgentId} onChange={e => setBulkAgentId(e.target.value)}>
+                  <option value="">— снять —</option>
+                  {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                <BulkConfirmBtn disabled={bulkLoading} onClick={() => bulkUpdate({ assigned_to: bulkAgentId || null })}>
+                  {bulkLoading ? '...' : 'Применить'}
+                </BulkConfirmBtn>
+                <BulkCancelBtn onClick={() => setBulkPanel(null)} />
+              </div>
+            ) : bulkPanel === 'source' ? (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <select style={BSEL} value={bulkSource} onChange={e => setBulkSource(e.target.value)}>
+                  <option value="">— источник —</option>
+                  {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <BulkConfirmBtn disabled={!bulkSource || bulkLoading} onClick={() => bulkUpdate({ source: bulkSource })}>
+                  {bulkLoading ? '...' : 'Применить'}
+                </BulkConfirmBtn>
+                <BulkCancelBtn onClick={() => setBulkPanel(null)} />
+              </div>
+            ) : bulkPanel === 'delete' ? (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ color: '#FCA5A5', fontSize: 13 }}>
+                  Удалить {selectedIds.size} лидов? Это нельзя отменить.
+                </span>
+                <BulkConfirmBtn disabled={bulkLoading} onClick={bulkDelete} danger>
+                  {bulkLoading ? '...' : 'Удалить'}
+                </BulkConfirmBtn>
+                <BulkCancelBtn onClick={() => setBulkPanel(null)} />
+              </div>
+            ) : (
+              /* Default: show action buttons */
+              <>
+                <BulkActionBtn icon={<Tag size={12} />} onClick={() => { setBulkStatusId(''); setBulkPanel('status'); }}>
+                  Изменить статус
+                </BulkActionBtn>
+                <BulkActionBtn icon={<User size={12} />} onClick={() => { setBulkAgentId(''); setBulkPanel('agent'); }}>
+                  Назначить ответственного
+                </BulkActionBtn>
+                <BulkActionBtn icon={<Tag size={12} />} onClick={() => { setBulkSource(''); setBulkPanel('source'); }}>
+                  Изменить источник
+                </BulkActionBtn>
+                <BulkActionBtn icon={<Trash2 size={12} />} danger onClick={() => setBulkPanel('delete')}>
+                  Удалить
+                </BulkActionBtn>
+              </>
+            )}
+
+            <button onClick={clearSelection} style={{
+              marginLeft: 'auto', background: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8,
+              color: '#CBD5E1', fontSize: 12, padding: '5px 10px', cursor: 'pointer',
+            }}>
+              Снять выбор
+            </button>
+          </div>
+        )}
+
+        {/* ── Table ── */}
         <div className="neu-card flex-1 overflow-hidden p-0">
           <div className="overflow-x-auto h-full">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-[#E7ECF3] text-[#64748B] text-sm sticky top-0 bg-white z-10">
+                  <th className="p-4 w-10">
+                    <IndeterminateCheckbox
+                      checked={allSelected}
+                      indeterminate={indeterminate}
+                      onChange={toggleAll}
+                    />
+                  </th>
                   <th className="p-4 font-semibold">Имя</th>
                   <th className="p-4 font-semibold">Телефон</th>
                   <th className="p-4 font-semibold">Источник</th>
@@ -231,38 +434,51 @@ export default function Sales() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} className="py-16 text-center text-[#94A3B8] text-sm">Загрузка...</td></tr>
+                  <tr><td colSpan={colSpan} className="py-16 text-center text-[#94A3B8] text-sm">Загрузка...</td></tr>
                 ) : displayed.length === 0 ? (
-                  <tr><td colSpan={7} className="py-16 text-center text-[#94A3B8] text-sm">
+                  <tr><td colSpan={colSpan} className="py-16 text-center text-[#94A3B8] text-sm">
                     Нет лидов. Добавьте первый или импортируйте из CSV.
                   </td></tr>
-                ) : displayed.map(lead => (
-                  <tr key={lead.id}
-                    className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] cursor-pointer transition-colors text-sm"
-                    onClick={() => setSelectedLead(lead)}
-                  >
-                    <td className="p-4 font-medium text-[#0B1220]">{displayName(lead)}</td>
-                    <td className="p-4 text-[#64748B]">{lead.phone ?? '—'}</td>
-                    <td className="p-4 text-[#64748B]">{lead.source ?? '—'}</td>
-                    <td className="p-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
-                        style={{ background: statusColor(lead) + '18', color: statusColor(lead) }}>
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor(lead) }} />
-                        {statusName(lead)}
-                      </span>
-                    </td>
-                    <td className="p-4 text-[#64748B]">{agentName(lead)}</td>
-                    <td className="p-4 text-[#94A3B8]">
-                      {new Date(lead.created_at).toLocaleDateString('ru-RU')}
-                    </td>
-                    <td className="p-4 text-right">
-                      <button className="neu-btn px-2 py-1 text-xs text-[#64748B]"
-                        onClick={e => { e.stopPropagation(); setSelectedLead(lead); }}>
-                        Открыть
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                ) : displayed.map(lead => {
+                  const isSelected = selectedIds.has(lead.id);
+                  return (
+                    <tr key={lead.id}
+                      className="border-b border-[#F1F5F9] cursor-pointer transition-colors text-sm"
+                      style={{ background: isSelected ? '#EFF6FF' : undefined }}
+                      onClick={() => setSelectedLead(lead)}
+                    >
+                      <td className="p-4 w-10" onClick={e => { e.stopPropagation(); toggleOne(lead.id); }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleOne(lead.id)}
+                          style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E325C' }}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      </td>
+                      <td className="p-4 font-medium text-[#0B1220]">{displayName(lead)}</td>
+                      <td className="p-4 text-[#64748B]">{lead.phone ?? '—'}</td>
+                      <td className="p-4 text-[#64748B]">{lead.source ?? '—'}</td>
+                      <td className="p-4">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+                          style={{ background: statusColor(lead) + '18', color: statusColor(lead) }}>
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor(lead) }} />
+                          {statusName(lead)}
+                        </span>
+                      </td>
+                      <td className="p-4 text-[#64748B]">{agentName(lead)}</td>
+                      <td className="p-4 text-[#94A3B8]">
+                        {new Date(lead.created_at).toLocaleDateString('ru-RU')}
+                      </td>
+                      <td className="p-4 text-right">
+                        <button className="neu-btn px-2 py-1 text-xs text-[#64748B]"
+                          onClick={e => { e.stopPropagation(); setSelectedLead(lead); }}>
+                          Открыть
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -358,20 +574,18 @@ export default function Sales() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
                     <label className="text-xs text-[#64748B] font-medium block mb-1.5">Полное имя</label>
-                    <input type="text" style={IS}
-                      value={selectedLead.full_name ?? ''}
+                    <input type="text" style={IS} value={selectedLead.full_name ?? ''}
                       onChange={e => setSelectedLead(l => l ? { ...l, full_name: e.target.value || null } : l)} />
                   </div>
-                  {[
+                  {([
                     { label: 'Телефон', key: 'phone', type: 'text' },
                     { label: 'Email', key: 'email', type: 'email' },
                     { label: 'Компания', key: 'company', type: 'text' },
                     { label: 'Возраст', key: 'age', type: 'number' },
-                  ].map(({ label, key, type }) => (
+                  ] as const).map(({ label, key, type }) => (
                     <div key={key}>
                       <label className="text-xs text-[#64748B] font-medium block mb-1.5">{label}</label>
-                      <input type={type} style={IS}
-                        value={(selectedLead as any)[key] ?? ''}
+                      <input type={type} style={IS} value={(selectedLead as any)[key] ?? ''}
                         onChange={e => setSelectedLead(l => l ? { ...l, [key]: e.target.value || null } : l)} />
                     </div>
                   ))}
@@ -425,5 +639,42 @@ export default function Sales() {
         )}
       </div>
     </PageLayout>
+  );
+}
+
+/* ── Bulk action UI helpers ─────────────────────────────── */
+function BulkActionBtn({ children, icon, danger, onClick }: {
+  children: React.ReactNode; icon?: React.ReactNode; danger?: boolean; onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick} style={{
+      display: 'flex', alignItems: 'center', gap: 5,
+      background: danger ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.10)',
+      border: `1px solid ${danger ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.18)'}`,
+      borderRadius: 8, color: danger ? '#FCA5A5' : '#CBD5E1',
+      fontSize: 12, fontWeight: 500, padding: '5px 11px', cursor: 'pointer',
+    }}>
+      {icon}{children}
+    </button>
+  );
+}
+function BulkConfirmBtn({ children, onClick, disabled, danger }: {
+  children: React.ReactNode; onClick: () => void; disabled?: boolean; danger?: boolean;
+}) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      background: danger ? '#DC2626' : '#3B82F6', border: 'none', borderRadius: 8,
+      color: '#FFF', fontSize: 12, fontWeight: 600, padding: '6px 12px', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1,
+    }}>{children}</button>
+  );
+}
+function BulkCancelBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{
+      background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
+      borderRadius: 8, color: '#94A3B8', fontSize: 12, padding: '5px 10px', cursor: 'pointer',
+    }}>
+      <X size={12} />
+    </button>
   );
 }
