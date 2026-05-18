@@ -1402,30 +1402,35 @@ function WebhookSection({ clinicId }: { clinicId: string }) {
           >
             <div className="flex items-center gap-2">
               {TT_ICON_SM}
-              <span className="font-semibold text-sm text-[#1E293B]">TikTok Ads Manager</span>
+              <span className="font-semibold text-sm text-[#1E293B]">TikTok — через Zapier</span>
             </div>
             <ChevronDown size={16} className={`text-[#94A3B8] transition-transform ${openGuide === 'tiktok' ? 'rotate-180' : ''}`} />
           </button>
           {openGuide === 'tiktok' && (
             <div className="px-4 pb-4 space-y-2 border-t border-[#E7ECF3] pt-3">
-              <p className="text-xs text-[#64748B] font-medium mb-2">Без Developer Portal — только через Ads Manager:</p>
+              <div className="p-2 rounded-lg bg-[#F1F5F9] mb-3">
+                <p className="text-xs text-[#475569]">
+                  TikTok не позволяет вставить свой URL напрямую без Developer Portal.
+                  Используйте Zapier — бесплатный тариф покрывает до 100 лидов/мес.
+                </p>
+              </div>
               {[
-                'Войдите в TikTok Ads Manager',
-                'Меню слева → Assets → Lead Generation',
-                'Выберите вашу Lead форму → Edit',
-                'Вкладка "Thank You Page" → CRM Integration',
-                'Выберите "Custom Integration" → Webhook',
-                'Вставьте Webhook URL из поля выше',
-                'Сохраните форму — готово',
+                { text: 'Зарегистрируйтесь на zapier.com (бесплатно)', sub: null },
+                { text: 'Создайте новый Zap', sub: null },
+                { text: 'Trigger: выберите "TikTok Lead Generation"', sub: 'Zapier сам подключит ваш TikTok аккаунт через OAuth' },
+                { text: 'Action: выберите "Webhooks by Zapier" → POST', sub: null },
+                { text: 'URL: вставьте Webhook URL из поля выше', sub: null },
+                { text: 'Payload Type: json', sub: null },
+                { text: 'Включите Zap → Done', sub: 'Каждый новый лид из TikTok попадёт в Negis автоматически' },
               ].map((step, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#E8EDF2] text-[#1A56DB] text-xs font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
-                  <p className="text-xs text-[#334155]">{step}</p>
+                  <div>
+                    <p className="text-xs text-[#334155]">{step.text}</p>
+                    {step.sub && <p className="text-xs text-[#94A3B8] mt-0.5">{step.sub}</p>}
+                  </div>
                 </div>
               ))}
-              <div className="mt-3 p-2 rounded-lg bg-[#FEF3C7]">
-                <p className="text-xs text-[#92400E]">Лиды приходят только с новых заявок после сохранения формы.</p>
-              </div>
             </div>
           )}
         </div>
