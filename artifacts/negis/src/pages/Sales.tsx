@@ -148,7 +148,7 @@ export default function Sales() {
     if (!clinicId) return;
     setLoading(true);
     const [{ data: sl }, { data: ag }, { data: sv }] = await Promise.all([
-      supabase.from('lead_statuses').select('id, name, color').eq('clinic_id', clinicId).order('sort_order'),
+      supabase.from('lead_statuses').select('id, name, color').eq('clinic_id', clinicId).eq('pipeline', 'sales').order('sort_order'),
       supabase.from('agents').select('id, name, user_id').eq('clinic_id', clinicId).order('name'),
       supabase.from('services').select('id, name, price').eq('clinic_id', clinicId).order('name'),
     ]);
@@ -170,7 +170,7 @@ export default function Sales() {
 
   const loadLeads = async (_sl?: LeadStatus[]) => {
     if (!clinicId) return;
-    let q = supabase.from('leads').select('*, lead_statuses(name, color)').eq('clinic_id', clinicId);
+    let q = supabase.from('leads').select('*, lead_statuses(name, color)').eq('clinic_id', clinicId).eq('pipeline', 'sales');
     if (userRole === 'agent' && myAgentId) q = q.eq('assigned_to', myAgentId);
     const [field, asc] = sortBy === 'created_at_desc' ? ['created_at', false]
       : sortBy === 'created_at_asc'  ? ['created_at', true]
@@ -237,7 +237,7 @@ export default function Sales() {
     if (!clinicId || selectedIds.size === 0) return;
     setBulkLoading(true);
     const ids = Array.from(selectedIds);
-    const { error } = await supabase.from('leads').update(patch).eq('clinic_id', clinicId).in('id', ids);
+    const { error } = await supabase.from('leads').update(patch).eq('clinic_id', clinicId).eq('pipeline', 'sales').in('id', ids);
     setBulkLoading(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`Обновлено ${ids.length} лидов`);
@@ -249,7 +249,7 @@ export default function Sales() {
     if (!clinicId || selectedIds.size === 0) return;
     setBulkLoading(true);
     const ids = Array.from(selectedIds);
-    const { error } = await supabase.from('leads').delete().eq('clinic_id', clinicId).in('id', ids);
+    const { error } = await supabase.from('leads').delete().eq('clinic_id', clinicId).eq('pipeline', 'sales').in('id', ids);
     setBulkLoading(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`Удалено ${ids.length} лидов`);
@@ -267,6 +267,7 @@ export default function Sales() {
     const assignedTo = safeAgentId(form.assigned_to || myAgentId);
     const { error } = await supabase.from('leads').insert({
       clinic_id: clinicId,
+      pipeline: 'sales',
       full_name: form.full_name.trim(), phone: form.phone,
       email: form.email || null, company: form.company || null,
       age: form.age ? parseInt(form.age) : null, source: form.source,

@@ -7,8 +7,8 @@ import { toast } from 'sonner';
 
 const NAV = [
   { href: '/dashboard', icon: BarChart2,    label: 'Дашборд',  roles: ['owner', 'manager'] },
-  { href: '/booking',   icon: CalendarDays, label: 'Запись',   roles: ['owner', 'manager', 'agent'] },
-  { href: '/reception', icon: Building2,    label: 'Ресепшн',  roles: ['owner', 'manager', 'receptionist'] },
+  { href: '/booking',   icon: CalendarDays, label: 'Запись',   roles: ['owner', 'manager', 'agent', 'booking_agent'] },
+  { href: '/reception', icon: Building2,    label: 'Ресепшн',  roles: ['owner', 'manager', 'receptionist', 'booking_agent'] },
   { href: '/sales',     icon: Briefcase,    label: 'CRM',      roles: ['owner', 'manager', 'agent'] },
   { href: '/ads',       icon: Megaphone,    label: 'Реклама',  roles: ['owner', 'manager'] },
   { href: '/admin',     icon: Settings,     label: 'Админ',    roles: ['owner', 'manager'] },

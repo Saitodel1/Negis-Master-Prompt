@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 interface Role { id: string; name: string; permissions: Record<string, boolean> }
 interface Service { id: string; name: string; price: number }
 interface BookingStatus { id: string; name: string; color: string; sort_order: number }
-interface LeadStatus { id: string; name: string; color: string; sort_order: number }
+interface LeadStatus { id: string; name: string; color: string; sort_order: number; pipeline: string }
 interface Shift {
   id: string; agent_id: string; start_time: string; end_time: string | null;
   duration_minutes: number; bookings_count: number; earnings: number;
@@ -30,13 +30,20 @@ const PERMISSIONS = [
   { key: 'settings',   label: 'Настройки' },
 ];
 
-const DEFAULT_LEAD_STATUSES = [
+const DEFAULT_LEAD_STATUSES_SALES = [
   { name: 'Новый', color: '#3B82F6' },
   { name: 'Перезвонить', color: '#F59E0B' },
   { name: 'Отказ', color: '#EF4444' },
   { name: 'Другой город', color: '#94a3b8' },
   { name: 'Противопоказания', color: '#F97316' },
   { name: 'Возраст', color: '#8B5CF6' },
+];
+const DEFAULT_LEAD_STATUSES_BOOKING = [
+  { name: 'Новый', color: '#3B82F6' },
+  { name: 'Нужно записать', color: '#F59E0B' },
+  { name: 'Записан', color: '#22C55E' },
+  { name: 'Недозвон', color: '#F97316' },
+  { name: 'Отмена', color: '#EF4444' },
 ];
 
 /* ─── Confirm Dialog ─────────────────────────────────────── */
@@ -669,10 +676,11 @@ function ServicesTab({ clinicId }: { clinicId: string | null }) {
 
 /* ─── Statuses Tab ───────────────────────────────────────── */
 function StatusesTab({ clinicId }: { clinicId: string | null }) {
-  const [bookingStatuses, setBookingStatuses] = useState<BookingStatus[]>([]);
-  const [leadStatuses, setLeadStatuses] = useState<LeadStatus[]>([]);
+  const [bookingStatuses, setBookingStatuses]   = useState<BookingStatus[]>([]);
+  const [salesLeadStatuses, setSalesLeadStatuses]     = useState<LeadStatus[]>([]);
+  const [bookingLeadStatuses, setBookingLeadStatuses] = useState<LeadStatus[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState<'booking' | 'lead' | null>(null);
+  const [showModal, setShowModal] = useState<'booking' | 'lead_sales' | 'lead_booking' | null>(null);
   const [editing, setEditing] = useState<any>(null);
   const [deletingId, setDeletingId] = useState<{ id: string; type: 'booking' | 'lead' } | null>(null);
   const [sName, setSName] = useState('');
@@ -688,35 +696,44 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
       supabase.from('lead_statuses').select('*').eq('clinic_id', clinicId).order('sort_order'),
     ]);
     setBookingStatuses(bs.data || []);
-    setLeadStatuses(ls.data || []);
+    const all: LeadStatus[] = ls.data || [];
+    setSalesLeadStatuses(all.filter(s => s.pipeline === 'sales' || !s.pipeline));
+    setBookingLeadStatuses(all.filter(s => s.pipeline === 'booking'));
     setLoading(false);
   };
 
-  const seedLeadStatuses = async () => {
-    const inserts = DEFAULT_LEAD_STATUSES.map((s, i) => ({ clinic_id: clinicId, ...s, sort_order: i }));
+  const seedLeadStatuses = async (pipeline: 'sales' | 'booking') => {
+    const defaults = pipeline === 'sales' ? DEFAULT_LEAD_STATUSES_SALES : DEFAULT_LEAD_STATUSES_BOOKING;
+    const inserts = defaults.map((s, i) => ({ clinic_id: clinicId, ...s, sort_order: i, pipeline }));
     const { error } = await supabase.from('lead_statuses').insert(inserts);
-    if (error) toast.error(error.message); else { toast.success('Статусы лидов созданы'); load(); }
+    if (error) toast.error(error.message); else { toast.success('Статусы созданы'); load(); }
   };
 
-  const openCreate = (type: 'booking' | 'lead') => {
+  const openCreate = (type: 'booking' | 'lead_sales' | 'lead_booking') => {
     setEditing(null); setSName(''); setSColor('#3B82F6'); setShowModal(type);
   };
-  const openEdit = (s: any, type: 'booking' | 'lead') => {
+  const openEdit = (s: any, type: 'booking' | 'lead_sales' | 'lead_booking') => {
     setEditing(s); setSName(s.name); setSColor(s.color); setShowModal(type);
   };
 
   const save = async () => {
     if (!sName.trim()) { toast.error('Введите название'); return; }
     setSaving(true);
-    const table = showModal === 'booking' ? 'booking_statuses' : 'lead_statuses';
+    const isBookingStatus = showModal === 'booking';
+    const table = isBookingStatus ? 'booking_statuses' : 'lead_statuses';
+    const pipeline = showModal === 'lead_sales' ? 'sales' : showModal === 'lead_booking' ? 'booking' : undefined;
 
     if (editing) {
-      const { error } = await supabase.from(table).update({ name: sName, color: sColor }).eq('id', editing.id);
+      const patch: Record<string, unknown> = { name: sName, color: sColor };
+      const { error } = await supabase.from(table).update(patch).eq('id', editing.id);
       if (error) toast.error(error.message); else toast.success('Статус обновлён');
     } else {
-      const count = showModal === 'booking' ? bookingStatuses.length : leadStatuses.length;
-      if (count >= 10) { toast.error('Максимум 10 статусов'); setSaving(false); return; }
-      const { error } = await supabase.from(table).insert({ clinic_id: clinicId, name: sName, color: sColor, sort_order: count });
+      const currentCount = showModal === 'booking' ? bookingStatuses.length
+        : showModal === 'lead_sales' ? salesLeadStatuses.length : bookingLeadStatuses.length;
+      if (currentCount >= 10) { toast.error('Максимум 10 статусов'); setSaving(false); return; }
+      const insert: Record<string, unknown> = { clinic_id: clinicId, name: sName, color: sColor, sort_order: currentCount };
+      if (pipeline) insert.pipeline = pipeline;
+      const { error } = await supabase.from(table).insert(insert);
       if (error) toast.error(error.message); else toast.success('Статус добавлен');
     }
     setSaving(false); setShowModal(null); load();
@@ -724,7 +741,6 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
 
   const remove = async () => {
     if (!deletingId) return;
-    // Detach references before delete to avoid FK violations
     if (deletingId.type === 'booking') {
       await supabase.from('bookings').update({ status_id: null }).eq('status_id', deletingId.id);
     } else {
@@ -736,14 +752,14 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
     setDeletingId(null); load();
   };
 
-  const StatusList = ({ items, type }: { items: (BookingStatus | LeadStatus)[], type: 'booking' | 'lead' }) => (
+  const StatusList = ({ items, type }: { items: (BookingStatus | LeadStatus)[], type: 'booking' | 'lead_sales' | 'lead_booking' }) => (
     <div className="space-y-2">
       {items.map((s: any) => (
         <div key={s.id} className="neu-sm p-3 flex items-center gap-3" data-testid={`status-${s.id}`}>
           <div className="h-4 w-4 rounded-full shrink-0" style={{ background: s.color }} />
           <span className="flex-1 font-medium text-[#1E293B]">{s.name}</span>
           <button className="neu-icon-btn h-7 w-7" onClick={() => openEdit(s, type)}><Edit2 size={12} /></button>
-          <button className="neu-icon-btn h-7 w-7 text-destructive" onClick={() => setDeletingId({ id: s.id, type })}><Trash2 size={12} /></button>
+          <button className="neu-icon-btn h-7 w-7 text-destructive" onClick={() => setDeletingId({ id: s.id, type: type === 'booking' ? 'booking' : 'lead' })}><Trash2 size={12} /></button>
         </div>
       ))}
     </div>
@@ -771,27 +787,52 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
 
           <div className="border-t border-border/40" />
 
-          {/* Lead statuses */}
+          {/* Sales lead statuses */}
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <div>
-                <h3 className="text-lg font-bold">Статусы лидов</h3>
-                <p className="text-xs text-[#64748B] mt-0.5">Используются в Negis CRM</p>
+                <h3 className="text-lg font-bold">Статусы лидов — Negis CRM</h3>
+                <p className="text-xs text-[#64748B] mt-0.5">Используются в разделе CRM (отдел продаж)</p>
               </div>
               <div className="flex gap-2">
-                {leadStatuses.length === 0 && (
-                  <button className="neu-btn text-sm" onClick={seedLeadStatuses} data-testid="button-seed-lead-statuses">
+                {salesLeadStatuses.length === 0 && (
+                  <button className="neu-btn text-sm" onClick={() => seedLeadStatuses('sales')} data-testid="button-seed-lead-statuses">
                     Создать стандартные
                   </button>
                 )}
-                <button className="neu-btn-primary flex items-center gap-2" onClick={() => openCreate('lead')} data-testid="button-add-lead-status">
+                <button className="neu-btn-primary flex items-center gap-2" onClick={() => openCreate('lead_sales')} data-testid="button-add-lead-status">
                   <Plus size={14} /> Добавить
                 </button>
               </div>
             </div>
-            {leadStatuses.length === 0
-              ? <p className="text-[#64748B] text-sm py-6 text-center">Нет статусов лидов</p>
-              : <StatusList items={leadStatuses} type="lead" />}
+            {salesLeadStatuses.length === 0
+              ? <p className="text-[#64748B] text-sm py-6 text-center">Нет статусов</p>
+              : <StatusList items={salesLeadStatuses} type="lead_sales" />}
+          </div>
+
+          <div className="border-t border-border/40" />
+
+          {/* Booking lead statuses */}
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold">Статусы лидов — Записи</h3>
+                <p className="text-xs text-[#64748B] mt-0.5">Используются в разделе Записи (лиды на запись)</p>
+              </div>
+              <div className="flex gap-2">
+                {bookingLeadStatuses.length === 0 && (
+                  <button className="neu-btn text-sm" onClick={() => seedLeadStatuses('booking')}>
+                    Создать стандартные
+                  </button>
+                )}
+                <button className="neu-btn-primary flex items-center gap-2" onClick={() => openCreate('lead_booking')}>
+                  <Plus size={14} /> Добавить
+                </button>
+              </div>
+            </div>
+            {bookingLeadStatuses.length === 0
+              ? <p className="text-[#64748B] text-sm py-6 text-center">Нет статусов</p>
+              : <StatusList items={bookingLeadStatuses} type="lead_booking" />}
           </div>
         </>
       )}
@@ -803,11 +844,9 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
             <input className="neu-input" placeholder="Название" value={sName} onChange={e => setSName(e.target.value)} data-testid="input-status-name" />
             <div className="flex items-center gap-4">
               <label className="text-sm text-[#64748B]">Цвет:</label>
-              <div className="relative">
-                <input type="color" value={sColor} onChange={e => setSColor(e.target.value)}
-                  className="h-9 w-16 cursor-pointer rounded-lg border-0 p-0.5"
-                  style={{ background: 'none' }} data-testid="input-status-color" />
-              </div>
+              <input type="color" value={sColor} onChange={e => setSColor(e.target.value)}
+                className="h-9 w-16 cursor-pointer rounded-lg border-0 p-0.5"
+                style={{ background: 'none' }} data-testid="input-status-color" />
               <div className="h-6 w-6 rounded-full border border-border/30" style={{ background: sColor }} />
             </div>
             <div className="flex gap-3 pt-2">
@@ -1143,6 +1182,7 @@ interface ImportPreview {
 }
 interface ImportRow {
   clinic_id: string;
+  pipeline: string;
   full_name: string;
   phone: string | null;
   email: string | null;
@@ -1178,7 +1218,7 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
       }
 
       const [{ data: statuses }, { data: agentsList }] = await Promise.all([
-        supabase.from('lead_statuses').select('id').eq('clinic_id', clinicId).order('sort_order').limit(1),
+        supabase.from('lead_statuses').select('id').eq('clinic_id', clinicId).eq('pipeline', 'sales').order('sort_order').limit(1),
         supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
       ]);
       const defaultStatusId = statuses?.[0]?.id ?? null;
@@ -1234,6 +1274,7 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
         const rawAge = pickField(r, AGE_KEYS);
         ready.push({
           clinic_id:   clinicId,
+          pipeline:    'sales',
           full_name:   fullName.trim(),
           phone,
           email,
@@ -1324,6 +1365,7 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
         .from('leads')
         .select('full_name, phone, email, company, age, source, comment, created_at, assigned_to, status_id, lead_statuses(name)')
         .eq('clinic_id', clinicId)
+        .eq('pipeline', 'sales')
         .order('created_at', { ascending: false }),
       supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
     ]);
