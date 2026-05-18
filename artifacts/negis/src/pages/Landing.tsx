@@ -142,15 +142,19 @@ export default function Landing() {
     } finally { setIsLoading(false); }
   };
 
-  /* ── Reset password — send email ── */
+  /* ── Reset password — send temp password via API ── */
   const handleSendReset = async (data: ResetValues) => {
     setIsLoading(true); setError(''); setSuccessMsg('');
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-        redirectTo: 'https://www.negis.online/reset-password',
+      const BASE = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
+      const res = await fetch(`${BASE}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: data.email }),
       });
-      if (error) throw error;
-      setSuccessMsg('Письмо для восстановления пароля отправлено. Проверьте почту.');
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Ошибка сервера');
+      setSuccessMsg('Письмо с паролем для входа отправлено. Проверьте почту.');
     } catch (e: any) {
       setError('Не удалось отправить письмо. Проверьте email и попробуйте снова.');
     } finally { setIsLoading(false); }

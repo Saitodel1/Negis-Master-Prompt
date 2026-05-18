@@ -6,6 +6,7 @@ import webhookRouter from "./webhook";
 import impersonationRouter from "./impersonation";
 import testAuthRouter from "./test-auth";
 import adsTikTokRouter from "./ads-tiktok";
+import authResetRouter from "./auth-reset";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(webhookRouter);
 router.use(impersonationRouter);
 router.use(testAuthRouter);
 router.use(adsTikTokRouter);
+router.use(authResetRouter);
 
 export default router;
