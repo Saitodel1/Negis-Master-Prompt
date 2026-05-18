@@ -284,17 +284,36 @@ export default function Sales() {
   const updateLead = async () => {
     if (!selectedLead) return;
     setSaving(true);
-    // Validate assigned_to — if the agent was deleted, reset to null
+    // safeAgentId: ensure we only pass agents.id that exists in the loaded list,
+    // or null — converts stale user_id refs to agents.id, falls back to null.
     const assignedTo = safeAgentId(selectedLead.assigned_to);
-    const { error } = await supabase.from('leads').update({
-      full_name: selectedLead.full_name, phone: selectedLead.phone,
-      email: selectedLead.email, company: selectedLead.company,
-      age: selectedLead.age, source: selectedLead.source,
-      status_id: selectedLead.status_id, assigned_to: assignedTo,
-      comment: selectedLead.comment,
-    }).eq('id', selectedLead.id);
+    const payload = {
+      full_name: selectedLead.full_name,
+      phone: selectedLead.phone,
+      email: selectedLead.email || null,
+      company: selectedLead.company || null,
+      age: selectedLead.age ? Number(selectedLead.age) : null,
+      source: selectedLead.source,
+      status_id: selectedLead.status_id || null,
+      assigned_to: assignedTo,
+      comment: selectedLead.comment || null,
+    };
+    const { error } = await supabase.from('leads').update(payload).eq('id', selectedLead.id);
+    if (error) {
+      // FK violation on assigned_to: stale DB data — clear it and retry
+      if (error.message.includes('leads_assigned_to_fkey') || error.code === '23503') {
+        const { error: e2 } = await supabase.from('leads')
+          .update({ ...payload, assigned_to: null })
+          .eq('id', selectedLead.id);
+        setSaving(false);
+        if (e2) { toast.error(e2.message); return; }
+        toast.success('Лид обновлён (ответственный сброшен — запустите миграцию 002)');
+        setSelectedLead(null); init(); return;
+      }
+      setSaving(false);
+      toast.error(error.message); return;
+    }
     setSaving(false);
-    if (error) { toast.error(error.message); return; }
     toast.success('Лид обновлён'); setSelectedLead(null); init();
   };
 
