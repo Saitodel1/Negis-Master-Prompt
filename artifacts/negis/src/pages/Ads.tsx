@@ -93,16 +93,18 @@ function PlatformPickerModal({
   tiktokAppId,
   onClose,
   onSelectFacebook,
+  onGoToSettings,
 }: {
   clinicId: string;
   tiktokAppId: string;
   onClose: () => void;
   onSelectFacebook: () => void;
+  onGoToSettings: () => void;
 }) {
   const tiktokReady = !!tiktokAppId;
 
   const handleTikTok = () => {
-    if (!tiktokReady) return;
+    if (!tiktokReady) { onClose(); onGoToSettings(); return; }
     const callbackUrl = `${window.location.origin}${BASE_URL}/ads/callback`;
     const url =
       `https://business-api.tiktok.com/open_api/v1.3/oauth2/authorize/` +
@@ -165,18 +167,16 @@ function PlatformPickerModal({
               <p className="font-bold text-[#0B1220] text-sm">TikTok Ads</p>
               <p className="text-xs text-[#64748B] mt-1 leading-relaxed">TikTok Business API — импорт статистики</p>
               {!tiktokReady && (
-                <span style={{ display: 'inline-block', marginTop: 6, padding: '2px 8px', borderRadius: 99, background: '#FEF3C7', color: '#92400E', fontSize: 11, fontWeight: 600 }}>
-                  Ожидает одобрения
-                </span>
+                <p className="text-xs text-[#94A3B8] mt-2 leading-relaxed">
+                  Сначала введите App ID и Secret в разделе Настройки
+                </p>
               )}
             </div>
             <button
               onClick={handleTikTok}
-              disabled={!tiktokReady}
               className="neu-btn-primary w-full text-sm py-2"
-              style={{ opacity: tiktokReady ? 1 : 0.45, cursor: tiktokReady ? 'pointer' : 'not-allowed' }}
             >
-              Подключить
+              {tiktokReady ? 'Подключить' : 'Перейти в Настройки'}
             </button>
           </div>
         </div>
@@ -510,7 +510,7 @@ function CampaignDetailModal({ campaign, clinicId, onClose }: {
 /* ═══════════════════════════════════════════════════════════════
    REPORTS TAB
 ═══════════════════════════════════════════════════════════════ */
-function ReportsTab({ clinicId, usdToKzt }: { clinicId: string; usdToKzt: number }) {
+function ReportsTab({ clinicId, usdToKzt, onGoToSettings }: { clinicId: string; usdToKzt: number; onGoToSettings: () => void }) {
   const [accounts, setAccounts] = useState<AdAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -777,6 +777,7 @@ function ReportsTab({ clinicId, usdToKzt }: { clinicId: string; usdToKzt: number
           tiktokAppId={tiktokAppId}
           onClose={() => setShowPlatformPicker(false)}
           onSelectFacebook={() => setConnectPlatform('facebook')}
+          onGoToSettings={onGoToSettings}
         />
       )}
 
@@ -1761,7 +1762,7 @@ export default function Ads() {
         </div>
 
         <div className="neu-card min-h-[500px]">
-          {tab === 'reports' && <ReportsTab clinicId={clinicId} usdToKzt={usdToKzt} />}
+          {tab === 'reports' && <ReportsTab clinicId={clinicId} usdToKzt={usdToKzt} onGoToSettings={() => setTab('settings')} />}
           {tab === 'leads' && <LeadsImportTab clinicId={clinicId} />}
           {tab === 'conversion' && <ConversionTab clinicId={clinicId} />}
           {tab === 'settings' && <AdsSettingsTab clinicId={clinicId} />}
