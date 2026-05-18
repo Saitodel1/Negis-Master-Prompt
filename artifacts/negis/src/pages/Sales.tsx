@@ -234,13 +234,16 @@ export default function Sales() {
   const createLead = async () => {
     if (!form.phone.trim()) { toast.error('Введите телефон'); return; }
     setSaving(true);
+    // safeAgentId ensures we only send agents.id that exists in current list,
+    // or null — never an empty string, user_id, or stale/deleted agent UUID.
+    const assignedTo = safeAgentId(form.assigned_to || myAgentId);
     const { error } = await supabase.from('leads').insert({
       clinic_id: clinicId,
       full_name: form.full_name || null, phone: form.phone,
       email: form.email || null, company: form.company || null,
       age: form.age ? parseInt(form.age) : null, source: form.source,
       status_id: form.status_id || statuses[0]?.id || null,
-      assigned_to: form.assigned_to || myAgentId || null,
+      assigned_to: assignedTo,
       comment: form.comment || null,
     });
     setSaving(false);
@@ -253,11 +256,13 @@ export default function Sales() {
   const updateLead = async () => {
     if (!selectedLead) return;
     setSaving(true);
+    // Validate assigned_to — if the agent was deleted, reset to null
+    const assignedTo = safeAgentId(selectedLead.assigned_to);
     const { error } = await supabase.from('leads').update({
       full_name: selectedLead.full_name, phone: selectedLead.phone,
       email: selectedLead.email, company: selectedLead.company,
       age: selectedLead.age, source: selectedLead.source,
-      status_id: selectedLead.status_id, assigned_to: selectedLead.assigned_to,
+      status_id: selectedLead.status_id, assigned_to: assignedTo,
       comment: selectedLead.comment,
     }).eq('id', selectedLead.id);
     setSaving(false);
@@ -275,7 +280,21 @@ export default function Sales() {
   const statusColor = (lead: Lead) => lead.lead_statuses?.color ?? '#94A3B8';
   const statusName  = (lead: Lead) => lead.lead_statuses?.name  ?? '—';
   const displayName = (lead: Lead) => lead.full_name || '—';
-  const agentName   = (lead: Lead) =>
+
+  /**
+   * Returns agents.id if it exists in the current agents list, otherwise null.
+   * Prevents FK violations when an agent was deleted or when old data stores
+   * auth.users UUID instead of agents.id.
+   */
+  const safeAgentId = (id: string | null | undefined): string | null => {
+    if (!id) return null;
+    if (agents.some(a => a.id === id)) return id;
+    // Fallback: if old data stored user_id, look up the correct agents.id
+    const byUserId = agents.find(a => a.user_id === id);
+    return byUserId?.id ?? null;
+  };
+
+  const agentName = (lead: Lead) =>
     agents.find(a => a.id === lead.assigned_to)?.name ??
     agents.find(a => a.user_id === lead.assigned_to)?.name ?? '—';
 
@@ -381,7 +400,7 @@ export default function Sales() {
                   <option value="">— снять —</option>
                   {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
-                <BulkConfirmBtn disabled={bulkLoading} onClick={() => bulkUpdate({ assigned_to: bulkAgentId || null })}>
+                <BulkConfirmBtn disabled={bulkLoading} onClick={() => bulkUpdate({ assigned_to: safeAgentId(bulkAgentId) })}>
                   {bulkLoading ? '...' : 'Применить'}
                 </BulkConfirmBtn>
                 <BulkCancelBtn onClick={() => setBulkPanel(null)} />
@@ -470,7 +489,7 @@ export default function Sales() {
                     <tr key={lead.id}
                       className="border-b border-[#F1F5F9] cursor-pointer transition-colors text-sm"
                       style={{ background: isSelected ? '#EFF6FF' : undefined }}
-                      onClick={() => setSelectedLead(lead)}
+                      onClick={() => setSelectedLead({ ...lead, assigned_to: safeAgentId(lead.assigned_to) })}
                     >
                       <td className="p-4 w-10" onClick={e => { e.stopPropagation(); toggleOne(lead.id); }}>
                         <input
@@ -497,7 +516,7 @@ export default function Sales() {
                       </td>
                       <td className="p-4 text-right">
                         <button className="neu-btn px-2 py-1 text-xs text-[#64748B]"
-                          onClick={e => { e.stopPropagation(); setSelectedLead(lead); }}>
+                          onClick={e => { e.stopPropagation(); setSelectedLead({ ...lead, assigned_to: safeAgentId(lead.assigned_to) }); }}>
                           Открыть
                         </button>
                       </td>
