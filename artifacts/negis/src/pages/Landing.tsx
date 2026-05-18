@@ -70,16 +70,7 @@ export default function Landing() {
   const resetForm       = useForm<ResetValues>      ({ resolver: zodResolver(resetSchema) });
   const newPasswordForm = useForm<NewPasswordValues>({ resolver: zodResolver(newPasswordSchema) });
 
-  /* Detect PASSWORD_RECOVERY from Supabase email link */
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setError(''); setSuccessMsg('');
-        setModalState('newpassword');
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+  /* PASSWORD_RECOVERY is handled on the dedicated /reset-password page */
 
   useEffect(() => {
     if (modalState !== 'idle') {
@@ -156,12 +147,12 @@ export default function Landing() {
     setIsLoading(true); setError(''); setSuccessMsg('');
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-        redirectTo: window.location.origin + '/',
+        redirectTo: 'https://www.negis.online/reset-password',
       });
       if (error) throw error;
-      setSuccessMsg(`Письмо отправлено на ${data.email}. Проверьте почту.`);
+      setSuccessMsg('Письмо для восстановления пароля отправлено. Проверьте почту.');
     } catch (e: any) {
-      setError(e.message || 'Ошибка отправки письма');
+      setError('Не удалось отправить письмо. Проверьте email и попробуйте снова.');
     } finally { setIsLoading(false); }
   };
 
