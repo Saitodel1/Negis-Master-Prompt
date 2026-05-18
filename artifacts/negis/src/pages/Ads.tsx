@@ -1368,18 +1368,21 @@ function WebhookSection({ clinicId }: { clinicId: string }) {
     setRegenerating(false);
   };
 
+  const [openGuide, setOpenGuide] = useState<'tiktok' | 'facebook' | null>(null);
+
   return (
     <div className="border-t border-[#E7ECF3] pt-6 space-y-5">
       <div>
-        <h3 className="font-bold text-[#1E293B] text-sm">Webhook — внешние источники лидов</h3>
+        <h3 className="font-bold text-[#1E293B] text-sm">Подключение через Webhook</h3>
         <p className="text-xs text-[#64748B] mt-1">
-          Отправляйте POST-запрос на этот URL из любого источника: лендинг, Instagram, CRM, Zapier и т.д.
-          Лид появится в CRM автоматически.
+          Самый простой способ получать лиды из рекламы — без Developer Portal и API-ключей.
+          Скопируйте URL ниже и вставьте в настройки вашей рекламной платформы.
         </p>
       </div>
 
+      {/* Webhook URL */}
       <div>
-        <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Webhook URL</label>
+        <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Ваш Webhook URL</label>
         <div className="flex gap-2">
           <input readOnly className="neu-input text-xs font-mono flex-1" value={webhookUrl} />
           <button onClick={() => copy(webhookUrl, 'url')} className="neu-btn flex items-center gap-1.5 text-sm px-4 whitespace-nowrap">
@@ -1389,11 +1392,87 @@ function WebhookSection({ clinicId }: { clinicId: string }) {
         </div>
       </div>
 
+      {/* Platform guides */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* TikTok */}
+        <div className="neu-sm rounded-xl overflow-hidden">
+          <button
+            onClick={() => setOpenGuide(openGuide === 'tiktok' ? null : 'tiktok')}
+            className="w-full flex items-center justify-between px-4 py-3 text-left"
+          >
+            <div className="flex items-center gap-2">
+              {TT_ICON_SM}
+              <span className="font-semibold text-sm text-[#1E293B]">TikTok Ads Manager</span>
+            </div>
+            <ChevronDown size={16} className={`text-[#94A3B8] transition-transform ${openGuide === 'tiktok' ? 'rotate-180' : ''}`} />
+          </button>
+          {openGuide === 'tiktok' && (
+            <div className="px-4 pb-4 space-y-2 border-t border-[#E7ECF3] pt-3">
+              <p className="text-xs text-[#64748B] font-medium mb-2">Без Developer Portal — только через Ads Manager:</p>
+              {[
+                'Войдите в TikTok Ads Manager',
+                'Меню слева → Assets → Lead Generation',
+                'Выберите вашу Lead форму → Edit',
+                'Вкладка "Thank You Page" → CRM Integration',
+                'Выберите "Custom Integration" → Webhook',
+                'Вставьте Webhook URL из поля выше',
+                'Сохраните форму — готово',
+              ].map((step, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#E8EDF2] text-[#1A56DB] text-xs font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+                  <p className="text-xs text-[#334155]">{step}</p>
+                </div>
+              ))}
+              <div className="mt-3 p-2 rounded-lg bg-[#FEF3C7]">
+                <p className="text-xs text-[#92400E]">Лиды приходят только с новых заявок после сохранения формы.</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Facebook */}
+        <div className="neu-sm rounded-xl overflow-hidden">
+          <button
+            onClick={() => setOpenGuide(openGuide === 'facebook' ? null : 'facebook')}
+            className="w-full flex items-center justify-between px-4 py-3 text-left"
+          >
+            <div className="flex items-center gap-2">
+              {FB_ICON_SM}
+              <span className="font-semibold text-sm text-[#1E293B]">Facebook / Instagram</span>
+            </div>
+            <ChevronDown size={16} className={`text-[#94A3B8] transition-transform ${openGuide === 'facebook' ? 'rotate-180' : ''}`} />
+          </button>
+          {openGuide === 'facebook' && (
+            <div className="px-4 pb-4 space-y-2 border-t border-[#E7ECF3] pt-3">
+              <p className="text-xs text-[#64748B] font-medium mb-2">Через Meta Business Suite — без приложения:</p>
+              {[
+                'Откройте Meta Business Suite (business.facebook.com)',
+                'Слева: All Tools → Instant Forms',
+                'Выберите Lead форму → Edit',
+                'Вкладка Settings → CRM Integration',
+                'Нажмите "Connect CRM" → Other',
+                'Вставьте Webhook URL из поля выше',
+                'Нажмите "Save" → Done',
+              ].map((step, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#E8EDF2] text-[#1A56DB] text-xs font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+                  <p className="text-xs text-[#334155]">{step}</p>
+                </div>
+              ))}
+              <div className="mt-3 p-2 rounded-lg bg-[#EFF6FF]">
+                <p className="text-xs text-[#1E40AF]">Также работает через Zapier: Facebook Lead Ads → Negis Webhook.</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Webhook Secret */}
       <div>
-        <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Webhook Secret</label>
+        <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Webhook Secret (необязательно)</label>
         <p className="text-xs text-[#94A3B8] mb-2">
-          Передавайте в заголовке{' '}
-          <span className="font-mono bg-[#F1F5F9] px-1 rounded">X-Webhook-Secret</span> для аутентификации.
+          Для дополнительной защиты. Передавайте в заголовке{' '}
+          <span className="font-mono bg-[#F1F5F9] px-1 rounded">X-Webhook-Secret</span>.
         </p>
         <div className="flex gap-2">
           <input
