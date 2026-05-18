@@ -232,6 +232,7 @@ export default function Sales() {
 
   /* ── Lead CRUD ── */
   const createLead = async () => {
+    if (!form.full_name.trim()) { toast.error('Введите полное имя'); return; }
     if (!form.phone.trim()) { toast.error('Введите телефон'); return; }
     setSaving(true);
     // safeAgentId ensures we only send agents.id that exists in current list,
@@ -239,7 +240,7 @@ export default function Sales() {
     const assignedTo = safeAgentId(form.assigned_to || myAgentId);
     const { error } = await supabase.from('leads').insert({
       clinic_id: clinicId,
-      full_name: form.full_name || null, phone: form.phone,
+      full_name: form.full_name.trim(), phone: form.phone,
       email: form.email || null, company: form.company || null,
       age: form.age ? parseInt(form.age) : null, source: form.source,
       status_id: form.status_id || statuses[0]?.id || null,
@@ -569,7 +570,7 @@ export default function Sales() {
               <div className="space-y-3">
                 <div>
                   <label className="text-xs text-[#64748B] font-medium block mb-1.5">Полное имя</label>
-                  <input style={IS} placeholder="Иванов Иван" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} />
+                  <input type="text" style={IS} placeholder="Иванов Иван" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
