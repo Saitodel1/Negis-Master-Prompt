@@ -606,6 +606,8 @@ function ServicesTab({ clinicId }: { clinicId: string | null }) {
   };
 
   const remove = async () => {
+    // Detach from bookings first to avoid FK violation
+    await supabase.from('bookings').update({ service_id: null }).eq('service_id', deletingId);
     const { error } = await supabase.from('services').delete().eq('id', deletingId);
     if (error) toast.error(error.message); else toast.success('Услуга удалена');
     setDeletingId(null); load();
