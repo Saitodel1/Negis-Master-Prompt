@@ -724,6 +724,12 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
 
   const remove = async () => {
     if (!deletingId) return;
+    // Detach references before delete to avoid FK violations
+    if (deletingId.type === 'booking') {
+      await supabase.from('bookings').update({ status_id: null }).eq('status_id', deletingId.id);
+    } else {
+      await supabase.from('leads').update({ status_id: null }).eq('status_id', deletingId.id);
+    }
     const table = deletingId.type === 'booking' ? 'booking_statuses' : 'lead_statuses';
     const { error } = await supabase.from(table).delete().eq('id', deletingId.id);
     if (error) toast.error(error.message); else toast.success('Статус удалён');
