@@ -101,6 +101,10 @@ export default function Sales() {
   const [dateFrom, setDateFrom]         = useState('');
   const [dateTo, setDateTo]             = useState('');
 
+  /* ── Pagination ── */
+  const [perPage, setPerPage] = useState<number>(20);
+  const [page, setPage]       = useState(0);
+
   /* ── Selection ── */
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -169,16 +173,27 @@ export default function Sales() {
     return true;
   });
 
-  /* ── Selection helpers ── */
-  const allSelected = displayed.length > 0 && displayed.every(l => selectedIds.has(l.id));
-  const someSelected = displayed.some(l => selectedIds.has(l.id));
+  /* ── Pagination computed ── */
+  const totalFiltered = displayed.length;
+  const pageCount  = perPage === 0 ? 1 : Math.max(1, Math.ceil(totalFiltered / perPage));
+  const safePage   = Math.min(page, pageCount - 1);
+  const pageItems  = perPage === 0 ? displayed : displayed.slice(safePage * perPage, safePage * perPage + perPage);
+  const rangeFrom  = totalFiltered === 0 ? 0 : safePage * (perPage || totalFiltered) + 1;
+  const rangeTo    = perPage === 0 ? totalFiltered : Math.min(safePage * perPage + perPage, totalFiltered);
+
+  /* Reset page when filters change */
+  useEffect(() => { setPage(0); }, [search, filterStatus, filterAgent, filterSource, periodFilter, dateFrom, dateTo, perPage]);
+
+  /* ── Selection helpers (operate on current page only) ── */
+  const allSelected = pageItems.length > 0 && pageItems.every(l => selectedIds.has(l.id));
+  const someSelected = pageItems.some(l => selectedIds.has(l.id));
   const indeterminate = someSelected && !allSelected;
 
   const toggleAll = () => {
     if (allSelected) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(displayed.map(l => l.id)));
+      setSelectedIds(new Set(pageItems.map(l => l.id)));
     }
   };
   const toggleOne = (id: string) => {
@@ -326,6 +341,16 @@ export default function Sales() {
               <input type="date" className="neu-input text-sm w-36" value={dateTo} onChange={e => setDateTo(e.target.value)} />
             </>
           )}
+          {/* ── Per-page selector ── */}
+          <div className="flex items-center gap-1.5 ml-auto">
+            <span className="text-xs text-[#94A3B8] whitespace-nowrap">На странице:</span>
+            <select className="neu-input text-sm w-20" value={perPage} onChange={e => setPerPage(Number(e.target.value))}>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={0}>Все</option>
+            </select>
+          </div>
         </div>
 
         {/* ── Bulk action bar ── */}
@@ -435,11 +460,11 @@ export default function Sales() {
               <tbody>
                 {loading ? (
                   <tr><td colSpan={colSpan} className="py-16 text-center text-[#94A3B8] text-sm">Загрузка...</td></tr>
-                ) : displayed.length === 0 ? (
+                ) : pageItems.length === 0 ? (
                   <tr><td colSpan={colSpan} className="py-16 text-center text-[#94A3B8] text-sm">
                     Нет лидов. Добавьте первый или импортируйте из CSV.
                   </td></tr>
-                ) : displayed.map(lead => {
+                ) : pageItems.map(lead => {
                   const isSelected = selectedIds.has(lead.id);
                   return (
                     <tr key={lead.id}
@@ -483,6 +508,30 @@ export default function Sales() {
             </table>
           </div>
         </div>
+
+        {/* ── Pagination footer ── */}
+        {!loading && totalFiltered > 0 && (
+          <div className="neu-card p-3 flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-xs text-[#94A3B8]">
+              {totalFiltered === 0 ? 'Нет результатов' : `Показано ${rangeFrom}–${rangeTo} из ${totalFiltered}`}
+            </span>
+            {perPage > 0 && pageCount > 1 && (
+              <div className="flex items-center gap-1">
+                <PagBtn disabled={safePage === 0} onClick={() => setPage(0)}>«</PagBtn>
+                <PagBtn disabled={safePage === 0} onClick={() => setPage(p => Math.max(0, p - 1))}>‹</PagBtn>
+                {Array.from({ length: pageCount }, (_, i) => i)
+                  .filter(i => Math.abs(i - safePage) <= 2)
+                  .map(i => (
+                    <PagBtn key={i} active={i === safePage} onClick={() => setPage(i)}>
+                      {i + 1}
+                    </PagBtn>
+                  ))}
+                <PagBtn disabled={safePage >= pageCount - 1} onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}>›</PagBtn>
+                <PagBtn disabled={safePage >= pageCount - 1} onClick={() => setPage(pageCount - 1)}>»</PagBtn>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── New Lead Modal ── */}
         {showNew && (
@@ -675,6 +724,30 @@ function BulkCancelBtn({ onClick }: { onClick: () => void }) {
       borderRadius: 8, color: '#94A3B8', fontSize: 12, padding: '5px 10px', cursor: 'pointer',
     }}>
       <X size={12} />
+    </button>
+  );
+}
+
+/* ── Pagination button ──────────────────────────────────── */
+function PagBtn({ children, onClick, disabled, active }: {
+  children: React.ReactNode; onClick: () => void; disabled?: boolean; active?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        minWidth: 30, height: 30, borderRadius: 7, border: '1px solid',
+        borderColor: active ? '#1E325C' : '#E7ECF3',
+        background: active ? '#1E325C' : disabled ? 'transparent' : '#F4F7FB',
+        color: active ? '#FFF' : disabled ? '#CBD5E1' : '#475569',
+        fontSize: 12, fontWeight: active ? 600 : 400,
+        cursor: disabled ? 'default' : 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '0 6px',
+      }}
+    >
+      {children}
     </button>
   );
 }
