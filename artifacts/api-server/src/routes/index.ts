@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import healthRouter from "./health";
 import dashboardRouter from "./dashboard";
 import employeesRouter from "./employees";
@@ -8,7 +8,7 @@ import testAuthRouter from "./test-auth";
 import adsTikTokRouter from "./ads-tiktok";
 import authResetRouter from "./auth-reset";
 
-const router: IRouter = Router();
+const router = Router();
 
 router.use(healthRouter);
 router.use(dashboardRouter);

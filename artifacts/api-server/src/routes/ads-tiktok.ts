@@ -1,7 +1,7 @@
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { supabaseAdmin } from "../lib/supabase-admin.js";
 
-const router: IRouter = Router();
+const router = Router();
 
 /* ── POST /api/ads/tiktok/callback ──────────────────────────
    Server-side exchange of TikTok OAuth authorization code
