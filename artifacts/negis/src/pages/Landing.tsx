@@ -117,34 +117,40 @@ export default function Landing() {
     } finally { setIsLoading(false); }
   };
 
-  /* ── Register ── */
+  /* Register */
   const handleRegister = async (data: RegisterValues) => {
     setIsLoading(true); setError('');
     try {
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: data.email, password: data.password,
-        options: { data: { full_name: data.ownerName } },
+      const registerRes = await fetch(apiUrl('/api/auth/register'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ownerName: data.ownerName,
+          clinicName: data.clinicName,
+          email: data.email,
+          password: data.password,
+        }),
       });
-      if (signUpError) throw signUpError;
-      const userId = authData.user?.id;
-      if (!userId) throw new Error('Не удалось создать аккаунт');
-      const slug = data.clinicName
-        .toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 40)
-        + '-' + Math.random().toString(36).slice(2, 7);
-      const { data: clinic, error: clinicError } = await supabase
-        .from('clinics').insert({ name: data.clinicName, owner_id: userId, slug })
-        .select('id').single();
-      if (clinicError) throw clinicError;
-      const { error: roleError } = await supabase
-        .from('user_roles').insert({ user_id: userId, clinic_id: clinic.id, role: 'owner' });
-      if (roleError) throw roleError;
+
+      const registerJson = await registerRes.json();
+      if (!registerRes.ok) {
+        throw new Error(registerJson.error || 'Registration failed');
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.password,
+      });
+
+      if (signInError) throw signInError;
+
       setLocation('/onboarding');
     } catch (e: any) {
-      setError(e.message || 'Ошибка регистрации');
+      setError(e.message || 'Registration failed');
     } finally { setIsLoading(false); }
   };
 
-  /* ── Reset password — send temp password via API ── */
+  /* Reset password — send temp password via API ── */
   const handleSendReset = async (data: ResetValues) => {
     setIsLoading(true); setError(''); setSuccessMsg('');
     try {
