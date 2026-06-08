@@ -3,6 +3,7 @@ import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
+import { apiUrl } from '@/lib/api';
 
 /* ── Types ────────────────────────────────────────────────── */
 interface ImpersonationData {
@@ -226,8 +227,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       /* Step 4: obtain a real Supabase session from the API server
          so that Supabase RLS policies work exactly like normal login. */
       try {
-        const base = (import.meta.env.BASE_URL as string) || '/';
-        const sessionRes = await fetch(`${base}api/impersonation/session`, {
+        const sessionRes = await fetch(apiUrl('/api/impersonation/session'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

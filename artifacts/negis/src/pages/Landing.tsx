@@ -3,6 +3,7 @@ import { useLocation } from 'wouter';
 import { ArrowRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { apiUrl } from '@/lib/api';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -147,8 +148,7 @@ export default function Landing() {
   const handleSendReset = async (data: ResetValues) => {
     setIsLoading(true); setError(''); setSuccessMsg('');
     try {
-      const BASE = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
-      const res = await fetch(`${BASE}/api/auth/reset-password`, {
+      const res = await fetch(apiUrl('/api/auth/reset-password'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: data.email }),

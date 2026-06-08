@@ -8,7 +8,7 @@ const router = Router();
    for an access token. Reads App ID + Secret from the
    platform_configs table (entered by the clinic admin).
 ─────────────────────────────────────────────────────────── */
-router.post("/api/ads/tiktok/callback", async (req, res) => {
+router.post("/ads/tiktok/callback", async (req, res) => {
   const { code, clinic_id } = req.body as { code?: string; clinic_id?: string };
 
   if (!code || !clinic_id) {

@@ -7,6 +7,7 @@ import {
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { publicApiUrl } from '@/lib/api';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
@@ -1343,7 +1344,7 @@ function WebhookSection({ clinicId }: { clinicId: string }) {
   const [copiedSecret, setCopiedSecret] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
 
-  const webhookUrl = `${window.location.origin}${BASE_URL}/api/leads/webhook/${clinicId}`;
+  const webhookUrl = publicApiUrl(`/api/leads/webhook/${clinicId}`);
 
   useEffect(() => {
     supabase.from('clinics').select('webhook_secret').eq('id', clinicId).single()

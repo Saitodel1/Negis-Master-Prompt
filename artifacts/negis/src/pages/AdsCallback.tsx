@@ -3,9 +3,8 @@ import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { apiUrl } from '@/lib/api';
 import { Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
-
-const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
 
 /* ── Styles ───────────────────────────────────────────────── */
 const Wrap: React.CSSProperties = {
@@ -91,7 +90,7 @@ export default function AdsCallback() {
     let accountName = '';
 
     try {
-      const res = await fetch(`${BASE_URL}/api/ads/tiktok/callback`, {
+      const res = await fetch(apiUrl('/api/ads/tiktok/callback'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, clinic_id: resolvedClinicId }),

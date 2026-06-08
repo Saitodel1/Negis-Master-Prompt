@@ -16,6 +16,11 @@ const router = Router();
  * Response: { accessToken: string; refreshToken: string }
  */
 router.post("/test/login", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
   // Available in all environments — protected by needing a valid Supabase email
 
 

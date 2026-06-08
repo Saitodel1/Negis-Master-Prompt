@@ -60,7 +60,7 @@ router.post("/leads/webhook/:clinic_id", async (req, res) => {
   }
 
   if (clinic.telegram_chat_id) {
-    const botToken = process.env.VITE_TELEGRAM_BOT_TOKEN;
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (botToken) {
       const name = [first_name, last_name].filter(Boolean).join(" ") || "Неизвестный";
       const text = `Новый лид (Webhook)\nИмя: ${name}\nТелефон: ${phone}\nИсточник: ${source || "Webhook"}`;

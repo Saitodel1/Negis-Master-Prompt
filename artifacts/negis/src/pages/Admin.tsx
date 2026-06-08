@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { apiUrl } from '@/lib/api';
 import { toast } from 'sonner';
 
 /* ─── Types ──────────────────────────────────────────────── */
@@ -135,8 +136,6 @@ const SYSTEM_ROLES = [
   { value: 'owner',        label: 'Руководитель' },
 ];
 
-const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
-
 /* ─── Agents Tab ─────────────────────────────────────────── */
 function AgentsTab({ clinicId }: { clinicId: string | null }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -167,7 +166,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
     if (!clinicId) return;
     setLoading(true);
     try {
-      const res = await fetch(`${BASE_URL}/api/admin/employees?clinic_id=${clinicId}`);
+      const res = await fetch(apiUrl(`/api/admin/employees?clinic_id=${clinicId}`));
       const data = await res.json();
       if (res.ok) setEmployees(data);
       else toast.error(data.error || 'Ошибка загрузки');
@@ -201,7 +200,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
     setSaving(true);
     try {
       if (editing) {
-        const res = await fetch(`${BASE_URL}/api/admin/employees/${editing.id}`, {
+        const res = await fetch(apiUrl(`/api/admin/employees/${editing.id}`), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -215,7 +214,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
         if (!res.ok) { toast.error(data.error || 'Ошибка'); return; }
         toast.success('Сотрудник обновлён');
       } else {
-        const res = await fetch(`${BASE_URL}/api/admin/employees`, {
+        const res = await fetch(apiUrl('/api/admin/employees'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -236,7 +235,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
 
   const confirmDelete = async () => {
     if (!deletingId) return;
-    const res = await fetch(`${BASE_URL}/api/admin/employees/${deletingId}`, { method: 'DELETE' });
+    const res = await fetch(apiUrl(`/api/admin/employees/${deletingId}`), { method: 'DELETE' });
     const data = await res.json();
     if (!res.ok) { toast.error(data.error || 'Ошибка удаления'); }
     else { toast.success('Сотрудник удалён'); loadEmployees(); }
