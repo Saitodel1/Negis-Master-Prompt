@@ -59,6 +59,23 @@ function safeAgentIdFn(id: string | null | undefined, agents: Agent[]): string |
   return byUser?.id ?? null;
 }
 
+function IndeterminateCheckbox({ checked, indeterminate, onChange }: {
+  checked: boolean; indeterminate: boolean; onChange: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (ref.current) ref.current.indeterminate = indeterminate; }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E325C' }}
+      onClick={e => e.stopPropagation()}
+    />
+  );
+}
+
 /* ── Inline style helpers ────────────────────────────────── */
 const IS: React.CSSProperties = {
   background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 10,
@@ -101,6 +118,9 @@ export default function Booking() {
   const [bkFilterStatus, setBkFilterStatus] = useState('');
   const [bkFilterAgent, setBkFilterAgent]   = useState('');
   const [bkSortBy, setBkSortBy]       = useState('created_at_desc');
+  const [bkPerPage, setBkPerPage]     = useState<number>(20);
+  const [bkPage, setBkPage]           = useState(0);
+  const [selectedBkLeadIds, setSelectedBkLeadIds] = useState<Set<string>>(new Set());
 
   /* ── New lead modal ── */
   const [showNewLead, setShowNewLead] = useState(false);
@@ -148,6 +168,11 @@ export default function Booking() {
   useEffect(() => {
     if (clinicId) loadBkLeads();
   }, [clinicId, bkSortBy]);
+
+  useEffect(() => {
+    setBkPage(0);
+    setSelectedBkLeadIds(new Set());
+  }, [bkSearch, bkFilterStatus, bkFilterAgent, bkSortBy, bkPerPage]);
 
   useEffect(() => {
     if (showBfl && clinicId) loadBflSlots(bflDate);
@@ -402,6 +427,45 @@ export default function Booking() {
     if (bkFilterAgent && l.assigned_to !== bkFilterAgent) return false;
     return true;
   });
+  const totalBkFiltered = displayedLeads.length;
+  const bkPageCount = bkPerPage === 0 ? 1 : Math.max(1, Math.ceil(totalBkFiltered / bkPerPage));
+  const safeBkPage = Math.min(bkPage, bkPageCount - 1);
+  const bkPageItems = bkPerPage === 0
+    ? displayedLeads
+    : displayedLeads.slice(safeBkPage * bkPerPage, safeBkPage * bkPerPage + bkPerPage);
+  const bkRangeFrom = totalBkFiltered === 0 ? 0 : safeBkPage * (bkPerPage || totalBkFiltered) + 1;
+  const bkRangeTo = bkPerPage === 0 ? totalBkFiltered : Math.min(safeBkPage * bkPerPage + bkPerPage, totalBkFiltered);
+  const allBkPageSelected = bkPageItems.length > 0 && bkPageItems.every(l => selectedBkLeadIds.has(l.id));
+  const someBkPageSelected = bkPageItems.some(l => selectedBkLeadIds.has(l.id));
+  const bkPageIndeterminate = someBkPageSelected && !allBkPageSelected;
+  const allBkFilteredSelected = totalBkFiltered > 0 && displayedLeads.every(l => selectedBkLeadIds.has(l.id));
+  const bkColSpan = 8;
+
+  const toggleBkPageSelection = () => {
+    setSelectedBkLeadIds(prev => {
+      const next = new Set(prev);
+      if (allBkPageSelected) {
+        bkPageItems.forEach(l => next.delete(l.id));
+      } else {
+        bkPageItems.forEach(l => next.add(l.id));
+      }
+      return next;
+    });
+  };
+
+  const toggleBkLeadSelection = (id: string) => {
+    setSelectedBkLeadIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllBkLeads = () => {
+    setSelectedBkLeadIds(new Set(displayedLeads.map(l => l.id)));
+  };
+
+  const clearBkSelection = () => setSelectedBkLeadIds(new Set());
 
   const agentName = (lead: Lead) =>
     agents.find(a => a.id === lead.assigned_to)?.name ??
@@ -644,6 +708,47 @@ export default function Booking() {
             </div>
           </div>
 
+          <div style={{
+            background: '#FFFFFF', border: '1px solid #E7ECF3', borderRadius: 12,
+            padding: '10px 16px', display: 'flex', flexWrap: 'wrap',
+            alignItems: 'center', gap: 10, fontFamily: "'Inter', sans-serif",
+          }}>
+            <button
+              type="button"
+              onClick={allBkFilteredSelected ? clearBkSelection : selectAllBkLeads}
+              disabled={totalBkFiltered === 0}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '8px 12px', borderRadius: 9, border: '1px solid #DDE5EE',
+                background: totalBkFiltered === 0 ? '#F8FAFC' : '#F4F7FB',
+                color: totalBkFiltered === 0 ? '#CBD5E1' : '#475569',
+                fontSize: 13, fontWeight: 500, cursor: totalBkFiltered === 0 ? 'default' : 'pointer',
+                fontFamily: "'Inter', sans-serif",
+              }}
+            >
+              <Check size={14} />{allBkFilteredSelected ? 'Снять выбор' : 'Выбрать все'}
+            </button>
+            <span style={{ fontSize: 13, fontWeight: 600, color: selectedBkLeadIds.size > 0 ? '#1E325C' : '#94A3B8' }}>
+              Выбрано: {selectedBkLeadIds.size}
+            </span>
+            <span style={{ fontSize: 12, color: '#94A3B8' }}>
+              {totalBkFiltered === 0 ? 'Нет результатов' : `Показано ${bkRangeFrom}-${bkRangeTo} из ${totalBkFiltered}`}
+            </span>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 12, color: '#94A3B8', whiteSpace: 'nowrap' }}>На странице:</span>
+              <select
+                style={{ ...IS, width: 92 }}
+                value={bkPerPage}
+                onChange={e => setBkPerPage(Number(e.target.value))}
+              >
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={0}>Все</option>
+              </select>
+            </div>
+          </div>
+
           {/* Table */}
           <div style={{
             background: '#FFFFFF', border: '1px solid #E7ECF3', borderRadius: 12,
@@ -653,6 +758,13 @@ export default function Booking() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: "'Inter', sans-serif" }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid #E7ECF3', background: '#FAFBFD' }}>
+                    <th style={{ padding: '12px 16px', width: 48, textAlign: 'left' }}>
+                      <IndeterminateCheckbox
+                        checked={allBkPageSelected}
+                        indeterminate={bkPageIndeterminate}
+                        onChange={toggleBkPageSelection}
+                      />
+                    </th>
                     {['Имя', 'Телефон', 'Источник', 'Статус', 'Ответственный', 'Дата', ''].map(h => (
                       <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#64748B', whiteSpace: 'nowrap' }}>
                         {h}
@@ -662,22 +774,37 @@ export default function Booking() {
                 </thead>
                 <tbody>
                   {leadsLoading ? (
-                    <tr><td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>Загрузка...</td></tr>
-                  ) : displayedLeads.length === 0 ? (
-                    <tr><td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
+                    <tr><td colSpan={bkColSpan} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>Загрузка...</td></tr>
+                  ) : bkPageItems.length === 0 ? (
+                    <tr><td colSpan={bkColSpan} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
                       Нет лидов. Нажмите "Новый лид" или импортируйте из CSV.
                     </td></tr>
-                  ) : displayedLeads.map(lead => (
+                  ) : bkPageItems.map(lead => {
+                    const isSelected = selectedBkLeadIds.has(lead.id);
+                    return (
                     <tr
                       key={lead.id}
                       onClick={() => setSelectedLead({ ...lead, assigned_to: safeAgentIdFn(lead.assigned_to, agents) })}
                       style={{
                         borderBottom: '1px solid #F1F5F9', cursor: 'pointer',
                         transition: 'background 0.12s',
+                        background: isSelected ? '#EFF6FF' : 'transparent',
                       }}
-                      onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = '#F8FAFC'}
-                      onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'}
+                      onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = isSelected ? '#DBEAFE' : '#F8FAFC'}
+                      onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = isSelected ? '#EFF6FF' : 'transparent'}
                     >
+                      <td
+                        style={{ padding: '12px 16px', width: 48 }}
+                        onClick={e => { e.stopPropagation(); toggleBkLeadSelection(lead.id); }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleBkLeadSelection(lead.id)}
+                          style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E325C' }}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      </td>
                       <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 500, color: '#0B1220' }}>
                         {lead.full_name || '—'}
                       </td>
@@ -710,11 +837,38 @@ export default function Booking() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
+
+          {!leadsLoading && bkPerPage > 0 && bkPageCount > 1 && (
+            <div style={{
+              background: '#FFFFFF', border: '1px solid #E7ECF3', borderRadius: 12,
+              padding: '10px 12px', display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+              fontFamily: "'Inter', sans-serif",
+            }}>
+              <span style={{ fontSize: 12, color: '#94A3B8' }}>
+                Страница {safeBkPage + 1} из {bkPageCount}
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <PagBtn disabled={safeBkPage === 0} onClick={() => setBkPage(0)}>{"<<"}</PagBtn>
+                <PagBtn disabled={safeBkPage === 0} onClick={() => setBkPage(p => Math.max(0, p - 1))}>{"<"}</PagBtn>
+                {Array.from({ length: bkPageCount }, (_, i) => i)
+                  .filter(i => Math.abs(i - safeBkPage) <= 2)
+                  .map(i => (
+                    <PagBtn key={i} active={i === safeBkPage} onClick={() => setBkPage(i)}>
+                      {i + 1}
+                    </PagBtn>
+                  ))}
+                <PagBtn disabled={safeBkPage >= bkPageCount - 1} onClick={() => setBkPage(p => Math.min(bkPageCount - 1, p + 1))}>{">"}</PagBtn>
+                <PagBtn disabled={safeBkPage >= bkPageCount - 1} onClick={() => setBkPage(bkPageCount - 1)}>{">>"}</PagBtn>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1073,6 +1227,31 @@ export default function Booking() {
         </div>
       )}
     </PageLayout>
+  );
+}
+
+function PagBtn({ children, onClick, disabled, active }: {
+  children: React.ReactNode; onClick: () => void; disabled?: boolean; active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        minWidth: 30, height: 30, borderRadius: 7, border: '1px solid',
+        borderColor: active ? '#1E325C' : '#E7ECF3',
+        background: active ? '#1E325C' : disabled ? 'transparent' : '#F4F7FB',
+        color: active ? '#FFFFFF' : disabled ? '#CBD5E1' : '#475569',
+        fontSize: 12, fontWeight: active ? 600 : 400,
+        cursor: disabled ? 'default' : 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '0 6px',
+        fontFamily: "'Inter', sans-serif",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
