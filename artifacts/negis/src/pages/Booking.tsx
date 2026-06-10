@@ -6,7 +6,7 @@ import { format, startOfDay } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import {
   CalendarDays, X, Plus, Search, Check, ChevronLeft,
-  ArrowUpDown, Upload, Trash2, CalendarPlus,
+  ArrowUpDown, Upload, Trash2, CalendarPlus, Calendar, Edit3, Tag, User,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,6 +19,16 @@ import * as XLSX from 'xlsx';
 const SLOT_HOURS   = [10, 11, 12, 13, 14, 15, 16, 17];
 const MAX_PER_SLOT = 3;
 const SOURCES = ['Instagram', 'Google', 'WhatsApp', '2GIS', 'Вручную', 'Webhook', 'Import'];
+const PERIOD_OPTIONS = [
+  { value: 'all',       label: 'Все даты' },
+  { value: 'today',     label: 'Сегодня' },
+  { value: 'yesterday', label: 'Вчера' },
+  { value: '7days',     label: 'Последние 7 дней' },
+  { value: '30days',    label: 'Последние 30 дней' },
+  { value: 'month',     label: 'Этот месяц' },
+  { value: 'lastmonth', label: 'Прошлый месяц' },
+  { value: 'custom',    label: 'Точный период' },
+];
 
 /* ── Types ──────────────────────────────────────────────── */
 interface Booking {
@@ -32,7 +42,7 @@ interface Lead {
   id: string; clinic_id: string;
   full_name: string | null; phone: string | null; email: string | null;
   source: string | null; status_id: string | null; comment: string | null;
-  assigned_to: string | null; created_at: string;
+  assigned_to: string | null; created_at: string; updated_at?: string | null;
   lead_statuses?: { name: string; color: string } | null;
 }
 interface LeadStatus { id: string; name: string; color: string }
@@ -43,6 +53,32 @@ const slotLabel = (h: number) => `${String(h).padStart(2, '0')}:00`;
 
 const normalizePhone = (s: string) =>
   s.replace(/\s+/g, '').replace(/[()-]/g, '');
+
+function getDateRange(period: string, dateFrom: string, dateTo: string): { from: Date | null; to: Date | null } {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endOfDay = (d: Date) => new Date(d.getTime() + 86400000 - 1);
+
+  switch (period) {
+    case 'today': return { from: today, to: endOfDay(today) };
+    case 'yesterday': {
+      const y = new Date(today.getTime() - 86400000);
+      return { from: y, to: endOfDay(y) };
+    }
+    case '7days': return { from: new Date(today.getTime() - 6 * 86400000), to: endOfDay(today) };
+    case '30days': return { from: new Date(today.getTime() - 29 * 86400000), to: endOfDay(today) };
+    case 'month': return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: endOfDay(today) };
+    case 'lastmonth': return {
+      from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      to: new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59),
+    };
+    case 'custom': return {
+      from: dateFrom ? new Date(dateFrom + 'T00:00:00') : null,
+      to: dateTo ? new Date(dateTo + 'T23:59:59') : null,
+    };
+    default: return { from: null, to: null };
+  }
+}
 
 const pickField = (row: Record<string, string>, keys: string[]) => {
   for (const k of keys) {
@@ -118,9 +154,17 @@ export default function Booking() {
   const [bkFilterStatus, setBkFilterStatus] = useState('');
   const [bkFilterAgent, setBkFilterAgent]   = useState('');
   const [bkSortBy, setBkSortBy]       = useState('created_at_desc');
+  const [bkDateField, setBkDateField] = useState<'created_at' | 'updated_at'>('created_at');
+  const [bkPeriodFilter, setBkPeriodFilter] = useState('all');
+  const [bkDateFrom, setBkDateFrom] = useState('');
+  const [bkDateTo, setBkDateTo] = useState('');
   const [bkPerPage, setBkPerPage]     = useState<number>(20);
   const [bkPage, setBkPage]           = useState(0);
   const [selectedBkLeadIds, setSelectedBkLeadIds] = useState<Set<string>>(new Set());
+  const [bkBulkPanel, setBkBulkPanel] = useState<'status' | 'agent' | 'delete' | null>(null);
+  const [bkBulkStatusId, setBkBulkStatusId] = useState('');
+  const [bkBulkAgentId, setBkBulkAgentId] = useState('');
+  const [bkBulkLoading, setBkBulkLoading] = useState(false);
 
   /* ── New lead modal ── */
   const [showNewLead, setShowNewLead] = useState(false);
@@ -172,7 +216,8 @@ export default function Booking() {
   useEffect(() => {
     setBkPage(0);
     setSelectedBkLeadIds(new Set());
-  }, [bkSearch, bkFilterStatus, bkFilterAgent, bkSortBy, bkPerPage]);
+    setBkBulkPanel(null);
+  }, [bkSearch, bkFilterStatus, bkFilterAgent, bkSortBy, bkDateField, bkPeriodFilter, bkDateFrom, bkDateTo, bkPerPage]);
 
   useEffect(() => {
     if (showBfl && clinicId) loadBflSlots(bflDate);
@@ -210,6 +255,8 @@ export default function Booking() {
     setLeadsLoading(true);
     const [field, asc] = bkSortBy === 'created_at_desc' ? ['created_at', false]
       : bkSortBy === 'created_at_asc' ? ['created_at', true]
+      : bkSortBy === 'updated_at_desc' ? ['updated_at', false]
+      : bkSortBy === 'updated_at_asc' ? ['updated_at', true]
       : ['full_name', true];
     let q = supabase
       .from('leads').select('*, lead_statuses(name, color)')
@@ -321,6 +368,7 @@ export default function Booking() {
       status_id: selectedLead.status_id || null,
       assigned_to: assignedTo,
       comment: selectedLead.comment || null,
+      updated_at: new Date().toISOString(),
     }).eq('id', selectedLead.id);
     setDetailSaving(false);
     if (error) { toast.error(error.message); return; }
@@ -445,6 +493,13 @@ export default function Booking() {
       const rowAgent = agents.find(a => a.id === l.assigned_to) ?? agents.find(a => a.user_id === l.assigned_to);
       if ((rowAgent?.id ?? l.assigned_to) !== bkFilterAgent) return false;
     }
+    if (bkPeriodFilter !== 'all') {
+      const { from, to } = getDateRange(bkPeriodFilter, bkDateFrom, bkDateTo);
+      const rawDate = bkDateField === 'updated_at' ? (l.updated_at || l.created_at) : l.created_at;
+      const targetDate = new Date(rawDate);
+      if (from && targetDate < from) return false;
+      if (to && targetDate > to) return false;
+    }
     return true;
   });
   const totalBkFiltered = displayedLeads.length;
@@ -485,7 +540,54 @@ export default function Booking() {
     setSelectedBkLeadIds(new Set(displayedLeads.map(l => l.id)));
   };
 
-  const clearBkSelection = () => setSelectedBkLeadIds(new Set());
+  const clearBkSelection = () => {
+    setSelectedBkLeadIds(new Set());
+    setBkBulkPanel(null);
+  };
+
+  const selectedBkLeads = bkLeads.filter(l => selectedBkLeadIds.has(l.id));
+  const openSelectedBkLead = () => {
+    if (selectedBkLeads.length !== 1) {
+      toast.error('Для редактирования выберите один лид');
+      return;
+    }
+    const lead = selectedBkLeads[0];
+    setSelectedLead({ ...lead, assigned_to: safeAgentIdFn(lead.assigned_to, agents) });
+  };
+
+  const bulkUpdateBkLeads = async (patch: Record<string, unknown>) => {
+    if (!clinicId || selectedBkLeadIds.size === 0) return;
+    setBkBulkLoading(true);
+    const ids = Array.from(selectedBkLeadIds);
+    const { error } = await supabase
+      .from('leads')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('clinic_id', clinicId)
+      .eq('pipeline', 'booking')
+      .in('id', ids);
+    setBkBulkLoading(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`Обновлено ${ids.length} лидов`);
+    clearBkSelection();
+    loadBkLeads();
+  };
+
+  const bulkDeleteBkLeads = async () => {
+    if (!clinicId || selectedBkLeadIds.size === 0) return;
+    setBkBulkLoading(true);
+    const ids = Array.from(selectedBkLeadIds);
+    const { error } = await supabase
+      .from('leads')
+      .delete()
+      .eq('clinic_id', clinicId)
+      .eq('pipeline', 'booking')
+      .in('id', ids);
+    setBkBulkLoading(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`Удалено ${ids.length} лидов`);
+    clearBkSelection();
+    loadBkLeads();
+  };
 
   const agentForLead = (lead: Lead) =>
     agents.find(a => a.id === lead.assigned_to) ??
@@ -724,9 +826,32 @@ export default function Booking() {
               <select style={{ ...IS, width: 160 }} value={bkSortBy} onChange={e => setBkSortBy(e.target.value)}>
                 <option value="created_at_desc">Дата (новые)</option>
                 <option value="created_at_asc">Дата (старые)</option>
+                <option value="updated_at_desc">Редактирование (новые)</option>
+                <option value="updated_at_asc">Редактирование (старые)</option>
                 <option value="name_asc">Имя (А→Я)</option>
               </select>
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Calendar size={13} color="#94A3B8" />
+              <select style={{ ...IS, width: 170 }} value={bkDateField} onChange={e => setBkDateField(e.target.value as 'created_at' | 'updated_at')}>
+                <option value="created_at">Дата регистрации</option>
+                <option value="updated_at">Дата редактирования</option>
+              </select>
+              <select
+                style={{ ...IS, width: 170 }}
+                value={bkPeriodFilter}
+                onChange={e => { setBkPeriodFilter(e.target.value); setBkDateFrom(''); setBkDateTo(''); }}
+              >
+                {PERIOD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            {bkPeriodFilter === 'custom' && (
+              <>
+                <input type="date" style={{ ...IS, width: 150 }} value={bkDateFrom} onChange={e => setBkDateFrom(e.target.value)} />
+                <span style={{ fontSize: 13, color: '#94A3B8' }}>—</span>
+                <input type="date" style={{ ...IS, width: 150 }} value={bkDateTo} onChange={e => setBkDateTo(e.target.value)} />
+              </>
+            )}
           </div>
 
           <div style={{
@@ -752,6 +877,117 @@ export default function Booking() {
             <span style={{ fontSize: 13, fontWeight: 600, color: selectedBkLeadIds.size > 0 ? '#1E325C' : '#94A3B8' }}>
               Выбрано: {selectedBkLeadIds.size}
             </span>
+            {selectedBkLeadIds.size > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                {bkBulkPanel === 'status' ? (
+                  <>
+                    <select style={{ ...IS, width: 170 }} value={bkBulkStatusId} onChange={e => setBkBulkStatusId(e.target.value)}>
+                      <option value="">— статус —</option>
+                      {bkStatuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!bkBulkStatusId || bkBulkLoading}
+                      onClick={() => bulkUpdateBkLeads({ status_id: bkBulkStatusId })}
+                      title="Применить статус"
+                      style={{
+                        width: 34, height: 34, borderRadius: 9, border: '1px solid #BFDBFE',
+                        background: '#EFF6FF', color: '#2859C5', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center', cursor: bkBulkLoading ? 'default' : 'pointer',
+                      }}
+                    >
+                      <Check size={15} />
+                    </button>
+                    <button type="button" onClick={() => setBkBulkPanel(null)} title="Отмена" style={{
+                      width: 34, height: 34, borderRadius: 9, border: '1px solid #E7ECF3',
+                      background: '#F4F7FB', color: '#64748B', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                    }}>
+                      <X size={15} />
+                    </button>
+                  </>
+                ) : bkBulkPanel === 'agent' ? (
+                  <>
+                    <select style={{ ...IS, width: 180 }} value={bkBulkAgentId} onChange={e => setBkBulkAgentId(e.target.value)}>
+                      <option value="">— снять —</option>
+                      {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={bkBulkLoading}
+                      onClick={() => bulkUpdateBkLeads({ assigned_to: safeAgentIdFn(bkBulkAgentId, agents) })}
+                      title="Применить ответственного"
+                      style={{
+                        width: 34, height: 34, borderRadius: 9, border: '1px solid #BFDBFE',
+                        background: '#EFF6FF', color: '#2859C5', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center', cursor: bkBulkLoading ? 'default' : 'pointer',
+                      }}
+                    >
+                      <Check size={15} />
+                    </button>
+                    <button type="button" onClick={() => setBkBulkPanel(null)} title="Отмена" style={{
+                      width: 34, height: 34, borderRadius: 9, border: '1px solid #E7ECF3',
+                      background: '#F4F7FB', color: '#64748B', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                    }}>
+                      <X size={15} />
+                    </button>
+                  </>
+                ) : bkBulkPanel === 'delete' ? (
+                  <>
+                    <span style={{ fontSize: 12, color: '#DC2626' }}>Удалить {selectedBkLeadIds.size}?</span>
+                    <button
+                      type="button"
+                      disabled={bkBulkLoading}
+                      onClick={bulkDeleteBkLeads}
+                      title="Подтвердить удаление"
+                      style={{
+                        width: 34, height: 34, borderRadius: 9, border: '1px solid #FCA5A5',
+                        background: '#FEF2F2', color: '#DC2626', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center', cursor: bkBulkLoading ? 'default' : 'pointer',
+                      }}
+                    >
+                      <Check size={15} />
+                    </button>
+                    <button type="button" onClick={() => setBkBulkPanel(null)} title="Отмена" style={{
+                      width: 34, height: 34, borderRadius: 9, border: '1px solid #E7ECF3',
+                      background: '#F4F7FB', color: '#64748B', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                    }}>
+                      <X size={15} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <IconActionBtn title="Редактировать" disabled={selectedBkLeadIds.size !== 1} onClick={openSelectedBkLead}>
+                      <Edit3 size={15} />
+                    </IconActionBtn>
+                    <IconActionBtn title="Сменить статус" onClick={() => { setBkBulkStatusId(''); setBkBulkPanel('status'); }}>
+                      <Tag size={15} />
+                    </IconActionBtn>
+                    {(userRole === 'owner' || userRole === 'manager') && (
+                      <IconActionBtn title="Сменить ответственного" onClick={() => { setBkBulkAgentId(''); setBkBulkPanel('agent'); }}>
+                        <User size={15} />
+                      </IconActionBtn>
+                    )}
+                    <IconActionBtn title="Удалить" danger onClick={() => setBkBulkPanel('delete')}>
+                      <Trash2 size={15} />
+                    </IconActionBtn>
+                    <button
+                      type="button"
+                      onClick={clearBkSelection}
+                      style={{
+                        padding: '7px 10px', borderRadius: 9, border: '1px solid #E7ECF3',
+                        background: '#F4F7FB', color: '#64748B', fontSize: 12,
+                        cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+                      }}
+                    >
+                      Снять выбор
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             <span style={{ fontSize: 12, color: '#94A3B8' }}>
               {totalBkFiltered === 0 ? 'Нет результатов' : `Показано ${bkRangeFrom}-${bkRangeTo} из ${totalBkFiltered}`}
             </span>
@@ -1269,6 +1505,35 @@ function PagBtn({ children, onClick, disabled, active }: {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '0 6px',
         fontFamily: "'Inter', sans-serif",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function IconActionBtn({ children, onClick, title, disabled, danger }: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title: string;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        width: 34, height: 34, borderRadius: 9, border: '1px solid',
+        borderColor: danger ? '#FCA5A5' : '#DDE5EE',
+        background: danger ? '#FEF2F2' : '#F4F7FB',
+        color: disabled ? '#CBD5E1' : danger ? '#DC2626' : '#475569',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
       }}
     >
       {children}
