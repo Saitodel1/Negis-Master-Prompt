@@ -54,6 +54,14 @@ const slotLabel = (h: number) => `${String(h).padStart(2, '0')}:00`;
 const normalizePhone = (s: string) =>
   s.replace(/\s+/g, '').replace(/[()-]/g, '');
 
+function normalizePhoneForDuplicate(value: string | null | undefined): string {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `7${digits}`;
+  if (digits.length === 11 && digits.startsWith('8')) return `7${digits.slice(1)}`;
+  return digits;
+}
+
 function getDateRange(period: string, dateFrom: string, dateTo: string): { from: Date | null; to: Date | null } {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -334,10 +342,35 @@ export default function Booking() {
   };
 
   /* ── Leads CRUD ── */
+  const findDuplicateBookingLeadByPhone = async (phone: string | null | undefined, ignoreId?: string) => {
+    if (!clinicId) return null;
+    const normalizedPhone = normalizePhoneForDuplicate(phone);
+    if (!normalizedPhone) return null;
+    const { data, error } = await supabase
+      .from('leads')
+      .select('id, full_name, phone')
+      .eq('clinic_id', clinicId)
+      .eq('pipeline', 'booking')
+      .not('phone', 'is', null);
+    if (error) {
+      toast.error(error.message);
+      return null;
+    }
+    return (data ?? []).find(lead =>
+      lead.id !== ignoreId && normalizePhoneForDuplicate(lead.phone) === normalizedPhone
+    ) ?? null;
+  };
+
   const createLead = async () => {
     const name = leadForm.full_name.trim() || (leadForm.phone ? `Клиент ${leadForm.phone}` : '');
     if (!name) { toast.error('Введите имя или телефон'); return; }
     setLeadSaving(true);
+    const duplicate = await findDuplicateBookingLeadByPhone(leadForm.phone);
+    if (duplicate) {
+      setLeadSaving(false);
+      toast.error(`Дубликат телефона: ${duplicate.full_name || duplicate.phone}`);
+      return;
+    }
     const assignedTo = safeAgentIdFn(leadForm.assigned_to || (userRole === 'agent' ? myAgentId : null), agents);
     const { error } = await supabase.from('leads').insert({
       clinic_id: clinicId,
@@ -359,6 +392,12 @@ export default function Booking() {
   const updateLead = async () => {
     if (!selectedLead) return;
     setDetailSaving(true);
+    const duplicate = await findDuplicateBookingLeadByPhone(selectedLead.phone, selectedLead.id);
+    if (duplicate) {
+      setDetailSaving(false);
+      toast.error(`Дубликат телефона: ${duplicate.full_name || duplicate.phone}`);
+      return;
+    }
     const assignedTo = safeAgentIdFn(selectedLead.assigned_to || (userRole === 'agent' ? myAgentId : null), agents);
     const { error } = await supabase.from('leads').update({
       full_name: selectedLead.full_name,
@@ -434,9 +473,19 @@ export default function Booking() {
         rows = XLSX.utils.sheet_to_json<Record<string, string>>(wb.Sheets[wb.SheetNames[0]], { defval: '' });
       }
 
-      const { data: st } = await supabase.from('lead_statuses').select('id')
-        .eq('clinic_id', clinicId).eq('pipeline', 'booking').order('sort_order').limit(1);
+      const [{ data: st }, { data: existingLeads, error: existingLeadsError }] = await Promise.all([
+        supabase.from('lead_statuses').select('id')
+          .eq('clinic_id', clinicId).eq('pipeline', 'booking').order('sort_order').limit(1),
+        supabase.from('leads').select('phone')
+          .eq('clinic_id', clinicId).eq('pipeline', 'booking').not('phone', 'is', null),
+      ]);
+      if (existingLeadsError) { toast.error(existingLeadsError.message); return; }
       const defaultStatusId = st?.[0]?.id ?? null;
+      const seenPhones = new Set(
+        (existingLeads ?? [])
+          .map(row => normalizePhoneForDuplicate(row.phone))
+          .filter(Boolean),
+      );
 
       const NAME_KEYS  = ['full_name','name','имя','фио','клиент','пациент'];
       const PHONE_KEYS = ['phone','телефон','номер','whatsapp','contact','mobile'];
@@ -446,12 +495,19 @@ export default function Booking() {
 
       const ready: Record<string, unknown>[] = [];
       const errors: string[] = [];
+      let skippedDuplicates = 0;
       const importAssignedTo = userRole === 'agent' ? safeAgentIdFn(myAgentId, agents) : null;
 
       rows.forEach((r, idx) => {
         let fullName = pickField(r, NAME_KEYS);
         const rawPhone = pickField(r, PHONE_KEYS);
         const phone = rawPhone ? normalizePhone(rawPhone) || null : null;
+        const duplicatePhone = normalizePhoneForDuplicate(phone);
+        if (duplicatePhone && seenPhones.has(duplicatePhone)) {
+          skippedDuplicates += 1;
+          return;
+        }
+        if (duplicatePhone) seenPhones.add(duplicatePhone);
         if (!fullName && phone) fullName = `Клиент ${phone}`;
         if (!fullName.trim()) { errors.push(`Строка ${idx + 2}: нет имени и телефона`); return; }
         ready.push({
@@ -466,6 +522,7 @@ export default function Booking() {
       });
 
       if (errors.length) toast.error(`Пропущено строк: ${errors.length}`);
+      if (skippedDuplicates) toast.warning(`Пропущено дублей: ${skippedDuplicates}`);
       if (!ready.length) { toast.error('Нет данных для импорта'); return; }
 
       const CHUNK = 100;

@@ -1517,6 +1517,14 @@ interface SyncLogEntry {
   error?: string;
 }
 
+function normalizePhoneForDuplicate(value: string | null | undefined): string {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `7${digits}`;
+  if (digits.length === 11 && digits.startsWith('8')) return `7${digits.slice(1)}`;
+  return digits;
+}
+
 function LeadsImportTab({ clinicId }: { clinicId: string }) {
   const [accounts, setAccounts] = useState<AdAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1533,7 +1541,7 @@ function LeadsImportTab({ clinicId }: { clinicId: string }) {
   /* ── fetch existing phones to deduplicate ── */
   const loadExistingPhones = async (): Promise<Set<string>> => {
     const { data } = await supabase.from('leads').select('phone').eq('clinic_id', clinicId).not('phone', 'is', null);
-    return new Set((data ?? []).map((r: any) => String(r.phone).replace(/\D/g, '')));
+    return new Set((data ?? []).map((r: any) => normalizePhoneForDuplicate(r.phone)).filter(Boolean));
   };
 
   /* ── insert a batch of leads, return {added, skipped} ── */
@@ -1545,7 +1553,7 @@ function LeadsImportTab({ clinicId }: { clinicId: string }) {
     let added = 0, skipped = 0;
     const defaultStatusId = defaultStatuses[0]?.id ?? null;
     for (const lead of rawLeads) {
-      const norm = lead.phone ? lead.phone.replace(/\D/g, '') : null;
+      const norm = normalizePhoneForDuplicate(lead.phone);
       if (norm && existingPhones.has(norm)) { skipped++; continue; }
       const { error } = await supabase.from('leads').insert({
         clinic_id: clinicId,

@@ -1093,6 +1093,14 @@ function normalizePhone(raw: string): string {
   return (hasPlus ? '+' : '') + digits;
 }
 
+function normalizePhoneForDuplicate(value: string | null | undefined): string {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `7${digits}`;
+  if (digits.length === 11 && digits.startsWith('8')) return `7${digits.slice(1)}`;
+  return digits;
+}
+
 /** Pick the first non-empty value from an object by trying a list of keys (case-insensitive) */
 function pickField(row: Record<string, string>, keys: string[]): string {
   const lower = Object.fromEntries(Object.entries(row).map(([k, v]) => [k.toLowerCase().trim(), v]));
@@ -1144,11 +1152,18 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
         rows = XLSX.utils.sheet_to_json<Record<string, string>>(wb.Sheets[wb.SheetNames[0]], { defval: '' });
       }
 
-      const [{ data: statuses }, { data: agentsList }] = await Promise.all([
+      const [{ data: statuses }, { data: agentsList }, { data: existingLeads, error: existingLeadsError }] = await Promise.all([
         supabase.from('lead_statuses').select('id').eq('clinic_id', clinicId).eq('pipeline', 'sales').order('sort_order').limit(1),
         supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
+        supabase.from('leads').select('phone').eq('clinic_id', clinicId).eq('pipeline', 'sales').not('phone', 'is', null),
       ]);
+      if (existingLeadsError) { toast.error(existingLeadsError.message); return; }
       const defaultStatusId = statuses?.[0]?.id ?? null;
+      const seenPhones = new Set(
+        (existingLeads ?? [])
+          .map(row => normalizePhoneForDuplicate(row.phone))
+          .filter(Boolean),
+      );
 
       const agentByName = (name: string) => {
         if (!name || !agentsList) return null;
@@ -1184,6 +1199,12 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
         // ── Resolve phone ──
         const rawPhone = pickField(r, PHONE_KEYS);
         const phone = rawPhone ? normalizePhone(rawPhone) || null : null;
+        const duplicatePhone = normalizePhoneForDuplicate(phone);
+        if (duplicatePhone && seenPhones.has(duplicatePhone)) {
+          errors.push(`Строка ${rowNum}: дубль телефона ${phone}`);
+          return;
+        }
+        if (duplicatePhone) seenPhones.add(duplicatePhone);
 
         // ── Fallback: no name but has phone ──
         if (!fullName && phone) fullName = `Клиент ${phone}`;

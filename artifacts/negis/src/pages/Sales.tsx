@@ -75,6 +75,14 @@ function getDateRange(period: string, dateFrom: string, dateTo: string): { from:
   }
 }
 
+function normalizePhoneForDuplicate(value: string | null | undefined): string {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `7${digits}`;
+  if (digits.length === 11 && digits.startsWith('8')) return `7${digits.slice(1)}`;
+  return digits;
+}
+
 /* ── Indeterminate checkbox ─────────────────────────────── */
 function IndeterminateCheckbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate: boolean; onChange: () => void;
@@ -242,6 +250,25 @@ export default function Sales() {
   };
   const clearSelection = () => { setSelectedIds(new Set()); setBulkPanel(null); };
 
+  const findDuplicateLeadByPhone = async (phone: string | null | undefined, ignoreId?: string) => {
+    if (!clinicId) return null;
+    const normalizedPhone = normalizePhoneForDuplicate(phone);
+    if (!normalizedPhone) return null;
+    const { data, error } = await supabase
+      .from('leads')
+      .select('id, full_name, phone')
+      .eq('clinic_id', clinicId)
+      .eq('pipeline', 'sales')
+      .not('phone', 'is', null);
+    if (error) {
+      toast.error(error.message);
+      return null;
+    }
+    return (data ?? []).find(lead =>
+      lead.id !== ignoreId && normalizePhoneForDuplicate(lead.phone) === normalizedPhone
+    ) ?? null;
+  };
+
   /* ── Bulk actions ── */
   const bulkUpdate = async (patch: Record<string, unknown>) => {
     if (!clinicId || selectedIds.size === 0) return;
@@ -272,6 +299,12 @@ export default function Sales() {
     if (!form.full_name.trim()) { toast.error('Введите полное имя'); return; }
     if (!form.phone.trim()) { toast.error('Введите телефон'); return; }
     setSaving(true);
+    const duplicate = await findDuplicateLeadByPhone(form.phone);
+    if (duplicate) {
+      setSaving(false);
+      toast.error(`Дубликат телефона: ${duplicate.full_name || duplicate.phone}`);
+      return;
+    }
     // safeAgentId ensures we only send agents.id that exists in current list,
     // or null — never an empty string, user_id, or stale/deleted agent UUID.
     const assignedTo = safeAgentId(form.assigned_to || myAgentId);
@@ -295,6 +328,12 @@ export default function Sales() {
   const updateLead = async () => {
     if (!selectedLead) return;
     setSaving(true);
+    const duplicate = await findDuplicateLeadByPhone(selectedLead.phone, selectedLead.id);
+    if (duplicate) {
+      setSaving(false);
+      toast.error(`Дубликат телефона: ${duplicate.full_name || duplicate.phone}`);
+      return;
+    }
     // safeAgentId: ensure we only pass agents.id that exists in the loaded list,
     // or null — converts stale user_id refs to agents.id, falls back to null.
     const assignedTo = safeAgentId(selectedLead.assigned_to);
