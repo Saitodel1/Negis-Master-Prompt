@@ -155,11 +155,10 @@ export default function Sales() {
     setStatuses(sl ?? []);
     setAgents(ag ?? []);
     setServices(sv ?? []);
-    if (user && ag) {
-      const mine = ag.find(a => a.user_id === user.id);
-      setMyAgentId(mine?.id ?? null);
-    }
-    await loadLeads(sl ?? []);
+    const mine = user && ag ? ag.find(a => a.user_id === user.id) : null;
+    const mineId = mine?.id ?? null;
+    setMyAgentId(mineId);
+    await loadLeads(sl ?? [], mineId);
     setLoading(false);
   };
 
@@ -168,10 +167,18 @@ export default function Sales() {
     if (showBooking && clinicId) loadBkSlots(bkDate);
   }, [showBooking, bkDate, clinicId]);
 
-  const loadLeads = async (_sl?: LeadStatus[]) => {
+  const loadLeads = async (_sl?: LeadStatus[], agentId = myAgentId) => {
     if (!clinicId) return;
     let q = supabase.from('leads').select('*, lead_statuses(name, color)').eq('clinic_id', clinicId).eq('pipeline', 'sales');
-    if (userRole === 'agent' && myAgentId) q = q.eq('assigned_to', myAgentId);
+    if (userRole === 'agent') {
+      const responsibleIds = [agentId, user?.id].filter(Boolean) as string[];
+      if (responsibleIds.length === 0) {
+        setLeads([]);
+        setSelectedIds(new Set());
+        return;
+      }
+      q = q.in('assigned_to', responsibleIds);
+    }
     const [field, asc] = sortBy === 'created_at_desc' ? ['created_at', false]
       : sortBy === 'created_at_asc'  ? ['created_at', true]
       : sortBy === 'phone_asc'       ? ['phone', true]
@@ -183,13 +190,16 @@ export default function Sales() {
     setSelectedIds(new Set());
   };
 
-  useEffect(() => { if (clinicId && !loading) loadLeads(); }, [sortBy, myAgentId]);
+  useEffect(() => { if (clinicId && !loading) loadLeads(); }, [sortBy, myAgentId, userRole, user?.id]);
 
   /* ── Client-side filtering ── */
   const displayed = leads.filter(l => {
     if (search && !(l.full_name ?? '').toLowerCase().includes(search.toLowerCase()) && !(l.phone ?? '').includes(search)) return false;
     if (filterStatus && l.status_id !== filterStatus) return false;
-    if (filterAgent && l.assigned_to !== filterAgent) return false;
+    if (filterAgent) {
+      const rowAgent = agents.find(a => a.id === l.assigned_to) ?? agents.find(a => a.user_id === l.assigned_to);
+      if ((rowAgent?.id ?? l.assigned_to) !== filterAgent) return false;
+    }
     if (filterSource && l.source !== filterSource) return false;
     if (periodFilter !== 'all') {
       const { from, to } = getDateRange(periodFilter, dateFrom, dateTo);
@@ -387,9 +397,10 @@ export default function Sales() {
     return byUserId?.id ?? null;
   };
 
-  const agentName = (lead: Lead) =>
-    agents.find(a => a.id === lead.assigned_to)?.name ??
-    agents.find(a => a.user_id === lead.assigned_to)?.name ?? '—';
+  const agentForLead = (lead: Lead) =>
+    agents.find(a => a.id === lead.assigned_to) ??
+    agents.find(a => a.user_id === lead.assigned_to) ?? null;
+  const agentName = (lead: Lead) => agentForLead(lead)?.name ?? '—';
 
   const IS: React.CSSProperties = {
     background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 10,

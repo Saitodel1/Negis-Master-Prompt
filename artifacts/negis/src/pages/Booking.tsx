@@ -167,7 +167,7 @@ export default function Booking() {
 
   useEffect(() => {
     if (clinicId) loadBkLeads();
-  }, [clinicId, bkSortBy]);
+  }, [clinicId, bkSortBy, myAgentId, userRole, user?.id]);
 
   useEffect(() => {
     setBkPage(0);
@@ -211,12 +211,27 @@ export default function Booking() {
     const [field, asc] = bkSortBy === 'created_at_desc' ? ['created_at', false]
       : bkSortBy === 'created_at_asc' ? ['created_at', true]
       : ['full_name', true];
-    const { data, error } = await supabase
+    let q = supabase
       .from('leads').select('*, lead_statuses(name, color)')
-      .eq('clinic_id', clinicId).eq('pipeline', 'booking')
-      .order(field, { ascending: asc });
+      .eq('clinic_id', clinicId).eq('pipeline', 'booking');
+    if (userRole === 'agent') {
+      const responsibleIds = [myAgentId, user?.id].filter(Boolean) as string[];
+      if (responsibleIds.length === 0) {
+        setBkLeads([]);
+        setSelectedBkLeadIds(new Set());
+        const { data: st } = await supabase
+          .from('lead_statuses').select('id, name, color')
+          .eq('clinic_id', clinicId).eq('pipeline', 'booking').order('sort_order');
+        setBkStatuses(st ?? []);
+        setLeadsLoading(false);
+        return;
+      }
+      q = q.in('assigned_to', responsibleIds);
+    }
+    const { data, error } = await q.order(field, { ascending: asc });
     if (error) toast.error(error.message);
     setBkLeads(data ?? []);
+    setSelectedBkLeadIds(new Set());
 
     const { data: st } = await supabase
       .from('lead_statuses').select('id, name, color')
@@ -276,7 +291,7 @@ export default function Booking() {
     const name = leadForm.full_name.trim() || (leadForm.phone ? `Клиент ${leadForm.phone}` : '');
     if (!name) { toast.error('Введите имя или телефон'); return; }
     setLeadSaving(true);
-    const assignedTo = safeAgentIdFn(leadForm.assigned_to, agents);
+    const assignedTo = safeAgentIdFn(leadForm.assigned_to || (userRole === 'agent' ? myAgentId : null), agents);
     const { error } = await supabase.from('leads').insert({
       clinic_id: clinicId,
       pipeline: 'booking',
@@ -297,7 +312,7 @@ export default function Booking() {
   const updateLead = async () => {
     if (!selectedLead) return;
     setDetailSaving(true);
-    const assignedTo = safeAgentIdFn(selectedLead.assigned_to, agents);
+    const assignedTo = safeAgentIdFn(selectedLead.assigned_to || (userRole === 'agent' ? myAgentId : null), agents);
     const { error } = await supabase.from('leads').update({
       full_name: selectedLead.full_name,
       phone: selectedLead.phone,
@@ -383,6 +398,7 @@ export default function Booking() {
 
       const ready: Record<string, unknown>[] = [];
       const errors: string[] = [];
+      const importAssignedTo = userRole === 'agent' ? safeAgentIdFn(myAgentId, agents) : null;
 
       rows.forEach((r, idx) => {
         let fullName = pickField(r, NAME_KEYS);
@@ -397,6 +413,7 @@ export default function Booking() {
           source: pickField(r, SOURCE_KEYS) || 'Import',
           comment: pickField(r, COMMENT_KEYS) || null,
           status_id: defaultStatusId,
+          assigned_to: importAssignedTo,
         });
       });
 
@@ -424,7 +441,10 @@ export default function Booking() {
   const displayedLeads = bkLeads.filter(l => {
     if (bkSearch && !(l.full_name ?? '').toLowerCase().includes(bkSearch.toLowerCase()) && !(l.phone ?? '').includes(bkSearch)) return false;
     if (bkFilterStatus && l.status_id !== bkFilterStatus) return false;
-    if (bkFilterAgent && l.assigned_to !== bkFilterAgent) return false;
+    if (bkFilterAgent) {
+      const rowAgent = agents.find(a => a.id === l.assigned_to) ?? agents.find(a => a.user_id === l.assigned_to);
+      if ((rowAgent?.id ?? l.assigned_to) !== bkFilterAgent) return false;
+    }
     return true;
   });
   const totalBkFiltered = displayedLeads.length;
@@ -467,9 +487,10 @@ export default function Booking() {
 
   const clearBkSelection = () => setSelectedBkLeadIds(new Set());
 
-  const agentName = (lead: Lead) =>
-    agents.find(a => a.id === lead.assigned_to)?.name ??
-    agents.find(a => a.user_id === lead.assigned_to)?.name ?? '—';
+  const agentForLead = (lead: Lead) =>
+    agents.find(a => a.id === lead.assigned_to) ??
+    agents.find(a => a.user_id === lead.assigned_to) ?? null;
+  const agentName = (lead: Lead) => agentForLead(lead)?.name ?? '—';
 
   const statusColor = (lead: Lead) => lead.lead_statuses?.color ?? '#94A3B8';
   const statusName  = (lead: Lead) => lead.lead_statuses?.name  ?? '—';
