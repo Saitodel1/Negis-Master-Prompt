@@ -11,12 +11,31 @@ import { ru } from 'date-fns/locale';
 interface Booking {
   id: string; patient_name: string; patient_phone: string | null; age: number | null;
   time: string; date: string; visited: boolean | null;
-  service_id: string | null; agent_id: string | null;
+  service_id: string | null; agent_id: string | null; lead_id: string | null;
 }
 interface Service { id: string; name: string }
 interface Agent   { id: string; name: string }
+interface CrmLead {
+  id: string;
+  full_name: string | null;
+  phone: string | null;
+  age: number | null;
+  source: string | null;
+  status_id: string | null;
+  assigned_to: string | null;
+  comment: string | null;
+  pipeline: string | null;
+}
 
 const fmtDate = (d: Date) => d.toISOString().split('T')[0];
+
+function normalizePhoneForDuplicate(value: string | null | undefined): string {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `7${digits}`;
+  if (digits.length === 11 && digits.startsWith('8')) return `7${digits.slice(1)}`;
+  return digits;
+}
 
 const dateLabel = (d: Date) => {
   const today = fmtDate(new Date());
@@ -65,7 +84,7 @@ export default function Reception() {
     setLoading(true);
     const { data, error } = await supabase
       .from('bookings')
-      .select('id, patient_name, patient_phone, age, time, date, visited, service_id, agent_id')
+      .select('id, patient_name, patient_phone, age, time, date, visited, service_id, agent_id, lead_id')
       .eq('clinic_id', clinicId)
       .eq('date', fmtDate(selectedDate))
       .order('time');
@@ -74,11 +93,112 @@ export default function Reception() {
     setLoading(false);
   };
 
+  const svcName = (id: string | null) => id ? (services.find(s => s.id === id)?.name ?? '—') : '—';
+  const agtName = (id: string | null) => id ? (agents.find(a => a.id === id)?.name ?? '—') : '—';
+
+  const appendVisitNote = (comment: string | null, booking: Booking) => {
+    const note = [
+      `Визит: пришёл ${booking.date} ${booking.time}`,
+      `услуга: ${svcName(booking.service_id)}`,
+      `агент: ${agtName(booking.agent_id)}`,
+    ].join('; ');
+    const current = (comment ?? '').trim();
+    if (current.includes(note)) return current || null;
+    return current ? `${current}\n${note}` : note;
+  };
+
+  const findSalesLeadByPhone = async (phone: string | null) => {
+    if (!clinicId) return null;
+    const normalizedPhone = normalizePhoneForDuplicate(phone);
+    if (!normalizedPhone) return null;
+    const { data, error } = await supabase
+      .from('leads')
+      .select('id, full_name, phone, age, source, status_id, assigned_to, comment, pipeline')
+      .eq('clinic_id', clinicId)
+      .eq('pipeline', 'sales')
+      .not('phone', 'is', null);
+    if (error) throw error;
+    return ((data ?? []) as CrmLead[]).find(lead =>
+      normalizePhoneForDuplicate(lead.phone) === normalizedPhone
+    ) ?? null;
+  };
+
+  const promoteBookingToCrm = async (booking: Booking) => {
+    if (!clinicId) return null;
+    const { data: defaultStatuses, error: statusError } = await supabase
+      .from('lead_statuses')
+      .select('id')
+      .eq('clinic_id', clinicId)
+      .eq('pipeline', 'sales')
+      .order('sort_order')
+      .limit(1);
+    if (statusError) throw statusError;
+    const defaultStatusId = defaultStatuses?.[0]?.id ?? null;
+
+    let targetLead: CrmLead | null = null;
+    if (booking.lead_id) {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('id, full_name, phone, age, source, status_id, assigned_to, comment, pipeline')
+        .eq('id', booking.lead_id)
+        .maybeSingle();
+      if (error) throw error;
+      targetLead = data as CrmLead | null;
+    }
+    if (!targetLead) targetLead = await findSalesLeadByPhone(booking.patient_phone);
+
+    const crmPayload = {
+      pipeline: 'sales',
+      full_name: targetLead?.full_name || booking.patient_name,
+      phone: targetLead?.phone || booking.patient_phone,
+      age: targetLead?.age ?? booking.age,
+      source: targetLead?.source || 'Ресепшн',
+      assigned_to: targetLead?.assigned_to || booking.agent_id,
+      status_id: targetLead?.pipeline === 'sales'
+        ? (targetLead.status_id || defaultStatusId)
+        : defaultStatusId,
+      comment: appendVisitNote(targetLead?.comment ?? null, booking),
+      updated_at: new Date().toISOString(),
+    };
+
+    let crmLeadId = targetLead?.id ?? null;
+    if (crmLeadId) {
+      const { error } = await supabase.from('leads').update(crmPayload).eq('id', crmLeadId);
+      if (error) throw error;
+    } else {
+      const { data, error } = await supabase
+        .from('leads')
+        .insert({
+          clinic_id: clinicId,
+          ...crmPayload,
+        })
+        .select('id')
+        .single();
+      if (error) throw error;
+      crmLeadId = data.id;
+    }
+
+    if (crmLeadId && booking.lead_id !== crmLeadId) {
+      const { error } = await supabase.from('bookings').update({ lead_id: crmLeadId }).eq('id', booking.id);
+      if (error) throw error;
+    }
+    return crmLeadId;
+  };
+
   const setVisited = async (id: string, visited: boolean) => {
+    const booking = bookings.find(b => b.id === id);
     const { error } = await supabase.from('bookings').update({ visited }).eq('id', id);
     if (error) { toast.error(error.message); return; }
-    setBookings(b => b.map(x => x.id === id ? { ...x, visited } : x));
-    toast.success(visited ? 'Отмечен: Пришёл' : 'Отмечен: Не пришёл');
+    let crmLeadId: string | null = null;
+    if (visited && booking) {
+      try {
+        crmLeadId = await promoteBookingToCrm(booking);
+      } catch (e: any) {
+        toast.error(e.message || 'Не удалось добавить пациента в CRM');
+      }
+    }
+    setBookings(b => b.map(x => x.id === id ? { ...x, visited, lead_id: crmLeadId ?? x.lead_id } : x));
+    toast.success(visited ? 'Отмечен: Пришёл, пациент добавлен в CRM' : 'Отмечен: Не пришёл');
   };
 
   const deleteBooking = async (id: string) => {
@@ -88,9 +208,6 @@ export default function Reception() {
     toast.success('Запись удалена');
     setDeletingId(null);
   };
-
-  const svcName = (id: string | null) => id ? (services.find(s => s.id === id)?.name ?? '—') : '—';
-  const agtName = (id: string | null) => id ? (agents.find(a => a.id === id)?.name   ?? '—') : '—';
 
   const shiftDay = (n: number) => {
     const d = new Date(selectedDate);
