@@ -506,7 +506,8 @@ export default function Sales() {
   };
   const extractField = (line: string, labels: string[]) => {
     const escaped = labels.map(label => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-    const match = line.match(new RegExp(`(?:${escaped}):\\s*([^;]+)`, 'i'));
+    const body = line.replace(/^\[[^\]]+\]\s*[^:]+:\s*/, '');
+    const match = body.match(new RegExp(`(?:^|;)\\s*(?:${escaped}):\\s*([^;]+)`, 'i'));
     return match?.[1]?.trim() ?? '';
   };
   const bookingStatusLabel = (booking: BookingHistory) =>
