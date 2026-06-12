@@ -24,6 +24,18 @@ interface Lead {
 interface LeadStatus { id: string; name: string; color: string }
 interface Agent { id: string; name: string; user_id: string | null }
 interface Service { id: string; name: string; price: number }
+interface BookingHistory {
+  id: string;
+  lead_id: string | null;
+  patient_name: string | null;
+  patient_phone: string | null;
+  service_id: string | null;
+  agent_id: string | null;
+  date: string;
+  time: string;
+  visited: boolean | null;
+  comment: string | null;
+}
 
 const SOURCES = ['Instagram', 'Google', 'WhatsApp', '2GIS', 'Вручную', 'Webhook', 'Import'];
 const SLOT_HOURS   = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
@@ -133,6 +145,10 @@ export default function Sales() {
 
   /* ── Lead forms ── */
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [leadDetailTab, setLeadDetailTab] = useState<'overview' | 'timeline' | 'bookings' | 'need' | 'finance' | 'tasks'>('overview');
+  const [leadBookings, setLeadBookings] = useState<BookingHistory[]>([]);
+  const [leadBookingsLoading, setLeadBookingsLoading] = useState(false);
+  const [quickNote, setQuickNote] = useState('');
   const [showNew, setShowNew]           = useState(false);
   const emptyForm = { full_name: '', phone: '', email: '', company: '', age: '', source: 'Вручную', status_id: '', assigned_to: '', comment: '' };
   const [form, setForm]   = useState(emptyForm);
@@ -200,6 +216,16 @@ export default function Sales() {
 
   useEffect(() => { if (clinicId && !loading) loadLeads(); }, [sortBy, myAgentId, userRole, user?.id]);
 
+  useEffect(() => {
+    if (selectedLead) {
+      setLeadDetailTab('overview');
+      setQuickNote('');
+      loadLeadBookings(selectedLead);
+    } else {
+      setLeadBookings([]);
+    }
+  }, [selectedLead?.id]);
+
   /* ── Client-side filtering ── */
   const displayed = leads.filter(l => {
     if (search && !(l.full_name ?? '').toLowerCase().includes(search.toLowerCase()) && !(l.phone ?? '').includes(search)) return false;
@@ -249,6 +275,26 @@ export default function Sales() {
     });
   };
   const clearSelection = () => { setSelectedIds(new Set()); setBulkPanel(null); };
+
+  const loadLeadBookings = async (lead: Lead) => {
+    if (!clinicId) return;
+    setLeadBookingsLoading(true);
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('id, lead_id, patient_name, patient_phone, service_id, agent_id, date, time, visited, comment')
+      .eq('clinic_id', clinicId)
+      .order('date', { ascending: false })
+      .order('time', { ascending: false })
+      .limit(500);
+    setLeadBookingsLoading(false);
+    if (error) { toast.error(error.message); return; }
+    const normalizedPhone = normalizePhoneForDuplicate(lead.phone);
+    const rows = ((data ?? []) as BookingHistory[]).filter(b =>
+      b.lead_id === lead.id ||
+      (!!normalizedPhone && normalizePhoneForDuplicate(b.patient_phone) === normalizedPhone)
+    );
+    setLeadBookings(rows);
+  };
 
   const findDuplicateLeadByPhone = async (phone: string | null | undefined, ignoreId?: string) => {
     if (!clinicId) return null;
@@ -416,6 +462,7 @@ export default function Sales() {
     toast.success(`Записано на ${format(bkDate, 'd MMM', { locale: ru })} в ${slotLabel(bkHour)}`);
     setShowBooking(false);
     setBkHour(null);
+    loadLeadBookings(selectedLead);
   };
 
   /* ── Helpers ── */
@@ -440,6 +487,48 @@ export default function Sales() {
     agents.find(a => a.id === lead.assigned_to) ??
     agents.find(a => a.user_id === lead.assigned_to) ?? null;
   const agentName = (lead: Lead) => agentForLead(lead)?.name ?? '—';
+  const serviceName = (id: string | null) => id ? (services.find(s => s.id === id)?.name ?? '—') : '—';
+  const servicePrice = (id: string | null) => id ? (services.find(s => s.id === id)?.price ?? 0) : 0;
+  const bookingAgentName = (id: string | null) => id ? (agents.find(a => a.id === id)?.name ?? '—') : '—';
+  const money = (value: number) => value.toLocaleString('ru-RU') + ' ₸';
+  const bookingStatusLabel = (booking: BookingHistory) =>
+    booking.visited === true ? 'Пришёл'
+      : booking.visited === false ? 'Не пришёл'
+      : 'Записан';
+  const bookingStatusColor = (booking: BookingHistory) =>
+    booking.visited === true ? '#16A34A'
+      : booking.visited === false ? '#DC2626'
+      : '#2859C5';
+  const sortedLeadBookings = [...leadBookings].sort((a, b) =>
+    `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)
+  );
+  const visitedBookings = sortedLeadBookings.filter(b => b.visited === true);
+  const plannedBookings = sortedLeadBookings.filter(b => b.visited === null);
+  const nextBooking = [...plannedBookings].reverse().find(b => new Date(`${b.date}T${b.time}`) >= new Date()) ?? plannedBookings[0] ?? null;
+  const lastTouchDate = sortedLeadBookings[0]?.date ?? selectedLead?.created_at ?? null;
+  const totalServiceValue = visitedBookings.reduce((sum, b) => sum + servicePrice(b.service_id), 0);
+  const potentialServiceValue = sortedLeadBookings.reduce((sum, b) => sum + servicePrice(b.service_id), 0);
+  const commentLines = (selectedLead?.comment ?? '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+  const timelineItems = selectedLead ? [
+    { id: 'created', date: selectedLead.created_at, title: 'Лид создан', body: selectedLead.source ? `Источник: ${selectedLead.source}` : 'Первое обращение' },
+    ...commentLines.map((line, index) => ({ id: `note-${index}`, date: selectedLead.created_at, title: 'Заметка', body: line })),
+    ...sortedLeadBookings.map(b => ({
+      id: `booking-${b.id}`,
+      date: `${b.date}T${b.time}`,
+      title: `${bookingStatusLabel(b)}: ${serviceName(b.service_id)}`,
+      body: `${b.date} ${b.time}${b.comment ? ` · ${b.comment}` : ''}`,
+    })),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) : [];
+  const appendQuickNote = () => {
+    if (!selectedLead || !quickNote.trim()) return;
+    const stamp = new Date().toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+    const line = `[${stamp}] ${quickNote.trim()}`;
+    setSelectedLead({ ...selectedLead, comment: selectedLead.comment ? `${selectedLead.comment}\n${line}` : line });
+    setQuickNote('');
+  };
 
   const IS: React.CSSProperties = {
     background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 10,
@@ -778,61 +867,244 @@ export default function Sales() {
 
         {/* ── Lead Detail Modal ── */}
         {selectedLead && (
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white w-full max-w-2xl max-h-[90vh] rounded-[20px] shadow-2xl flex flex-col overflow-hidden border border-[#E7ECF3]">
-              <div className="flex items-center justify-between px-7 py-5 border-b border-[#E7ECF3]">
-                <h3 className="text-base font-bold text-[#0B1220]">{displayName(selectedLead)}</h3>
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-3">
+            <div className="bg-white w-full max-w-7xl max-h-[94vh] rounded-[20px] shadow-2xl flex flex-col overflow-hidden border border-[#E7ECF3]">
+              <div className="px-6 py-5 border-b border-[#E7ECF3] flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <h3 className="text-xl font-black text-[#0B1220]">{displayName(selectedLead)}</h3>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+                      style={{ background: statusColor(selectedLead) + '18', color: statusColor(selectedLead) }}>
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor(selectedLead) }} />
+                      {statusName(selectedLead)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex gap-3 flex-wrap text-xs text-[#64748B]">
+                    <span>{selectedLead.phone || 'Телефон не указан'}</span>
+                    <span>Источник: {selectedLead.source || '—'}</span>
+                    <span>Ответственный: {agentName(selectedLead)}</span>
+                    <span>Первое обращение: {new Date(selectedLead.created_at).toLocaleDateString('ru-RU')}</span>
+                  </div>
+                </div>
                 <button onClick={() => setSelectedLead(null)} style={{ background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 8, padding: 6, cursor: 'pointer' }}>
                   <X size={15} color="#64748B" />
                 </button>
               </div>
-              <div className="overflow-y-auto flex-1 p-7">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <label className="text-xs text-[#64748B] font-medium block mb-1.5">Полное имя</label>
-                    <input type="text" style={IS} value={selectedLead.full_name ?? ''}
-                      onChange={e => setSelectedLead(l => l ? { ...l, full_name: e.target.value || null } : l)} />
+              <div className="border-b border-[#E7ECF3] px-6 py-3 flex gap-2 overflow-x-auto">
+                {([
+                  ['overview', 'Обзор'],
+                  ['timeline', 'Лента'],
+                  ['bookings', 'Записи'],
+                  ['need', 'Потребность'],
+                  ['finance', 'Финансы'],
+                  ['tasks', 'Задачи'],
+                ] as const).map(([id, label]) => (
+                  <button key={id}
+                    onClick={() => setLeadDetailTab(id)}
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap ${leadDetailTab === id ? 'bg-[#1E325C] text-white' : 'bg-[#F4F7FB] text-[#64748B]'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="overflow-y-auto flex-1">
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] min-h-full">
+                  <div className="p-6 space-y-5">
+                    {leadDetailTab === 'overview' && (
+                      <>
+                        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+                          <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4">
+                            <div className="text-xs text-[#64748B]">Визитов</div>
+                            <div className="text-xl font-black text-[#0B1220] mt-1">{visitedBookings.length}</div>
+                          </div>
+                          <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4">
+                            <div className="text-xs text-[#64748B]">Записей всего</div>
+                            <div className="text-xl font-black text-[#0B1220] mt-1">{leadBookings.length}</div>
+                          </div>
+                          <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4">
+                            <div className="text-xs text-[#64748B]">Получено услуг</div>
+                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(totalServiceValue)}</div>
+                          </div>
+                          <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4">
+                            <div className="text-xs text-[#64748B]">Потенциал</div>
+                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(potentialServiceValue)}</div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="col-span-2">
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Полное имя</label>
+                            <input type="text" style={IS} value={selectedLead.full_name ?? ''}
+                              onChange={e => setSelectedLead(l => l ? { ...l, full_name: e.target.value || null } : l)} />
+                          </div>
+                          {([
+                            { label: 'Телефон', key: 'phone', type: 'text' },
+                            { label: 'Email', key: 'email', type: 'email' },
+                            { label: 'Компания', key: 'company', type: 'text' },
+                            { label: 'Возраст', key: 'age', type: 'number' },
+                          ] as const).map(({ label, key, type }) => (
+                            <div key={key}>
+                              <label className="text-xs text-[#64748B] font-medium block mb-1.5">{label}</label>
+                              <input type={type} style={IS} value={(selectedLead as any)[key] ?? ''}
+                                onChange={e => setSelectedLead(l => l ? { ...l, [key]: e.target.value || null } : l)} />
+                            </div>
+                          ))}
+                          <div>
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Источник</label>
+                            <select style={IS} value={selectedLead.source ?? ''} onChange={e => setSelectedLead(l => l ? { ...l, source: e.target.value } : l)}>
+                              {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Статус</label>
+                            <select style={IS} value={selectedLead.status_id ?? ''} onChange={e => setSelectedLead(l => l ? { ...l, status_id: e.target.value } : l)}>
+                              <option value="">— выбрать —</option>
+                              {statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                          </div>
+                          {(userRole === 'owner' || userRole === 'manager') && (
+                            <div className="col-span-2">
+                              <label className="text-xs text-[#64748B] font-medium block mb-1.5">Ответственный</label>
+                              <select style={IS} value={selectedLead.assigned_to ?? ''} onChange={e => setSelectedLead(l => l ? { ...l, assigned_to: e.target.value || null } : l)}>
+                                <option value="">— выбрать —</option>
+                                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    {leadDetailTab === 'timeline' && (
+                      <div className="space-y-3">
+                        {timelineItems.length === 0 ? (
+                          <div className="text-sm text-[#94A3B8] py-10 text-center">Истории пока нет</div>
+                        ) : timelineItems.map(item => (
+                          <div key={item.id} className="rounded-xl border border-[#E7ECF3] p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="font-semibold text-[#0B1220]">{item.title}</div>
+                              <div className="text-xs text-[#94A3B8]">{new Date(item.date).toLocaleString('ru-RU')}</div>
+                            </div>
+                            <div className="text-sm text-[#64748B] mt-1 whitespace-pre-wrap">{item.body}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {leadDetailTab === 'bookings' && (
+                      <div className="rounded-xl border border-[#E7ECF3] overflow-hidden">
+                        {leadBookingsLoading ? (
+                          <div className="py-12 text-center text-sm text-[#94A3B8]">Загрузка...</div>
+                        ) : sortedLeadBookings.length === 0 ? (
+                          <div className="py-12 text-center text-sm text-[#94A3B8]">Записей и визитов пока нет</div>
+                        ) : (
+                          <table className="w-full text-sm">
+                            <thead className="bg-[#F8FAFC] text-[#64748B]">
+                              <tr>
+                                <th className="text-left p-3">Дата</th>
+                                <th className="text-left p-3">Услуга</th>
+                                <th className="text-left p-3">Агент</th>
+                                <th className="text-left p-3">Статус</th>
+                                <th className="text-left p-3">Комментарий</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sortedLeadBookings.map(b => (
+                                <tr key={b.id} className="border-t border-[#EEF2F6]">
+                                  <td className="p-3 font-semibold text-[#0B1220]">{b.date} {b.time}</td>
+                                  <td className="p-3 text-[#64748B]">{serviceName(b.service_id)}</td>
+                                  <td className="p-3 text-[#64748B]">{bookingAgentName(b.agent_id)}</td>
+                                  <td className="p-3">
+                                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold" style={{ background: bookingStatusColor(b) + '18', color: bookingStatusColor(b) }}>
+                                      {bookingStatusLabel(b)}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-[#64748B]">{b.comment || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
+
+                    {leadDetailTab === 'need' && (
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4 text-sm text-[#64748B]">
+                          Здесь фиксируйте причину обращения, интересующую услугу, возражения, бюджет, срочность и что нужно предложить дальше.
+                        </div>
+                        <textarea style={{ ...IS, minHeight: 280, resize: 'vertical' } as React.CSSProperties}
+                          value={selectedLead.comment ?? ''}
+                          onChange={e => setSelectedLead(l => l ? { ...l, comment: e.target.value } : l)} />
+                      </div>
+                    )}
+
+                    {leadDetailTab === 'finance' && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="rounded-xl border border-[#E7ECF3] p-4">
+                            <div className="text-xs text-[#64748B]">Получено услуг</div>
+                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(totalServiceValue)}</div>
+                          </div>
+                          <div className="rounded-xl border border-[#E7ECF3] p-4">
+                            <div className="text-xs text-[#64748B]">План / потенциал</div>
+                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(potentialServiceValue)}</div>
+                          </div>
+                          <div className="rounded-xl border border-[#E7ECF3] p-4">
+                            <div className="text-xs text-[#64748B]">Оплаты вручную</div>
+                            <div className="text-xl font-black text-[#0B1220] mt-1">в заметках</div>
+                          </div>
+                        </div>
+                        <textarea style={{ ...IS, minHeight: 220, resize: 'vertical' } as React.CSSProperties}
+                          placeholder="Оплаты, долг, рассрочка, скидка..."
+                          value={selectedLead.comment ?? ''}
+                          onChange={e => setSelectedLead(l => l ? { ...l, comment: e.target.value } : l)} />
+                      </div>
+                    )}
+
+                    {leadDetailTab === 'tasks' && (
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4">
+                          <div className="font-semibold text-[#0B1220]">Следующее действие</div>
+                          <div className="text-sm text-[#64748B] mt-1">
+                            Добавьте задачу как заметку: когда связаться, что отправить, что уточнить, какой результат нужен.
+                          </div>
+                        </div>
+                        <textarea style={{ ...IS, minHeight: 220, resize: 'vertical' } as React.CSSProperties}
+                          value={selectedLead.comment ?? ''}
+                          onChange={e => setSelectedLead(l => l ? { ...l, comment: e.target.value } : l)} />
+                      </div>
+                    )}
                   </div>
-                  {([
-                    { label: 'Телефон', key: 'phone', type: 'text' },
-                    { label: 'Email', key: 'email', type: 'email' },
-                    { label: 'Компания', key: 'company', type: 'text' },
-                    { label: 'Возраст', key: 'age', type: 'number' },
-                  ] as const).map(({ label, key, type }) => (
-                    <div key={key}>
-                      <label className="text-xs text-[#64748B] font-medium block mb-1.5">{label}</label>
-                      <input type={type} style={IS} value={(selectedLead as any)[key] ?? ''}
-                        onChange={e => setSelectedLead(l => l ? { ...l, [key]: e.target.value || null } : l)} />
+
+                  <aside className="border-t lg:border-t-0 lg:border-l border-[#E7ECF3] bg-[#F8FAFC] p-5 space-y-4">
+                    <button onClick={openBookingForLead}
+                      className="w-full px-4 py-3 rounded-xl bg-[#1E325C] text-white text-sm font-semibold flex items-center justify-center gap-2">
+                      <CalendarPlus size={15} /> Записать
+                    </button>
+                    <div className="rounded-xl border border-[#E7ECF3] bg-white p-4 space-y-3 text-sm">
+                      <div className="flex justify-between gap-3"><span className="text-[#64748B]">Статус</span><span className="font-semibold text-[#0B1220]">{statusName(selectedLead)}</span></div>
+                      <div className="flex justify-between gap-3"><span className="text-[#64748B]">Ответственный</span><span className="font-semibold text-[#0B1220] text-right">{agentName(selectedLead)}</span></div>
+                      <div className="flex justify-between gap-3"><span className="text-[#64748B]">Последнее касание</span><span className="font-semibold text-[#0B1220]">{lastTouchDate ? new Date(lastTouchDate).toLocaleDateString('ru-RU') : '—'}</span></div>
+                      <div className="flex justify-between gap-3"><span className="text-[#64748B]">Ближайшая запись</span><span className="font-semibold text-[#0B1220] text-right">{nextBooking ? `${nextBooking.date} ${nextBooking.time}` : '—'}</span></div>
                     </div>
-                  ))}
-                  <div>
-                    <label className="text-xs text-[#64748B] font-medium block mb-1.5">Источник</label>
-                    <select style={IS} value={selectedLead.source ?? ''} onChange={e => setSelectedLead(l => l ? { ...l, source: e.target.value } : l)}>
-                      {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-[#64748B] font-medium block mb-1.5">Статус</label>
-                    <select style={IS} value={selectedLead.status_id ?? ''} onChange={e => setSelectedLead(l => l ? { ...l, status_id: e.target.value } : l)}>
-                      <option value="">— выбрать —</option>
-                      {statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  </div>
-                  {(userRole === 'owner' || userRole === 'manager') && (
-                    <div className="col-span-2">
-                      <label className="text-xs text-[#64748B] font-medium block mb-1.5">Ответственный</label>
-                      <select style={IS} value={selectedLead.assigned_to ?? ''} onChange={e => setSelectedLead(l => l ? { ...l, assigned_to: e.target.value || null } : l)}>
-                        <option value="">— выбрать —</option>
-                        {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                      </select>
+                    <div className="rounded-xl border border-[#E7ECF3] bg-white p-4">
+                      <label className="text-xs text-[#64748B] font-medium block mb-2">Быстрая заметка</label>
+                      <textarea style={{ ...IS, background: '#FFFFFF', minHeight: 86, resize: 'vertical' } as React.CSSProperties}
+                        value={quickNote}
+                        onChange={e => setQuickNote(e.target.value)}
+                        placeholder="Например: отправить план лечения завтра" />
+                      <button onClick={appendQuickNote} disabled={!quickNote.trim()}
+                        className="mt-3 w-full px-3 py-2 rounded-lg bg-[#EFF6FF] text-[#2859C5] text-sm font-semibold disabled:opacity-50">
+                        Добавить в ленту
+                      </button>
                     </div>
-                  )}
-                  <div className="col-span-2">
-                    <label className="text-xs text-[#64748B] font-medium block mb-1.5">Комментарий</label>
-                    <textarea style={{ ...IS, minHeight: 80, resize: 'vertical' } as React.CSSProperties}
-                      value={selectedLead.comment ?? ''}
-                      onChange={e => setSelectedLead(l => l ? { ...l, comment: e.target.value } : l)} />
-                  </div>
+                    <div className="rounded-xl border border-[#E7ECF3] bg-white p-4">
+                      <div className="text-xs text-[#64748B] mb-2">Комментарий / история</div>
+                      <textarea style={{ ...IS, background: '#FFFFFF', minHeight: 160, resize: 'vertical' } as React.CSSProperties}
+                        value={selectedLead.comment ?? ''}
+                        onChange={e => setSelectedLead(l => l ? { ...l, comment: e.target.value } : l)} />
+                    </div>
+                  </aside>
                 </div>
               </div>
               <div className="px-7 py-4 border-t border-[#E7ECF3] flex gap-3 flex-wrap">
