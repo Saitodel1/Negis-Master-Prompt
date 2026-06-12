@@ -38,9 +38,6 @@ interface BookingHistory {
 }
 
 const SOURCES = ['Instagram', 'Google', 'WhatsApp', '2GIS', 'Вручную', 'Webhook', 'Import'];
-const SLOT_HOURS   = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
-const MAX_PER_SLOT = 3;
-const slotLabel    = (h: number) => `${String(h).padStart(2, '0')}:00`;
 
 const SORT_OPTIONS = [
   { value: 'created_at_desc', label: 'Дата (новые)' },
@@ -160,10 +157,7 @@ export default function Sales() {
   /* ── Booking sub-modal ── */
   const [showBooking, setShowBooking] = useState(false);
   const [bkDate, setBkDate]           = useState<Date>(new Date());
-  const [bkSlots, setBkSlots]         = useState<{ time: string }[]>([]);
-  const [bkLoading, setBkLoading]     = useState(false);
-  const [bkHour, setBkHour]           = useState<number | null>(null);
-  const [bkForm, setBkForm]           = useState({ service_id: '', agent_id: '', comment: '' });
+  const [bkForm, setBkForm]           = useState({ service_id: '', agent_id: '', time: '', comment: '' });
   const [bkSaving, setBkSaving]       = useState(false);
 
   useEffect(() => { if (clinicId) init(); }, [clinicId]);
@@ -185,11 +179,6 @@ export default function Sales() {
     await loadLeads(sl ?? [], mineId);
     setLoading(false);
   };
-
-  /* Load slots when booking modal is open and date changes */
-  useEffect(() => {
-    if (showBooking && clinicId) loadBkSlots(bkDate);
-  }, [showBooking, bkDate, clinicId]);
 
   const loadLeads = async (_sl?: LeadStatus[], agentId = myAgentId) => {
     if (!clinicId) return;
@@ -422,28 +411,15 @@ export default function Sales() {
   /* ── Booking from lead ── */
   const openBookingForLead = () => {
     setBkDate(new Date());
-    setBkHour(null);
-    setBkForm({ service_id: services[0]?.id ?? '', agent_id: myAgentId ?? '', comment: '' });
+    setBkForm({ service_id: services[0]?.id ?? '', agent_id: myAgentId ?? '', time: '', comment: '' });
     setShowBooking(true);
   };
 
-  const loadBkSlots = async (date: Date) => {
-    if (!clinicId) return;
-    setBkLoading(true);
-    const { data } = await supabase.from('bookings')
-      .select('time')
-      .eq('clinic_id', clinicId)
-      .eq('date', format(date, 'yyyy-MM-dd'));
-    setBkSlots(data ?? []);
-    setBkLoading(false);
-  };
-
-  const slotCount = (h: number) => bkSlots.filter(b => parseInt(b.time) === h).length;
-
   const saveLeadBooking = async () => {
-    if (!selectedLead || bkHour === null) return;
+    if (!selectedLead) return;
     const name = (selectedLead.full_name ?? '').trim();
     if (!name) { toast.error('У лида нет имени — добавьте имя и сохраните'); return; }
+    if (!bkForm.time) { toast.error('Укажите время записи'); return; }
     setBkSaving(true);
     const { error } = await supabase.from('bookings').insert({
       clinic_id:      clinicId,
@@ -452,16 +428,15 @@ export default function Sales() {
       patient_phone:  selectedLead.phone ?? null,
       service_id:     bkForm.service_id || null,
       agent_id:       safeAgentId(bkForm.agent_id),
-      time:           slotLabel(bkHour),
+      time:           bkForm.time,
       date:           format(bkDate, 'yyyy-MM-dd'),
       duration_minutes: 0,
-      comment:        bkForm.comment || null,
+      comment:        bkForm.comment ? `Клиент · ${bkForm.comment}` : 'Клиент',
     });
     setBkSaving(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(`Записано на ${format(bkDate, 'd MMM', { locale: ru })} в ${slotLabel(bkHour)}`);
+    toast.success(`Записано на ${format(bkDate, 'd MMM', { locale: ru })} в ${bkForm.time}`);
     setShowBooking(false);
-    setBkHour(null);
     loadLeadBookings(selectedLead);
   };
 
@@ -1155,7 +1130,7 @@ export default function Sales() {
               </div>
 
               {/* Body */}
-              <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', flex: 1, overflow: 'hidden', minHeight: 0 }}>
 
                 {/* Calendar column */}
                 <div style={{ padding: '20px 16px', borderRight: '1px solid #E7ECF3', flexShrink: 0 }}>
@@ -1174,14 +1149,14 @@ export default function Sales() {
                     className="bk-rdp"
                     mode="single"
                     selected={bkDate}
-                    onSelect={d => { if (d) { setBkDate(d); setBkHour(null); } }}
+                    onSelect={d => { if (d) setBkDate(d); }}
                     locale={ru}
                     showOutsideDays
                     disabled={{ before: startOfDay(new Date()) }}
                   />
                 </div>
 
-                {/* Slots + form column */}
+                {/* Booking form column */}
                 <div style={{ flex: 1, padding: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
                   {/* Date label */}
@@ -1189,47 +1164,9 @@ export default function Sales() {
                     {format(bkDate, 'EEEE, d MMMM yyyy', { locale: ru })}
                   </div>
 
-                  {/* Slot grid */}
-                  {bkLoading ? (
-                    <div style={{ fontSize: 13, color: '#94A3B8' }}>Загрузка...</div>
-                  ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-                      {SLOT_HOURS.map(h => {
-                        const cnt   = slotCount(h);
-                        const full  = cnt >= MAX_PER_SLOT;
-                        const now   = new Date();
-                        const past  = startOfDay(bkDate).getTime() === startOfDay(now).getTime() && h <= now.getHours();
-                        const sel   = bkHour === h;
-                        const avail = !full && !past;
-                        return (
-                          <button
-                            key={h}
-                            disabled={!avail}
-                            onClick={() => setBkHour(sel ? null : h)}
-                            style={{
-                              padding: '10px 6px', borderRadius: 10, border: '1.5px solid',
-                              borderColor: sel ? '#1E325C' : full || past ? '#E7ECF3' : '#BFDBFE',
-                              background: sel ? '#1E325C' : full || past ? '#F8FAFC' : '#EFF6FF',
-                              color: sel ? '#FFF' : full || past ? '#CBD5E1' : '#1E325C',
-                              fontSize: 12, fontWeight: 500, cursor: avail ? 'pointer' : 'default',
-                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-                            }}
-                          >
-                            <span style={{ fontWeight: 600, fontSize: 13 }}>{slotLabel(h)}</span>
-                            <span style={{ fontSize: 10, opacity: 0.75 }}>
-                              {past ? 'прошло' : full ? 'занято' : `${cnt}/${MAX_PER_SLOT}`}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Booking form — shown when slot selected */}
-                  {bkHour !== null && (
-                    <div style={{ background: '#F8FAFC', borderRadius: 12, padding: 16, border: '1px solid #E7ECF3', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ background: '#F8FAFC', borderRadius: 12, padding: 16, border: '1px solid #E7ECF3', display: 'flex', flexDirection: 'column', gap: 12 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1220' }}>
-                        Запись на {slotLabel(bkHour)}
+                        Запись клиента
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                         <div>
@@ -1238,6 +1175,11 @@ export default function Sales() {
                             <option value="">— выбрать —</option>
                             {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                           </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: '#64748B', fontWeight: 500, display: 'block', marginBottom: 5 }}>Время</label>
+                          <input type="time" style={{ ...BkIS }} value={bkForm.time}
+                            onChange={e => setBkForm(f => ({ ...f, time: e.target.value }))} />
                         </div>
                         <div>
                           <label style={{ fontSize: 11, color: '#64748B', fontWeight: 500, display: 'block', marginBottom: 5 }}>Агент</label>
@@ -1265,7 +1207,6 @@ export default function Sales() {
                         <Check size={14} />{bkSaving ? 'Запись...' : 'Подтвердить запись'}
                       </button>
                     </div>
-                  )}
                 </div>
               </div>
             </div>

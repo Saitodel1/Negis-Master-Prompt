@@ -330,7 +330,16 @@ export default function Reception() {
                 ) : bookings.map(b => (
                   <tr key={b.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors">
                     <td className="p-5 font-bold text-[#1E293B] text-lg">{b.time}</td>
-                    <td className="p-5 font-semibold text-[#1E293B]">{b.patient_name}</td>
+                    <td className="p-5 font-semibold text-[#1E293B]">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span>{b.patient_name}</span>
+                        {b.lead_id && (
+                          <span className="px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#2859C5] text-[11px] font-bold">
+                            Клиент
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="p-5 text-sm text-[#64748B]">{b.patient_phone ?? '—'}</td>
                     <td className="p-5 text-sm text-[#64748B]">{b.age ?? '—'}</td>
                     <td className="p-5 text-sm text-[#64748B]">{svcName(b.service_id)}</td>
