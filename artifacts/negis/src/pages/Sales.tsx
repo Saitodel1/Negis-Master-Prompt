@@ -150,6 +150,7 @@ export default function Sales() {
     received: '',
     planned: '',
     paid: '',
+    purchaseAmount: '',
     purchaseType: 'Единоразовая процедура',
     bought: '',
     comment: '',
@@ -221,6 +222,7 @@ export default function Sales() {
         received: '',
         planned: '',
         paid: '',
+        purchaseAmount: '',
         purchaseType: 'Единоразовая процедура',
         bought: '',
         comment: '',
@@ -482,6 +484,27 @@ export default function Sales() {
   const servicePrice = (id: string | null) => id ? (services.find(s => s.id === id)?.price ?? 0) : 0;
   const bookingAgentName = (id: string | null) => id ? (agents.find(a => a.id === id)?.name ?? '—') : '—';
   const money = (value: number) => value.toLocaleString('ru-RU') + ' ₸';
+  const parseMoneyValue = (value: string | null | undefined) => {
+    if (!value) return 0;
+    const raw = value.toLowerCase().replace(/\u00a0/g, ' ');
+    const match = raw.match(/(\d+(?:[\s.,]\d+)*)\s*(к|k|тыс|тысяч|м|m|млн)?/i);
+    if (!match) return 0;
+    const suffix = match[2]?.toLowerCase();
+    const token = match[1].trim();
+    const normalized = suffix
+      ? token.replace(/\s/g, '').replace(',', '.')
+      : token.replace(/[\s.,]/g, '');
+    const base = Number(normalized);
+    if (!Number.isFinite(base)) return 0;
+    if (suffix === 'м' || suffix === 'm' || suffix === 'млн') return Math.round(base * 1000000);
+    if (suffix === 'к' || suffix === 'k' || suffix === 'тыс' || suffix === 'тысяч') return Math.round(base * 1000);
+    return Math.round(base);
+  };
+  const extractField = (line: string, labels: string[]) => {
+    const escaped = labels.map(label => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    const match = line.match(new RegExp(`(?:${escaped}):\\s*([^;]+)`, 'i'));
+    return match?.[1]?.trim() ?? '';
+  };
   const bookingStatusLabel = (booking: BookingHistory) =>
     booking.visited === true ? 'Пришёл'
       : booking.visited === false ? 'Не пришёл'
@@ -503,6 +526,19 @@ export default function Sales() {
     .split('\n')
     .map(line => line.trim())
     .filter(Boolean);
+  const financeEntries = commentLines.map(line => {
+    const bought = extractField(line, ['купил']);
+    const purchaseAmountText = extractField(line, ['сумма покупки', 'стоимость', 'потенциал']);
+    const paidText = extractField(line, ['оплатил', 'оплата', 'платёж', 'платеж']);
+    const purchaseAmount = parseMoneyValue(purchaseAmountText) || parseMoneyValue(bought);
+    const paidAmount = parseMoneyValue(paidText);
+    return { line, bought, purchaseAmount, paidAmount };
+  }).filter(entry => entry.bought || entry.purchaseAmount > 0 || entry.paidAmount > 0);
+  const manualPotentialValue = financeEntries.reduce((sum, entry) => sum + entry.purchaseAmount, 0);
+  const manualPaidValue = financeEntries.reduce((sum, entry) => sum + entry.paidAmount, 0);
+  const crmPotentialValue = manualPotentialValue || potentialServiceValue;
+  const crmPaidValue = manualPaidValue;
+  const crmRemainingValue = Math.max(crmPotentialValue - crmPaidValue, 0);
   const timelineItems = selectedLead ? [
     { id: 'created', date: selectedLead.created_at, title: 'Лид создан', body: selectedLead.source ? `Источник: ${selectedLead.source}` : 'Первое обращение' },
     ...commentLines.map((line, index) => ({ id: `note-${index}`, date: selectedLead.created_at, title: 'Заметка', body: line })),
@@ -533,13 +569,14 @@ export default function Sales() {
     if (saved) setQuickNote('');
   };
   const appendProcedureHistory = async () => {
-    if (!procedureForm.received.trim() && !procedureForm.planned.trim() && !procedureForm.paid.trim() && !procedureForm.bought.trim()) {
+    if (!procedureForm.received.trim() && !procedureForm.planned.trim() && !procedureForm.paid.trim() && !procedureForm.purchaseAmount.trim() && !procedureForm.bought.trim()) {
       toast.error('Заполните хотя бы одно поле по процедурам или оплате');
       return;
     }
     const parts = [
       procedureForm.bought.trim() ? `купил: ${procedureForm.bought.trim()}` : '',
       `формат: ${procedureForm.purchaseType}`,
+      procedureForm.purchaseAmount.trim() ? `сумма покупки: ${procedureForm.purchaseAmount.trim()}` : '',
       procedureForm.received.trim() ? `получил: ${procedureForm.received.trim()}` : '',
       procedureForm.planned.trim() ? `ещё получит: ${procedureForm.planned.trim()}` : '',
       procedureForm.paid.trim() ? `оплатил: ${procedureForm.paid.trim()}` : '',
@@ -551,6 +588,7 @@ export default function Sales() {
         received: '',
         planned: '',
         paid: '',
+        purchaseAmount: '',
         purchaseType: 'Единоразовая процедура',
         bought: '',
         comment: '',
@@ -918,7 +956,7 @@ export default function Sales() {
                   <X size={15} color="#64748B" />
                 </button>
               </div>
-              <div className="border-b border-[#E7ECF3] px-6 py-3 flex gap-2 overflow-x-auto">
+              <div className="border-b border-[#E7ECF3] px-6 py-4 flex gap-2 overflow-x-auto bg-white">
                 {([
                   ['overview', 'Обзор'],
                   ['timeline', 'Лента'],
@@ -928,9 +966,9 @@ export default function Sales() {
                   ['finance', 'Финансы'],
                   ['tasks', 'Задачи'],
                 ] as const).map(([id, label]) => (
-                  <button key={id}
+                  <button key={id} type="button"
                     onClick={() => setLeadDetailTab(id)}
-                    className={`px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap ${leadDetailTab === id ? 'bg-[#1E325C] text-white' : 'bg-[#F4F7FB] text-[#64748B]'}`}>
+                    className={`h-9 px-5 rounded-full border text-sm font-semibold whitespace-nowrap shrink-0 transition-colors shadow-sm ${leadDetailTab === id ? 'border-[#1E325C] bg-[#1E325C] text-white' : 'border-[#E7ECF3] bg-white text-[#64748B] hover:border-[#CBD5E1] hover:text-[#1E325C]'}`}>
                     {label}
                   </button>
                 ))}
@@ -950,12 +988,12 @@ export default function Sales() {
                             <div className="text-xl font-black text-[#0B1220] mt-1">{leadBookings.length}</div>
                           </div>
                           <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4">
-                            <div className="text-xs text-[#64748B]">Получено услуг</div>
-                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(totalServiceValue)}</div>
+                            <div className="text-xs text-[#64748B]">Имеем / оплачено</div>
+                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(crmPaidValue)}</div>
                           </div>
                           <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4">
                             <div className="text-xs text-[#64748B]">Потенциал</div>
-                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(potentialServiceValue)}</div>
+                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(crmPotentialValue)}</div>
                           </div>
                         </div>
 
@@ -1090,6 +1128,18 @@ export default function Sales() {
                             </select>
                           </div>
                           <div>
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Сумма покупки / потенциал</label>
+                            <input style={IS} placeholder="Например: 500 000 ₸ или 500К"
+                              value={procedureForm.purchaseAmount}
+                              onChange={e => setProcedureForm(f => ({ ...f, purchaseAmount: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Сколько оплатил</label>
+                            <input style={IS} placeholder="Например: 150 000 ₸ или 150К"
+                              value={procedureForm.paid}
+                              onChange={e => setProcedureForm(f => ({ ...f, paid: e.target.value }))} />
+                          </div>
+                          <div>
                             <label className="text-xs text-[#64748B] font-medium block mb-1.5">Какие процедуры получил</label>
                             <textarea style={{ ...IS, minHeight: 110, resize: 'vertical' } as React.CSSProperties}
                               placeholder="Например: 1/5 массаж, консультация, снимок"
@@ -1102,12 +1152,6 @@ export default function Sales() {
                               placeholder="Например: ещё 4 процедуры курса, контрольный приём"
                               value={procedureForm.planned}
                               onChange={e => setProcedureForm(f => ({ ...f, planned: e.target.value }))} />
-                          </div>
-                          <div>
-                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Сколько оплатил</label>
-                            <input style={IS} placeholder="Например: 150 000 ₸ / предоплата 50 000 ₸"
-                              value={procedureForm.paid}
-                              onChange={e => setProcedureForm(f => ({ ...f, paid: e.target.value }))} />
                           </div>
                           <div>
                             <label className="text-xs text-[#64748B] font-medium block mb-1.5">Комментарий</label>
@@ -1127,17 +1171,42 @@ export default function Sales() {
                       <div className="space-y-4">
                         <div className="grid grid-cols-3 gap-3">
                           <div className="rounded-xl border border-[#E7ECF3] p-4">
-                            <div className="text-xs text-[#64748B]">Получено услуг</div>
-                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(totalServiceValue)}</div>
+                            <div className="text-xs text-[#64748B]">Имеем / оплачено</div>
+                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(crmPaidValue)}</div>
                           </div>
                           <div className="rounded-xl border border-[#E7ECF3] p-4">
                             <div className="text-xs text-[#64748B]">План / потенциал</div>
-                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(potentialServiceValue)}</div>
+                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(crmPotentialValue)}</div>
                           </div>
                           <div className="rounded-xl border border-[#E7ECF3] p-4">
-                            <div className="text-xs text-[#64748B]">Оплаты вручную</div>
-                            <div className="text-xl font-black text-[#0B1220] mt-1">в заметках</div>
+                            <div className="text-xs text-[#64748B]">Осталось получить</div>
+                            <div className="text-xl font-black text-[#0B1220] mt-1">{money(crmRemainingValue)}</div>
                           </div>
+                        </div>
+                        <div className="rounded-xl border border-[#E7ECF3] overflow-hidden">
+                          <div className="px-4 py-3 bg-[#F8FAFC] text-sm font-semibold text-[#0B1220]">Покупки и оплаты из истории</div>
+                          {financeEntries.length === 0 ? (
+                            <div className="p-4 text-sm text-[#94A3B8]">Пока нет сохранённых покупок или оплат.</div>
+                          ) : (
+                            <div className="divide-y divide-[#EEF2F6]">
+                              {financeEntries.map((entry, index) => (
+                                <div key={`${entry.line}-${index}`} className="p-4 grid grid-cols-1 md:grid-cols-[1fr_120px_120px] gap-3 text-sm">
+                                  <div>
+                                    <div className="font-semibold text-[#0B1220]">{entry.bought || 'Покупка / оплата'}</div>
+                                    <div className="text-xs text-[#64748B] mt-1 line-clamp-2">{entry.line}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs text-[#94A3B8]">Потенциал</div>
+                                    <div className="font-bold text-[#0B1220]">{entry.purchaseAmount ? money(entry.purchaseAmount) : '—'}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs text-[#94A3B8]">Оплачено</div>
+                                    <div className="font-bold text-[#16A34A]">{entry.paidAmount ? money(entry.paidAmount) : '—'}</div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <textarea style={{ ...IS, minHeight: 220, resize: 'vertical' } as React.CSSProperties}
                           placeholder="Оплаты, долг, рассрочка, скидка..."
