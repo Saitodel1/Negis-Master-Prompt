@@ -70,7 +70,12 @@ export default function Dashboard() {
       for (const b of (weekBookings ?? [])) {
         if (b.agent_id) weekMap[b.agent_id] = (weekMap[b.agent_id] ?? 0) + 1;
       }
-      const race: AgentRace[] = agentsData.map(a => {
+      const bookingAgents = agentsData.filter(a => {
+        const customRole = (maps.customRoleMap[(a as any).role_id] ?? '').toLowerCase();
+        const systemRole = maps.userRoleMap[(a as any).user_id] ?? '';
+        return systemRole === 'booking_agent' || /booking|book|запис/i.test(customRole);
+      });
+      const race: AgentRace[] = bookingAgents.map(a => {
         const parts = a.name.trim().split(' ');
         const initials = parts.map((p: string) => p[0]?.toUpperCase() ?? '').slice(0, 2).join('');
         return {
@@ -100,7 +105,7 @@ export default function Dashboard() {
         {/* METRICS */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="neu-card flex flex-col justify-center relative overflow-hidden group">
-            <div className="absolute -right-4 -top-4 opacity-5 group-hover:scale-110 transition-transform duration-500">
+            <div className="absolute -right-4 -top-4 opacity-10 text-[#2563EB] group-hover:scale-110 transition-transform duration-500">
               <Calendar size={100} />
             </div>
             <div className="flex items-center gap-3 mb-2 relative z-10">
@@ -113,7 +118,7 @@ export default function Dashboard() {
           </div>
 
           <div className="neu-card flex flex-col justify-center relative overflow-hidden group">
-            <div className="absolute -right-4 -top-4 opacity-5 group-hover:scale-110 transition-transform duration-500">
+            <div className="absolute -right-4 -top-4 opacity-10 text-[#F59E0B] group-hover:scale-110 transition-transform duration-500">
               <TrendingUp size={100} />
             </div>
             <div className="flex items-center gap-3 mb-2 relative z-10">
@@ -127,7 +132,7 @@ export default function Dashboard() {
           </div>
 
           <div className="neu-card flex flex-col justify-center relative overflow-hidden group">
-            <div className="absolute -right-4 -top-4 opacity-5 group-hover:scale-110 transition-transform duration-500">
+            <div className="absolute -right-4 -top-4 opacity-10 text-[#16A34A] group-hover:scale-110 transition-transform duration-500">
               <DollarSign size={100} />
             </div>
             <div className="flex items-center gap-3 mb-2 relative z-10">
@@ -140,7 +145,7 @@ export default function Dashboard() {
           </div>
 
           <div className="neu-card flex flex-col justify-center relative overflow-hidden group">
-            <div className="absolute -right-4 -top-4 opacity-5 group-hover:scale-110 transition-transform duration-500">
+            <div className="absolute -right-4 -top-4 opacity-10 text-[#7C3AED] group-hover:scale-110 transition-transform duration-500">
               <Users size={100} />
             </div>
             <div className="flex items-center gap-3 mb-2 relative z-10">
@@ -162,7 +167,7 @@ export default function Dashboard() {
             {loadingData ? (
               <p className="text-sm text-[#94A3B8]">Загрузка...</p>
             ) : agents.length === 0 ? (
-              <p className="text-sm text-[#94A3B8]">Агенты не найдены</p>
+              <p className="text-sm text-[#94A3B8]">Букинг-менеджеры не найдены</p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {agents.map((agent, index) => {

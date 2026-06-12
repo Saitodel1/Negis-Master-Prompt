@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'wouter';
-import { Bell } from 'lucide-react';
+import { Bell, Check, Trash2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,12 +8,13 @@ import { agentDisplayName, loadAgentRoleMaps, type AgentDisplayInfo } from '@/li
 
 const PAGE_LABELS: Record<string, string> = {
   '/dashboard': 'Дашборд',
-  '/booking':   'Запись',
+  '/booking': 'Запись',
   '/reception': 'Ресепшн',
-  '/sales':     'Клиенты',
-  '/tasks':     'Задачи',
-  '/agent':     'Агент',
-  '/admin':     'Админ',
+  '/sales': 'Клиенты',
+  '/tasks': 'Задачи',
+  '/chat': 'Чат',
+  '/agent': 'Агент',
+  '/admin': 'Админ',
 };
 
 interface Notif {
@@ -23,7 +24,7 @@ interface Notif {
   date: string;
   time: string;
   createdAt: string;
-  isNew?: boolean;
+  read: boolean;
 }
 
 function playBeep() {
@@ -44,15 +45,33 @@ function playBeep() {
   }
 }
 
+const readKey = (clinicId: string | null) => `negis_notifications_read_${clinicId ?? 'default'}`;
+const deletedKey = (clinicId: string | null) => `negis_notifications_deleted_${clinicId ?? 'default'}`;
+
+function readStoredIds(key: string) {
+  try {
+    return new Set<string>(JSON.parse(localStorage.getItem(key) || '[]'));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function writeStoredIds(key: string, ids: Set<string>) {
+  localStorage.setItem(key, JSON.stringify(Array.from(ids)));
+}
+
 export function Topbar() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { clinicId } = useAuth();
   const [notifs, setNotifs] = useState<Notif[]>([]);
-  const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
   const agentsRef = useRef<Record<string, string>>({});
+  const readIdsRef = useRef<Set<string>>(new Set());
+  const deletedIdsRef = useRef<Set<string>>(new Set());
 
-  const pageLabel = PAGE_LABELS[location] ?? 'NEGIS';
+  const cleanLocation = location.split('?')[0];
+  const pageLabel = PAGE_LABELS[cleanLocation] ?? 'NEGIS';
+  const unread = notifs.filter(n => !n.read).length;
 
   const today = new Date().toLocaleDateString('ru', {
     day: 'numeric',
@@ -68,19 +87,22 @@ export function Topbar() {
     clientName: r.patient_name ?? r.name ?? r.client_name ?? 'Клиент',
     agentName: r.agent_id ? (agentsRef.current[r.agent_id] ?? '—') : '—',
     date: r.date,
-    time: r.time ?? (r.slot_hour != null ? `${r.slot_hour}:00` : '—'),
+    time: r.time ?? (r.slot_hour != null ? `${String(r.slot_hour).padStart(2, '0')}:00` : '—'),
     createdAt: r.created_at,
+    read: readIdsRef.current.has(r.id),
   }), []);
 
   useEffect(() => {
     if (!clinicId) return;
+    readIdsRef.current = readStoredIds(readKey(clinicId));
+    deletedIdsRef.current = readStoredIds(deletedKey(clinicId));
 
     const load = async () => {
       const [{ data: agentsData }, { data: bookings }] = await Promise.all([
         supabase.from('agents').select('id, name, user_id, role_id').eq('clinic_id', clinicId),
         supabase
           .from('bookings')
-          .select('id, patient_name, date, time, created_at')
+          .select('id, patient_name, agent_id, date, time, created_at')
           .eq('clinic_id', clinicId)
           .order('created_at', { ascending: false })
           .limit(15),
@@ -89,7 +111,9 @@ export function Topbar() {
       const agentRows = (agentsData ?? []) as AgentDisplayInfo[];
       const maps = await loadAgentRoleMaps(supabase, clinicId, agentRows);
       agentsRef.current = Object.fromEntries(agentRows.map(a => [a.id, agentDisplayName(a, maps.customRoleMap, maps.userRoleMap)]));
-      setNotifs((bookings ?? []).map(buildNotif));
+      setNotifs((bookings ?? [])
+        .filter(row => !deletedIdsRef.current.has(row.id))
+        .map(buildNotif));
     };
 
     load();
@@ -101,17 +125,9 @@ export function Topbar() {
         { event: 'INSERT', schema: 'public', table: 'bookings', filter: `clinic_id=eq.${clinicId}` },
         (payload) => {
           const row = payload.new as any;
-          const notif: Notif = {
-            id: row.id,
-            clientName: row.patient_name ?? row.name ?? row.client_name ?? 'Клиент',
-            agentName: row.agent_id ? (agentsRef.current[row.agent_id] ?? '—') : '—',
-            date: row.date,
-            time: row.time ?? (row.slot_hour != null ? `${String(row.slot_hour).padStart(2, '0')}:00` : '—'),
-            createdAt: row.created_at,
-            isNew: true,
-          };
-          setNotifs(prev => [notif, ...prev.slice(0, 14)]);
-          setUnread(prev => prev + 1);
+          if (deletedIdsRef.current.has(row.id)) return;
+          const notif = buildNotif(row);
+          setNotifs(prev => [notif, ...prev.filter(n => n.id !== notif.id).slice(0, 14)]);
           playBeep();
         }
       )
@@ -120,9 +136,23 @@ export function Topbar() {
     return () => { supabase.removeChannel(channel); };
   }, [clinicId, buildNotif]);
 
-  const handleOpen = (v: boolean) => {
-    setOpen(v);
-    if (v) setUnread(0);
+  const markRead = (id: string) => {
+    readIdsRef.current.add(id);
+    writeStoredIds(readKey(clinicId), readIdsRef.current);
+    setNotifs(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const deleteNotif = (id: string) => {
+    deletedIdsRef.current.add(id);
+    writeStoredIds(deletedKey(clinicId), deletedIdsRef.current);
+    setNotifs(prev => prev.filter(n => n.id !== id));
+  };
+
+  const openEvent = (n: Notif) => {
+    markRead(n.id);
+    sessionStorage.setItem('negis_focus_booking', JSON.stringify({ id: n.id, date: n.date }));
+    setOpen(false);
+    setLocation('/reception');
   };
 
   return (
@@ -130,12 +160,11 @@ export function Topbar() {
       className="flex items-center justify-between shrink-0 sticky top-0 z-10 px-8"
       style={{
         height: 56,
-        background: 'rgba(239, 248, 242, 0.76)',
+        background: 'rgba(244, 247, 251, 0.82)',
         backdropFilter: 'blur(18px)',
-        borderBottom: '1px solid rgba(219, 232, 224, 0.85)',
+        borderBottom: '1px solid rgba(224, 231, 239, 0.9)',
       }}
     >
-      {/* Left — breadcrumb label */}
       <div className="flex items-center gap-2">
         <span
           style={{
@@ -164,7 +193,6 @@ export function Topbar() {
         </span>
       </div>
 
-      {/* Right */}
       <div className="flex items-center gap-4">
         <span
           style={{
@@ -184,21 +212,22 @@ export function Topbar() {
           {today}
         </span>
 
-        <Popover open={open} onOpenChange={handleOpen}>
+        <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <button
               className="neu-icon-btn relative"
-              style={{ width: 36, height: 36, borderRadius: 10 }}
+              style={{ width: 36, height: 36, borderRadius: 12 }}
             >
               <Bell size={16} strokeWidth={1.75} />
               {unread > 0 && (
                 <span
-                  className="absolute -top-0.5 -right-0.5 flex items-center justify-center rounded-full text-white font-bold"
+                  className="absolute -top-1 -right-1 flex items-center justify-center rounded-full text-white font-bold"
                   style={{
                     background: '#DC2626',
                     fontSize: 9,
-                    width: 14,
-                    height: 14,
+                    minWidth: 16,
+                    height: 16,
+                    padding: '0 4px',
                     fontFamily: "'Inter', sans-serif",
                   }}
                 >
@@ -208,13 +237,14 @@ export function Topbar() {
             </button>
           </PopoverTrigger>
           <PopoverContent
-            className="w-80 p-0"
+            className="w-96 p-0"
             align="end"
             style={{
-              background: '#FFFFFF',
-              border: '1px solid #E7ECF3',
-              borderRadius: 14,
-              boxShadow: '0 12px 32px rgba(15,23,42,0.1)',
+              background: 'rgba(255,255,255,0.94)',
+              border: '1px solid #E3EAF2',
+              borderRadius: 18,
+              boxShadow: '0 16px 40px rgba(15,23,42,0.12)',
+              overflow: 'hidden',
             }}
           >
             <div
@@ -224,11 +254,11 @@ export function Topbar() {
               <span>Уведомления</span>
               {notifs.length > 0 && (
                 <span style={{ fontSize: 11, color: '#94A3B8', fontWeight: 400 }}>
-                  {notifs.length} записей
+                  {unread} непрочитанных
                 </span>
               )}
             </div>
-            <div className="max-h-72 overflow-y-auto">
+            <div className="max-h-80 overflow-y-auto">
               {notifs.length === 0 ? (
                 <div className="px-5 py-8 text-center" style={{ color: '#94A3B8', fontSize: 13 }}>
                   Нет уведомлений
@@ -236,24 +266,55 @@ export function Topbar() {
               ) : notifs.map(n => (
                 <div
                   key={n.id}
-                  className="px-5 py-4 cursor-default transition-colors"
+                  className="px-5 py-4 transition-colors"
                   style={{
-                    borderBottom: '1px solid #F4F7FB',
-                    background: n.isNew ? '#F0F6FF' : 'transparent',
+                    borderBottom: '1px solid #F1F5F9',
+                    background: n.read ? 'transparent' : '#F0F6FF',
+                    cursor: 'pointer',
                   }}
-                  onMouseEnter={e => ((e.currentTarget as HTMLDivElement).style.background = '#F4F7FB')}
-                  onMouseLeave={e => ((e.currentTarget as HTMLDivElement).style.background = n.isNew ? '#F0F6FF' : 'transparent')}
+                  onClick={() => openEvent(n)}
                 >
-                  <p className="text-sm font-medium" style={{ color: '#0B1220' }}>
-                    Новая запись — {n.clientName}
-                  </p>
-                  <p className="text-xs mt-1" style={{ color: '#64748B' }}>
-                    {fmtDate(n.date)} в {n.time}
-                    {n.agentName !== '—' && <> · {n.agentName}</>}
-                  </p>
-                  <p className="text-xs mt-0.5" style={{ color: '#CBD5E1' }}>
-                    {new Date(n.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold" style={{ color: '#0B1220' }}>
+                        Новая запись — {n.clientName}
+                      </p>
+                      <p className="text-xs mt-1" style={{ color: '#64748B' }}>
+                        {fmtDate(n.date)} в {n.time}
+                        {n.agentName !== '—' && <> · {n.agentName}</>}
+                      </p>
+                      <p className="text-xs mt-0.5" style={{ color: '#CBD5E1' }}>
+                        {new Date(n.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    {!n.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#2859C5]" />}
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      className="neu-btn"
+                      style={{ padding: '6px 10px', borderRadius: 12, fontSize: 12 }}
+                      onClick={e => {
+                        e.stopPropagation();
+                        markRead(n.id);
+                      }}
+                    >
+                      <Check size={13} />
+                      Прочитано
+                    </button>
+                    <button
+                      type="button"
+                      className="neu-btn"
+                      style={{ padding: '6px 10px', borderRadius: 12, fontSize: 12, color: '#DC2626' }}
+                      onClick={e => {
+                        e.stopPropagation();
+                        deleteNotif(n.id);
+                      }}
+                    >
+                      <Trash2 size={13} />
+                      Удалить
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

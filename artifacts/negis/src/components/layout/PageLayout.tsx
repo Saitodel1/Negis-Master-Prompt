@@ -16,7 +16,7 @@ export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
-        style={{ background: '#EEF7F1' }}
+        style={{ background: '#F4F7FB' }}
       >
         <div style={{ fontSize: 12, letterSpacing: '0.14em', color: '#8EA0B7', fontFamily: "'Inter', sans-serif" }}>
           ЗАГРУЗКА...
@@ -33,7 +33,7 @@ export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
     <div
       className="min-h-[100dvh] flex flex-col font-sans"
       style={{
-        background: 'radial-gradient(circle at 12% 0%, rgba(201,236,214,0.78), transparent 30%), radial-gradient(circle at 86% 8%, rgba(218,231,255,0.62), transparent 28%), #EEF7F1',
+        background: 'radial-gradient(circle at 14% 0%, rgba(219, 230, 246, 0.72), transparent 28%), radial-gradient(circle at 88% 8%, rgba(236, 226, 255, 0.42), transparent 28%), #F4F7FB',
         color: '#0B1220',
         paddingTop: isImpersonation ? 40 : 0,
       }}

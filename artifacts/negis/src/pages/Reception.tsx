@@ -64,6 +64,7 @@ export default function Reception() {
   const [newStatusName, setNewStatusName] = useState('');
   const [creatingStatus, setCreatingStatus] = useState(false);
   const [draggingBookingId, setDraggingBookingId] = useState('');
+  const [focusedBookingId, setFocusedBookingId] = useState('');
   const calRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -76,6 +77,19 @@ export default function Reception() {
 
   useEffect(() => { if (clinicId) loadMeta(); }, [clinicId]);
   useEffect(() => { if (clinicId) loadBookings(); }, [clinicId, selectedDate]);
+  useEffect(() => {
+    const raw = sessionStorage.getItem('negis_focus_booking');
+    if (!raw) return;
+    try {
+      const focus = JSON.parse(raw) as { id?: string; date?: string };
+      if (focus.id) setFocusedBookingId(focus.id);
+      if (focus.date) setSelectedDate(new Date(focus.date + 'T00:00:00'));
+    } catch {
+      // ignore malformed focus
+    } finally {
+      sessionStorage.removeItem('negis_focus_booking');
+    }
+  }, []);
 
   const loadMeta = async () => {
     if (!clinicId) return;
@@ -457,7 +471,7 @@ export default function Reception() {
                         e.dataTransfer.effectAllowed = 'move';
                       }}
                       onDragEnd={() => setDraggingBookingId('')}
-                      className={`rounded-xl border border-[#E7ECF3] bg-white p-4 shadow-sm cursor-grab active:cursor-grabbing transition ${draggingBookingId === b.id ? 'opacity-60 ring-2 ring-[#BFDBFE]' : ''}`}
+                      className={`rounded-xl border bg-white p-4 shadow-sm cursor-grab active:cursor-grabbing transition ${focusedBookingId === b.id ? 'border-[#2859C5] ring-4 ring-[#DBEAFE]' : 'border-[#E7ECF3]'} ${draggingBookingId === b.id ? 'opacity-60 ring-2 ring-[#BFDBFE]' : ''}`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">

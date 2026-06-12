@@ -13,6 +13,7 @@ import {
   User,
   Megaphone,
   ClipboardList,
+  MessageCircle,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -24,6 +25,7 @@ const NAV = [
   { href: '/reception', icon: Building2, label: 'Ресепшн', roles: ['owner', 'manager', 'receptionist', 'booking_agent'] },
   { href: '/sales', icon: Briefcase, label: 'Клиенты', roles: ['owner', 'manager', 'agent'] },
   { href: '/tasks', icon: ClipboardList, label: 'Задачи', roles: ['owner', 'manager', 'agent'] },
+  { href: '/chat', icon: MessageCircle, label: 'Чат', roles: ['owner', 'manager', 'agent', 'booking_agent', 'receptionist'] },
   { href: '/ads', icon: Megaphone, label: 'Реклама', roles: ['owner', 'manager'] },
   { href: '/admin', icon: Settings, label: 'Админ', roles: ['owner', 'manager'] },
 ];
@@ -99,7 +101,7 @@ export function TopNav() {
           </button>
 
           <div className="topnav-scroll flex-1 overflow-x-auto">
-            <div className="inline-flex min-w-max items-center gap-2 rounded-[26px] border border-white/70 bg-white/55 p-1.5 shadow-[8px_10px_28px_rgba(116,135,154,0.14),inset_1px_1px_0_rgba(255,255,255,0.9)] backdrop-blur-xl">
+            <div className="dock-shell inline-flex min-w-max items-center gap-2 rounded-[26px] border border-white/70 bg-white/55 p-1.5 shadow-[8px_10px_28px_rgba(116,135,154,0.14),inset_1px_1px_0_rgba(255,255,255,0.9)] backdrop-blur-xl">
               {filtered.map(({ href, icon: Icon, label }) => {
                 const active = location === href || location.startsWith(href + '/');
                 return (

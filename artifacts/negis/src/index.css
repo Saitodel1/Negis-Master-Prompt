@@ -49,11 +49,11 @@
 
 :root {
   /* NEGIS Design System */
-  --ng-bg:        #EEF7F1;
+  --ng-bg:        #F4F7FB;
   --ng-surface:   rgba(255, 255, 255, 0.74);
   --ng-surface-2: rgba(246, 250, 247, 0.78);
-  --ng-plate:     #DCE8E2;
-  --ng-border:    #DCE8E2;
+  --ng-plate:     #DDE5EE;
+  --ng-border:    #E3EAF2;
   --ng-text:      #0B1220;
   --ng-text-2:    #475569;
   --ng-muted:     #8EA0B7;
@@ -114,8 +114,8 @@
   }
   body {
     @apply font-sans antialiased;
-    background: radial-gradient(circle at 12% 0%, rgba(201,236,214,0.78), transparent 30%),
-                radial-gradient(circle at 86% 8%, rgba(218,231,255,0.62), transparent 28%),
+    background: radial-gradient(circle at 14% 0%, rgba(219, 230, 246, 0.72), transparent 28%),
+                radial-gradient(circle at 88% 8%, rgba(236, 226, 255, 0.42), transparent 28%),
                 var(--ng-bg);
     color: var(--ng-text);
     font-size: 14px;
@@ -348,8 +348,8 @@
   .badge-muted   { color: var(--ng-muted);   background: rgba(148, 163, 184, 0.12); }
 
   .soft-dock {
-    background: rgba(239, 248, 242, 0.64);
-    border-bottom: 1px solid rgba(219, 232, 224, 0.74);
+    background: rgba(244, 247, 251, 0.72);
+    border-bottom: 1px solid rgba(224, 231, 239, 0.9);
     backdrop-filter: blur(20px);
   }
 
@@ -385,13 +385,21 @@
     font-weight: 700;
     white-space: nowrap;
     cursor: pointer;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, color 0.18s ease;
+    transform-origin: bottom center;
+    transition: transform 0.24s cubic-bezier(.2,.8,.2,1), box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
   }
 
   .topnav-item:hover {
     color: var(--ng-primary);
     background: rgba(255, 255, 255, 0.58);
-    transform: translateY(-1px);
+    transform: translateY(-7px) scale(1.16);
+    box-shadow: 9px 14px 28px rgba(96, 113, 138, 0.18),
+                -4px -4px 14px rgba(255, 255, 255, 0.78);
+  }
+
+  .topnav-item:has(+ .topnav-item:hover),
+  .topnav-item:hover + .topnav-item {
+    transform: translateY(-4px) scale(1.07);
   }
 
   .topnav-item.is-active {
