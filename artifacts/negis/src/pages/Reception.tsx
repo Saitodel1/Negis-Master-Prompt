@@ -124,9 +124,9 @@ export default function Reception() {
     ) ?? null;
   };
 
-  const promoteBookingToCrm = async (booking: Booking) => {
-    if (!clinicId) return null;
-    const { data: defaultStatuses, error: statusError } = await supabase
+  const ensureSalesLeadStatusId = async () => {
+    if (!clinicId) throw new Error('Клиника не выбрана');
+    const { data: existingStatuses, error: statusError } = await supabase
       .from('lead_statuses')
       .select('id')
       .eq('clinic_id', clinicId)
@@ -134,7 +134,26 @@ export default function Reception() {
       .order('sort_order')
       .limit(1);
     if (statusError) throw statusError;
-    const defaultStatusId = defaultStatuses?.[0]?.id ?? null;
+    if (existingStatuses?.[0]?.id) return existingStatuses[0].id as string;
+
+    const { data: createdStatus, error: createStatusError } = await supabase
+      .from('lead_statuses')
+      .insert({
+        clinic_id: clinicId,
+        name: 'Новый',
+        color: '#3B82F6',
+        sort_order: 0,
+        pipeline: 'sales',
+      })
+      .select('id')
+      .single();
+    if (createStatusError) throw createStatusError;
+    return createdStatus.id as string;
+  };
+
+  const promoteBookingToCrm = async (booking: Booking) => {
+    if (!clinicId) return null;
+    const defaultStatusId = await ensureSalesLeadStatusId();
 
     let targetLead: CrmLead | null = null;
     if (booking.lead_id) {
