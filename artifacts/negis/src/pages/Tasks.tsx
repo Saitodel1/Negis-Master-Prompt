@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'wouter';
-import { CalendarDays, Search } from 'lucide-react';
+import { CalendarDays, Check, Search, Trash2 } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -29,6 +29,7 @@ interface ClientTask {
   dueDate: string;
   status: string;
   createdAt: string;
+  originalLine: string;
 }
 
 const columns = [
@@ -36,6 +37,7 @@ const columns = [
   { id: 'today', title: 'Сегодня', hint: 'Нужно сделать сегодня' },
   { id: 'upcoming', title: 'Будущие', hint: 'Запланировано дальше' },
   { id: 'noDate', title: 'Без даты', hint: 'Нужно уточнить срок' },
+  { id: 'done', title: 'Выполнено', hint: 'Закрытые задачи' },
 ] as const;
 
 function taskBody(line: string) {
@@ -68,11 +70,13 @@ function parseTasks(lead: LeadTaskLead): ClientTask[] {
         dueDate: taskField(body, 'срок'),
         status: taskField(body, 'статус') || 'todo',
         createdAt: taskCreatedAt(line),
+        originalLine: line,
       };
     });
 }
 
 function columnForTask(task: ClientTask, today: string) {
+  if (task.status === 'done') return 'done';
   if (!task.dueDate) return 'noDate';
   if (task.dueDate < today) return 'overdue';
   if (task.dueDate === today) return 'today';
@@ -83,6 +87,7 @@ export default function Tasks() {
   const { clinicId, user, userRole } = useAuth();
   const [tasks, setTasks] = useState<ClientTask[]>([]);
   const [loading, setLoading] = useState(false);
+  const [actionTaskId, setActionTaskId] = useState('');
   const [search, setSearch] = useState('');
   const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
@@ -129,6 +134,63 @@ export default function Tasks() {
     }
   };
 
+  const updateTaskLine = async (task: ClientTask, updater: (line: string) => string | null) => {
+    if (!clinicId) return false;
+    setActionTaskId(task.id);
+    try {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('comment')
+        .eq('clinic_id', clinicId)
+        .eq('id', task.leadId)
+        .single();
+      if (error) throw error;
+
+      const lines = String(data?.comment ?? '').split('\n');
+      const index = lines.findIndex(line => line.trim() === task.originalLine);
+      if (index === -1) throw new Error('Задача уже изменилась. Обновите список.');
+
+      const nextLine = updater(lines[index].trim());
+      if (nextLine === null) lines.splice(index, 1);
+      else lines[index] = nextLine;
+
+      const { error: updateError } = await supabase
+        .from('leads')
+        .update({
+          comment: lines.map(line => line.trim()).filter(Boolean).join('\n'),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('clinic_id', clinicId)
+        .eq('id', task.leadId);
+      if (updateError) throw updateError;
+
+      await loadTasks();
+      return true;
+    } catch (err: any) {
+      toast.error(err?.message || 'Не удалось обновить задачу');
+      return false;
+    } finally {
+      setActionTaskId('');
+    }
+  };
+
+  const completeTask = async (task: ClientTask) => {
+    const saved = await updateTaskLine(task, line => {
+      if (/(^|;)\s*статус:\s*[^;]+/i.test(line)) {
+        return line.replace(/((?:^|;)\s*статус:\s*)[^;]+/i, '$1done');
+      }
+      return `${line}; статус: done`;
+    });
+    if (saved) toast.success('Задача выполнена');
+  };
+
+  const deleteTask = async (task: ClientTask) => {
+    const ok = window.confirm('Удалить задачу?');
+    if (!ok) return;
+    const deleted = await updateTaskLine(task, () => null);
+    if (deleted) toast.success('Задача удалена');
+  };
+
   const filteredTasks = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return tasks;
@@ -145,6 +207,7 @@ export default function Tasks() {
       today: [],
       upcoming: [],
       noDate: [],
+      done: [],
     };
     filteredTasks.forEach(task => {
       result[columnForTask(task, today)].push(task);
@@ -183,7 +246,7 @@ export default function Tasks() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
           {columns.map(column => (
             <section key={column.id} className="rounded-2xl border border-[#E7ECF3] bg-white overflow-hidden min-h-[520px]">
               <div className="p-4 border-b border-[#E7ECF3] bg-[#F8FAFC]">
@@ -223,6 +286,30 @@ export default function Tasks() {
                           Клиент
                         </button>
                       </Link>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {task.status !== 'done' ? (
+                        <button
+                          onClick={() => completeTask(task)}
+                          disabled={actionTaskId === task.id}
+                          className="rounded-lg border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-2 text-xs font-semibold text-[#16A34A] disabled:opacity-50 flex items-center justify-center gap-1.5"
+                        >
+                          <Check size={13} />
+                          Выполнено
+                        </button>
+                      ) : (
+                        <div className="rounded-lg border border-[#E7ECF3] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#94A3B8] text-center">
+                          Закрыта
+                        </div>
+                      )}
+                      <button
+                        onClick={() => deleteTask(task)}
+                        disabled={actionTaskId === task.id}
+                        className="rounded-lg border border-[#FEE2E2] bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#DC2626] disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      >
+                        <Trash2 size={13} />
+                        Удалить
+                      </button>
                     </div>
                   </article>
                 ))}
