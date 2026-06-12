@@ -135,6 +135,7 @@ const BkIS: React.CSSProperties = {
 /* ══════════════════════════════════════════════════════════ */
 export default function Booking() {
   const { clinicId, user, userRole } = useAuth();
+  const canManageBookingLeads = userRole === 'owner' || userRole === 'manager';
 
   /* ── Active tab ── */
   const [activeTab, setActiveTab] = useState<'calendar' | 'leads'>('calendar');
@@ -361,7 +362,41 @@ export default function Booking() {
     ) ?? null;
   };
 
+  const ensureBookingLeadStatusId = async () => {
+    if (!clinicId) throw new Error('Клиника не выбрана');
+    if (bkStatuses[0]?.id) return bkStatuses[0].id;
+
+    const { data: existingStatuses, error: statusError } = await supabase
+      .from('lead_statuses')
+      .select('id, name, color')
+      .eq('clinic_id', clinicId)
+      .eq('pipeline', 'booking')
+      .order('sort_order')
+      .limit(1);
+    if (statusError) throw statusError;
+    if (existingStatuses?.[0]?.id) {
+      setBkStatuses(prev => prev.length ? prev : existingStatuses as LeadStatus[]);
+      return existingStatuses[0].id as string;
+    }
+
+    const { data: createdStatus, error: createStatusError } = await supabase
+      .from('lead_statuses')
+      .insert({
+        clinic_id: clinicId,
+        name: 'Новый',
+        color: '#3B82F6',
+        sort_order: 0,
+        pipeline: 'booking',
+      })
+      .select('id, name, color')
+      .single();
+    if (createStatusError) throw createStatusError;
+    setBkStatuses(prev => prev.length ? prev : [createdStatus as LeadStatus]);
+    return createdStatus.id as string;
+  };
+
   const createLead = async () => {
+    if (!canManageBookingLeads) { toast.error('Недостаточно прав'); return; }
     const name = leadForm.full_name.trim() || (leadForm.phone ? `Клиент ${leadForm.phone}` : '');
     if (!name) { toast.error('Введите имя или телефон'); return; }
     setLeadSaving(true);
@@ -371,7 +406,15 @@ export default function Booking() {
       toast.error(`Дубликат телефона: ${duplicate.full_name || duplicate.phone}`);
       return;
     }
-    const assignedTo = safeAgentIdFn(leadForm.assigned_to || (userRole === 'agent' ? myAgentId : null), agents);
+    const assignedTo = safeAgentIdFn(leadForm.assigned_to || null, agents);
+    let defaultStatusId = '';
+    try {
+      defaultStatusId = await ensureBookingLeadStatusId();
+    } catch (e: any) {
+      setLeadSaving(false);
+      toast.error(e.message || 'Не удалось создать статус для лида');
+      return;
+    }
     const { error } = await supabase.from('leads').insert({
       clinic_id: clinicId,
       pipeline: 'booking',
@@ -379,7 +422,7 @@ export default function Booking() {
       phone: leadForm.phone || null,
       email: leadForm.email || null,
       source: leadForm.source,
-      status_id: leadForm.status_id || bkStatuses[0]?.id || null,
+      status_id: leadForm.status_id || defaultStatusId,
       assigned_to: assignedTo,
       comment: leadForm.comment || null,
     });
@@ -399,12 +442,20 @@ export default function Booking() {
       return;
     }
     const assignedTo = safeAgentIdFn(selectedLead.assigned_to || (userRole === 'agent' ? myAgentId : null), agents);
+    let defaultStatusId = '';
+    try {
+      defaultStatusId = selectedLead.status_id || await ensureBookingLeadStatusId();
+    } catch (e: any) {
+      setDetailSaving(false);
+      toast.error(e.message || 'Не удалось создать статус для лида');
+      return;
+    }
     const { error } = await supabase.from('leads').update({
       full_name: selectedLead.full_name,
       phone: selectedLead.phone,
       email: selectedLead.email || null,
       source: selectedLead.source,
-      status_id: selectedLead.status_id || null,
+      status_id: defaultStatusId,
       assigned_to: assignedTo,
       comment: selectedLead.comment || null,
       updated_at: new Date().toISOString(),
@@ -460,6 +511,7 @@ export default function Booking() {
   /* ── CSV/Excel import ── */
   const handleImportFile = async (file: File) => {
     if (!clinicId) return;
+    if (!canManageBookingLeads) { toast.error('Недостаточно прав'); return; }
     setImportLoading(true);
     try {
       let rows: Record<string, string>[] = [];
@@ -473,14 +525,11 @@ export default function Booking() {
         rows = XLSX.utils.sheet_to_json<Record<string, string>>(wb.Sheets[wb.SheetNames[0]], { defval: '' });
       }
 
-      const [{ data: st }, { data: existingLeads, error: existingLeadsError }] = await Promise.all([
-        supabase.from('lead_statuses').select('id')
-          .eq('clinic_id', clinicId).eq('pipeline', 'booking').order('sort_order').limit(1),
-        supabase.from('leads').select('phone')
-          .eq('clinic_id', clinicId).eq('pipeline', 'booking').not('phone', 'is', null),
-      ]);
+      const defaultStatusId = await ensureBookingLeadStatusId();
+      const { data: existingLeads, error: existingLeadsError } = await supabase
+        .from('leads').select('phone')
+        .eq('clinic_id', clinicId).eq('pipeline', 'booking').not('phone', 'is', null);
       if (existingLeadsError) { toast.error(existingLeadsError.message); return; }
-      const defaultStatusId = st?.[0]?.id ?? null;
       const seenPhones = new Set(
         (existingLeads ?? [])
           .map(row => normalizePhoneForDuplicate(row.phone))
@@ -496,7 +545,7 @@ export default function Booking() {
       const ready: Record<string, unknown>[] = [];
       const errors: string[] = [];
       let skippedDuplicates = 0;
-      const importAssignedTo = userRole === 'agent' ? safeAgentIdFn(myAgentId, agents) : null;
+      const importAssignedTo = null;
 
       rows.forEach((r, idx) => {
         let fullName = pickField(r, NAME_KEYS);
@@ -818,41 +867,43 @@ export default function Booking() {
             <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0B1220', fontFamily: "'Inter', sans-serif" }}>
               Лиды на запись
             </h2>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="file"
-                ref={importRef}
-                accept=".csv,.xlsx,.xls"
-                style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f); }}
-              />
-              <button
-                onClick={() => importRef.current?.click()}
-                disabled={importLoading}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '9px 16px', borderRadius: 10,
-                  background: '#F4F7FB', border: '1px solid #E7ECF3',
-                  fontSize: 13, fontWeight: 500, color: '#475569',
-                  cursor: importLoading ? 'not-allowed' : 'pointer',
-                  fontFamily: "'Inter', sans-serif",
-                }}
-              >
-                <Upload size={14} />{importLoading ? 'Импорт...' : 'Импорт CSV'}
-              </button>
-              <button
-                onClick={() => { setLeadForm(emptyLeadForm); setShowNewLead(true); }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '9px 16px', borderRadius: 10,
-                  background: '#1E325C', border: 'none',
-                  fontSize: 13, fontWeight: 500, color: '#FFFFFF',
-                  cursor: 'pointer', fontFamily: "'Inter', sans-serif",
-                }}
-              >
-                <Plus size={14} /> Новый лид
-              </button>
-            </div>
+            {canManageBookingLeads && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="file"
+                  ref={importRef}
+                  accept=".csv,.xlsx,.xls"
+                  style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f); }}
+                />
+                <button
+                  onClick={() => importRef.current?.click()}
+                  disabled={importLoading}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '9px 16px', borderRadius: 10,
+                    background: '#F4F7FB', border: '1px solid #E7ECF3',
+                    fontSize: 13, fontWeight: 500, color: '#475569',
+                    cursor: importLoading ? 'not-allowed' : 'pointer',
+                    fontFamily: "'Inter', sans-serif",
+                  }}
+                >
+                  <Upload size={14} />{importLoading ? 'Импорт...' : 'Импорт CSV'}
+                </button>
+                <button
+                  onClick={() => { setLeadForm(emptyLeadForm); setShowNewLead(true); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '9px 16px', borderRadius: 10,
+                    background: '#1E325C', border: 'none',
+                    fontSize: 13, fontWeight: 500, color: '#FFFFFF',
+                    cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+                  }}
+                >
+                  <Plus size={14} /> Новый лид
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Filters */}
@@ -1254,7 +1305,7 @@ export default function Booking() {
       )}
 
       {/* ══════════ NEW LEAD MODAL ══════════ */}
-      {showNewLead && (
+      {showNewLead && canManageBookingLeads && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
           style={{ background: 'rgba(11,18,32,0.18)', backdropFilter: 'blur(8px)' }}
           onClick={e => { if (e.target === e.currentTarget) setShowNewLead(false); }}>
