@@ -142,10 +142,18 @@ export default function Sales() {
 
   /* ── Lead forms ── */
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [leadDetailTab, setLeadDetailTab] = useState<'overview' | 'timeline' | 'bookings' | 'need' | 'finance' | 'tasks'>('overview');
+  const [leadDetailTab, setLeadDetailTab] = useState<'overview' | 'timeline' | 'bookings' | 'need' | 'procedures' | 'finance' | 'tasks'>('overview');
   const [leadBookings, setLeadBookings] = useState<BookingHistory[]>([]);
   const [leadBookingsLoading, setLeadBookingsLoading] = useState(false);
   const [quickNote, setQuickNote] = useState('');
+  const [procedureForm, setProcedureForm] = useState({
+    received: '',
+    planned: '',
+    paid: '',
+    purchaseType: 'Единоразовая процедура',
+    bought: '',
+    comment: '',
+  });
   const [showNew, setShowNew]           = useState(false);
   const emptyForm = { full_name: '', phone: '', email: '', company: '', age: '', source: 'Вручную', status_id: '', assigned_to: '', comment: '' };
   const [form, setForm]   = useState(emptyForm);
@@ -209,6 +217,14 @@ export default function Sales() {
     if (selectedLead) {
       setLeadDetailTab('overview');
       setQuickNote('');
+      setProcedureForm({
+        received: '',
+        planned: '',
+        paid: '',
+        purchaseType: 'Единоразовая процедура',
+        bought: '',
+        comment: '',
+      });
       loadLeadBookings(selectedLead);
     } else {
       setLeadBookings([]);
@@ -497,12 +513,49 @@ export default function Sales() {
       body: `${b.date} ${b.time}${b.comment ? ` · ${b.comment}` : ''}`,
     })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) : [];
-  const appendQuickNote = () => {
-    if (!selectedLead || !quickNote.trim()) return;
+  const appendLeadHistory = async (title: string, body: string) => {
+    if (!selectedLead || !body.trim()) return false;
     const stamp = new Date().toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
-    const line = `[${stamp}] ${quickNote.trim()}`;
-    setSelectedLead({ ...selectedLead, comment: selectedLead.comment ? `${selectedLead.comment}\n${line}` : line });
-    setQuickNote('');
+    const line = `[${stamp}] ${title}: ${body.trim()}`;
+    const nextComment = selectedLead.comment ? `${selectedLead.comment}\n${line}` : line;
+    const { error } = await supabase
+      .from('leads')
+      .update({ comment: nextComment, updated_at: new Date().toISOString() })
+      .eq('id', selectedLead.id);
+    if (error) { toast.error(error.message); return false; }
+    setSelectedLead({ ...selectedLead, comment: nextComment });
+    setLeads(prev => prev.map(lead => lead.id === selectedLead.id ? { ...lead, comment: nextComment } : lead));
+    toast.success('Добавлено в историю');
+    return true;
+  };
+  const appendQuickNote = async () => {
+    const saved = await appendLeadHistory('Комментарий', quickNote);
+    if (saved) setQuickNote('');
+  };
+  const appendProcedureHistory = async () => {
+    if (!procedureForm.received.trim() && !procedureForm.planned.trim() && !procedureForm.paid.trim() && !procedureForm.bought.trim()) {
+      toast.error('Заполните хотя бы одно поле по процедурам или оплате');
+      return;
+    }
+    const parts = [
+      procedureForm.bought.trim() ? `купил: ${procedureForm.bought.trim()}` : '',
+      `формат: ${procedureForm.purchaseType}`,
+      procedureForm.received.trim() ? `получил: ${procedureForm.received.trim()}` : '',
+      procedureForm.planned.trim() ? `ещё получит: ${procedureForm.planned.trim()}` : '',
+      procedureForm.paid.trim() ? `оплатил: ${procedureForm.paid.trim()}` : '',
+      procedureForm.comment.trim() ? `комментарий: ${procedureForm.comment.trim()}` : '',
+    ].filter(Boolean).join('; ');
+    const saved = await appendLeadHistory('Процедуры и оплата', parts);
+    if (saved) {
+      setProcedureForm({
+        received: '',
+        planned: '',
+        paid: '',
+        purchaseType: 'Единоразовая процедура',
+        bought: '',
+        comment: '',
+      });
+    }
   };
 
   const IS: React.CSSProperties = {
@@ -871,6 +924,7 @@ export default function Sales() {
                   ['timeline', 'Лента'],
                   ['bookings', 'Записи'],
                   ['need', 'Потребность'],
+                  ['procedures', 'Процедуры'],
                   ['finance', 'Финансы'],
                   ['tasks', 'Задачи'],
                 ] as const).map(([id, label]) => (
@@ -1010,6 +1064,62 @@ export default function Sales() {
                         <textarea style={{ ...IS, minHeight: 280, resize: 'vertical' } as React.CSSProperties}
                           value={selectedLead.comment ?? ''}
                           onChange={e => setSelectedLead(l => l ? { ...l, comment: e.target.value } : l)} />
+                      </div>
+                    )}
+
+                    {leadDetailTab === 'procedures' && (
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4 text-sm text-[#64748B]">
+                          Отмечайте, что клиент уже получил, что ещё должен получить, сколько оплатил и что именно он купил: единоразовую процедуру или курс.
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Что купил</label>
+                            <input style={IS} placeholder="Например: курс массажа, консультация, чистка"
+                              value={procedureForm.bought}
+                              onChange={e => setProcedureForm(f => ({ ...f, bought: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Формат покупки</label>
+                            <select style={IS} value={procedureForm.purchaseType}
+                              onChange={e => setProcedureForm(f => ({ ...f, purchaseType: e.target.value }))}>
+                              <option value="Единоразовая процедура">Единоразовая процедура</option>
+                              <option value="Курс">Курс</option>
+                              <option value="План лечения">План лечения</option>
+                              <option value="Абонемент">Абонемент</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Какие процедуры получил</label>
+                            <textarea style={{ ...IS, minHeight: 110, resize: 'vertical' } as React.CSSProperties}
+                              placeholder="Например: 1/5 массаж, консультация, снимок"
+                              value={procedureForm.received}
+                              onChange={e => setProcedureForm(f => ({ ...f, received: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Какие процедуры ещё получит</label>
+                            <textarea style={{ ...IS, minHeight: 110, resize: 'vertical' } as React.CSSProperties}
+                              placeholder="Например: ещё 4 процедуры курса, контрольный приём"
+                              value={procedureForm.planned}
+                              onChange={e => setProcedureForm(f => ({ ...f, planned: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Сколько оплатил</label>
+                            <input style={IS} placeholder="Например: 150 000 ₸ / предоплата 50 000 ₸"
+                              value={procedureForm.paid}
+                              onChange={e => setProcedureForm(f => ({ ...f, paid: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Комментарий</label>
+                            <input style={IS} placeholder="Например: оплатит остаток после 2 процедуры"
+                              value={procedureForm.comment}
+                              onChange={e => setProcedureForm(f => ({ ...f, comment: e.target.value }))} />
+                          </div>
+                        </div>
+                        <button onClick={appendProcedureHistory}
+                          className="px-4 py-3 rounded-xl bg-[#1E325C] text-white text-sm font-semibold">
+                          Сохранить в историю
+                        </button>
                       </div>
                     )}
 
