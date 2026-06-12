@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Link, useLocation } from 'wouter';
 import {
   BarChart2,
@@ -14,10 +14,13 @@ import {
   Megaphone,
   ClipboardList,
   MessageCircle,
+  Smile,
+  Upload,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { agentInitials, type AgentDisplayInfo } from '@/lib/agentDisplay';
 
 const NAV = [
   { href: '/dashboard', icon: BarChart2, label: 'Дашборд', roles: ['owner', 'manager'] },
@@ -32,24 +35,84 @@ const NAV = [
 
 export function TopNav() {
   const [location] = useLocation();
-  const { signOut, user, userRole } = useAuth();
+  const { signOut, user, userRole, clinicId } = useAuth();
   const [showProfile, setShowProfile] = useState(false);
   const [fullName, setFullName] = useState(user?.user_metadata?.full_name ?? '');
   const [newPassword, setNewPassword] = useState('');
+  const [myAgent, setMyAgent] = useState<AgentDisplayInfo | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState(user?.user_metadata?.avatar_url ?? '');
+  const [avatarIcon, setAvatarIcon] = useState(user?.user_metadata?.avatar_icon ?? '');
+  const [avatarColor, setAvatarColor] = useState(user?.user_metadata?.avatar_color ?? '#EFF6FF');
   const [saving, setSaving] = useState(false);
 
   const filtered = NAV.filter(item => !userRole || item.roles.includes(userRole));
-  const initials = (user?.user_metadata?.full_name ?? user?.email ?? 'U')
-    .split(' ')
-    .map((w: string) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
+  const initials = agentInitials(myAgent, user?.user_metadata?.full_name ?? user?.email ?? 'U');
+  const avatarSrc = avatarUrl || myAgent?.avatar_url || user?.user_metadata?.avatar_url || '';
+  const iconValue = avatarIcon || myAgent?.avatar_icon || user?.user_metadata?.avatar_icon || '';
+  const avatarBg = avatarColor || myAgent?.avatar_color || user?.user_metadata?.avatar_color || '#EFF6FF';
+
+  useEffect(() => {
+    if (!clinicId || !user?.id) return;
+    const loadProfile = async () => {
+      const primary = await supabase
+        .from('agents')
+        .select('id, name, user_id, role_id, avatar_url, avatar_icon, avatar_color')
+        .eq('clinic_id', clinicId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      let data = primary.data as AgentDisplayInfo | null;
+      if (primary.error) {
+        const fallback = await supabase
+          .from('agents')
+          .select('id, name, user_id, role_id')
+          .eq('clinic_id', clinicId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        data = fallback.data as AgentDisplayInfo | null;
+      }
+      if (!data) return;
+      const agent = data as AgentDisplayInfo;
+      setMyAgent(agent);
+      setAvatarUrl(agent.avatar_url || user.user_metadata?.avatar_url || '');
+      setAvatarIcon(agent.avatar_icon || user.user_metadata?.avatar_icon || '');
+      setAvatarColor(agent.avatar_color || user.user_metadata?.avatar_color || '#EFF6FF');
+    };
+    loadProfile();
+  }, [clinicId, user?.id]);
 
   const openProfile = () => {
     setFullName(user?.user_metadata?.full_name ?? '');
     setNewPassword('');
+    setAvatarUrl(myAgent?.avatar_url || user?.user_metadata?.avatar_url || '');
+    setAvatarIcon(myAgent?.avatar_icon || user?.user_metadata?.avatar_icon || '');
+    setAvatarColor(myAgent?.avatar_color || user?.user_metadata?.avatar_color || '#EFF6FF');
     setShowProfile(true);
+  };
+
+  const renderAvatar = (sizeClass = 'soft-avatar') => (
+    <div className={`${sizeClass} overflow-hidden`} style={{ background: avatarBg }}>
+      {avatarSrc ? (
+        <img src={avatarSrc} alt="Профиль" className="h-full w-full object-cover" />
+      ) : iconValue ? (
+        <span className="text-lg leading-none">{iconValue}</span>
+      ) : (
+        initials
+      )}
+    </div>
+  );
+
+  const handleAvatarFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Выберите изображение');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAvatarUrl(String(reader.result));
+      setAvatarIcon('');
+    };
+    reader.readAsDataURL(file);
   };
 
   const saveProfile = async () => {
@@ -64,11 +127,50 @@ export function TopNav() {
     setSaving(true);
     try {
       const updates: { data?: { full_name: string }; password?: string } = {
-        data: { full_name: fullName.trim() },
+        data: {
+          full_name: fullName.trim(),
+          avatar_url: avatarUrl || null,
+          avatar_icon: avatarIcon || null,
+          avatar_color: avatarColor || null,
+        } as any,
       };
       if (newPassword) updates.password = newPassword;
       const { error } = await supabase.auth.updateUser(updates);
       if (error) throw error;
+      if (clinicId && user?.id) {
+        const { data: agentRow } = await supabase
+          .from('agents')
+          .select('id')
+          .eq('clinic_id', clinicId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (agentRow?.id) {
+          const { error: avatarError } = await supabase
+            .from('agents')
+            .update({
+              name: fullName.trim(),
+              avatar_url: avatarUrl || null,
+              avatar_icon: avatarIcon || null,
+              avatar_color: avatarColor || null,
+            })
+            .eq('id', agentRow.id);
+          if (avatarError) {
+            const { error: fallbackError } = await supabase
+              .from('agents')
+              .update({ name: fullName.trim() })
+              .eq('id', agentRow.id);
+            if (fallbackError) throw fallbackError;
+            toast.warning('Имя сохранено. Для фото выполните SQL-миграцию 005.');
+          }
+          setMyAgent(prev => prev ? {
+            ...prev,
+            name: fullName.trim(),
+            avatar_url: avatarUrl || null,
+            avatar_icon: avatarIcon || null,
+            avatar_color: avatarColor || null,
+          } : prev);
+        }
+      }
       toast.success('Профиль сохранён');
       setShowProfile(false);
       setNewPassword('');
@@ -96,18 +198,18 @@ export function TopNav() {
     <>
       <nav className="soft-dock sticky top-14 z-20 shrink-0 px-5 py-3">
         <div className="flex items-center gap-3">
-          <button type="button" onClick={openProfile} className="soft-avatar shrink-0" title="Профиль">
-            {initials}
+          <button type="button" onClick={openProfile} className="shrink-0 border-0 bg-transparent p-0" title="Профиль">
+            {renderAvatar()}
           </button>
 
           <div className="topnav-scroll flex-1 overflow-x-auto">
-            <div className="dock-shell inline-flex min-w-max items-center gap-2 rounded-[26px] border border-white/70 bg-white/55 p-1.5 shadow-[8px_10px_28px_rgba(116,135,154,0.14),inset_1px_1px_0_rgba(255,255,255,0.9)] backdrop-blur-xl">
+            <div className="dock-shell inline-flex min-w-max items-end gap-2 rounded-[34px] border border-white/70 bg-white/55 px-3 py-2 shadow-[8px_10px_28px_rgba(116,135,154,0.14),inset_1px_1px_0_rgba(255,255,255,0.9)] backdrop-blur-xl">
               {filtered.map(({ href, icon: Icon, label }) => {
                 const active = location === href || location.startsWith(href + '/');
                 return (
                   <Link key={href} href={href}>
                     <div className={`topnav-item ${active ? 'is-active' : ''}`} title={label}>
-                      <Icon size={18} strokeWidth={active ? 2.2 : 1.8} />
+                      <Icon size={24} strokeWidth={active ? 2.35 : 1.9} />
                       <span>{label}</span>
                     </div>
                   </Link>
@@ -133,7 +235,7 @@ export function TopNav() {
           <div className="soft-modal w-full max-w-[380px] p-7">
             <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="soft-avatar">{initials}</div>
+                {renderAvatar()}
                 <div>
                   <div className="text-sm font-semibold text-[#0B1220]">
                     {user?.user_metadata?.full_name || 'Профиль'}
@@ -147,6 +249,32 @@ export function TopNav() {
             </div>
 
             <div className="space-y-4">
+              <div>
+                <label className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#687995]">
+                  <Smile size={12} />
+                  Аватар
+                </label>
+                <div className="flex items-center gap-3">
+                  {renderAvatar('soft-avatar h-14 w-14')}
+                  <label className="neu-btn cursor-pointer" style={{ padding: '9px 12px' }}>
+                    <Upload size={14} />
+                    Фото
+                    <input type="file" accept="image/*" className="hidden" onChange={e => handleAvatarFile(e.target.files?.[0])} />
+                  </label>
+                </div>
+                <div className="mt-3 grid grid-cols-6 gap-2">
+                  {['🩺', '💬', '⭐', '⚡', '🌿', '💎'].map(icon => (
+                    <button
+                      key={icon}
+                      type="button"
+                      className={`rounded-2xl border p-2 text-lg transition ${avatarIcon === icon ? 'border-[#1E325C] bg-[#EFF6FF]' : 'border-[#E3EAF2] bg-white/70'}`}
+                      onClick={() => { setAvatarIcon(icon); setAvatarUrl(''); }}
+                    >
+                      {icon}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div>
                 <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#687995]">
                   <User size={12} />

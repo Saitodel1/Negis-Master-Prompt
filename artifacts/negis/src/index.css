@@ -356,6 +356,13 @@
   .topnav-scroll {
     scrollbar-width: thin;
     scrollbar-color: rgba(142, 160, 183, 0.35) transparent;
+    overflow-y: visible;
+    padding-top: 12px;
+    padding-bottom: 14px;
+  }
+
+  .dock-shell {
+    overflow: visible;
   }
 
   .topnav-scroll::-webkit-scrollbar {
@@ -372,16 +379,17 @@
   }
 
   .topnav-item {
-    height: 44px;
-    min-width: 112px;
-    padding: 0 16px;
-    border-radius: 20px;
+    height: 68px;
+    min-width: 86px;
+    padding: 9px 12px 8px;
+    border-radius: 24px;
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 9px;
+    gap: 5px;
     color: #60718A;
-    font-size: 14px;
+    font-size: 11px;
     font-weight: 700;
     white-space: nowrap;
     cursor: pointer;
@@ -392,14 +400,14 @@
   .topnav-item:hover {
     color: var(--ng-primary);
     background: rgba(255, 255, 255, 0.58);
-    transform: translateY(-7px) scale(1.16);
+    transform: translateY(-14px) scale(1.18);
     box-shadow: 9px 14px 28px rgba(96, 113, 138, 0.18),
                 -4px -4px 14px rgba(255, 255, 255, 0.78);
   }
 
   .topnav-item:has(+ .topnav-item:hover),
   .topnav-item:hover + .topnav-item {
-    transform: translateY(-4px) scale(1.07);
+    transform: translateY(-7px) scale(1.08);
   }
 
   .topnav-item.is-active {

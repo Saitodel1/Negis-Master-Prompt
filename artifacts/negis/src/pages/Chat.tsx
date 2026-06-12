@@ -3,7 +3,7 @@ import { MessageCircle, Plus, Send, Users, UserPlus, Search, X } from 'lucide-re
 import { PageLayout } from '@/components/layout/PageLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { agentDisplayName, loadAgentRoleMaps } from '@/lib/agentDisplay';
+import { agentDisplayName, agentInitials, loadAgentRoleMaps } from '@/lib/agentDisplay';
 import { toast } from 'sonner';
 
 interface Agent {
@@ -11,6 +11,9 @@ interface Agent {
   name: string;
   user_id: string | null;
   role_id?: string | null;
+  avatar_url?: string | null;
+  avatar_icon?: string | null;
+  avatar_color?: string | null;
 }
 
 interface Conversation {
@@ -25,6 +28,7 @@ interface ChatMessage {
   id: string;
   conversationId: string;
   senderId: string;
+  senderAgentId?: string | null;
   senderName: string;
   text: string;
   createdAt: string;
@@ -55,6 +59,8 @@ export default function Chat() {
   const [groupTitle, setGroupTitle] = useState('');
   const [groupMembers, setGroupMembers] = useState<Set<string>>(new Set());
   const [hydrated, setHydrated] = useState(false);
+  const [dbReady, setDbReady] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const meId = user?.id ?? 'me';
   const meName = user?.user_metadata?.full_name || user?.email || 'Я';
@@ -62,28 +68,37 @@ export default function Chat() {
   useEffect(() => {
     if (!clinicId) return;
     loadAgents();
-    setConversations(readJson<Conversation[]>(conversationsKey(clinicId), []));
-    setMessages(readJson<ChatMessage[]>(messagesKey(clinicId), []));
-    setHydrated(true);
   }, [clinicId]);
 
   useEffect(() => {
-    if (!hydrated || !clinicId) return;
+    if (!hydrated || !clinicId || dbReady) return;
     localStorage.setItem(conversationsKey(clinicId), JSON.stringify(conversations));
-  }, [conversations, clinicId, hydrated]);
+  }, [conversations, clinicId, hydrated, dbReady]);
 
   useEffect(() => {
-    if (!hydrated || !clinicId) return;
+    if (!hydrated || !clinicId || dbReady) return;
     localStorage.setItem(messagesKey(clinicId), JSON.stringify(messages));
-  }, [messages, clinicId, hydrated]);
+  }, [messages, clinicId, hydrated, dbReady]);
 
   const loadAgents = async () => {
     if (!clinicId) return;
-    const { data, error } = await supabase
+    setLoading(true);
+    const primary = await supabase
       .from('agents')
-      .select('id, name, user_id, role_id')
+      .select('id, name, user_id, role_id, avatar_url, avatar_icon, avatar_color')
       .eq('clinic_id', clinicId)
       .order('name');
+    let data = primary.data as Agent[] | null;
+    let error = primary.error;
+    if (error) {
+      const fallback = await supabase
+        .from('agents')
+        .select('id, name, user_id, role_id')
+        .eq('clinic_id', clinicId)
+        .order('name');
+      data = fallback.data as Agent[] | null;
+      error = fallback.error;
+    }
     if (error) {
       toast.error(error.message);
       return;
@@ -93,9 +108,76 @@ export default function Chat() {
     setAgents(rows);
     setCustomRoleMap(maps.customRoleMap);
     setUserRoleMap(maps.userRoleMap);
+    await loadChatRows(rows);
+    setLoading(false);
+  };
+
+  const loadLocalChat = () => {
+    setConversations(readJson<Conversation[]>(conversationsKey(clinicId), []));
+    setMessages(readJson<ChatMessage[]>(messagesKey(clinicId), []));
+    setHydrated(true);
+  };
+
+  const loadChatRows = async (agentRows: Agent[]) => {
+    if (!clinicId) return;
+    const { data: convRows, error: convError } = await supabase
+      .from('chat_conversations')
+      .select('id, type, title, created_at')
+      .eq('clinic_id', clinicId)
+      .order('updated_at', { ascending: false });
+
+    if (convError) {
+      setDbReady(false);
+      loadLocalChat();
+      return;
+    }
+
+    const conversationIds = (convRows ?? []).map(row => row.id);
+    const [{ data: memberRows }, { data: messageRows }] = await Promise.all([
+      conversationIds.length
+        ? supabase.from('chat_members').select('conversation_id, agent_id').in('conversation_id', conversationIds)
+        : Promise.resolve({ data: [] }),
+      conversationIds.length
+        ? supabase.from('chat_messages').select('id, conversation_id, sender_agent_id, sender_user_id, body, created_at').in('conversation_id', conversationIds).order('created_at')
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    const byConversation = new Map<string, string[]>();
+    for (const member of memberRows ?? []) {
+      const list = byConversation.get(member.conversation_id) ?? [];
+      if (member.agent_id) list.push(member.agent_id);
+      byConversation.set(member.conversation_id, list);
+    }
+
+    const nextConversations: Conversation[] = (convRows ?? []).map(row => ({
+      id: row.id,
+      type: row.type,
+      title: row.title,
+      memberIds: byConversation.get(row.id) ?? [],
+      createdAt: row.created_at,
+    }));
+    const nextMessages: ChatMessage[] = (messageRows ?? []).map(row => {
+      const sender = agentRows.find(agent => agent.id === row.sender_agent_id) ?? agentRows.find(agent => agent.user_id === row.sender_user_id);
+      return {
+        id: row.id,
+        conversationId: row.conversation_id,
+        senderId: row.sender_user_id ?? row.sender_agent_id ?? '',
+        senderAgentId: row.sender_agent_id,
+        senderName: sender ? agentLabel(sender) : 'Сотрудник',
+        text: row.body,
+        createdAt: row.created_at,
+      };
+    });
+
+    setDbReady(true);
+    setConversations(nextConversations);
+    setMessages(nextMessages);
+    setActiveId(prev => prev || nextConversations[0]?.id || '');
+    setHydrated(true);
   };
 
   const agentLabel = (agent: Agent | null | undefined) => agentDisplayName(agent, customRoleMap, userRoleMap);
+  const myAgent = agents.find(agent => agent.user_id === user?.id) ?? null;
   const active = conversations.find(conversation => conversation.id === activeId) ?? conversations[0] ?? null;
   const activeMessages = active ? messages.filter(message => message.conversationId === active.id) : [];
 
@@ -126,8 +208,54 @@ export default function Chat() {
       memberIds: [agent.id],
       createdAt: new Date().toISOString(),
     };
+    if (dbReady && clinicId) {
+      createConversationInDb(conversation, [agent.id, myAgent?.id].filter(Boolean) as string[]);
+      return;
+    }
     setConversations(prev => [conversation, ...prev]);
     setActiveId(conversation.id);
+  };
+
+  const createConversationInDb = async (conversation: Conversation, memberIds: string[]) => {
+    if (!clinicId) return;
+    const uniqueMemberIds = Array.from(new Set(memberIds));
+    const { data, error } = await supabase
+      .from('chat_conversations')
+      .insert({
+        clinic_id: clinicId,
+        type: conversation.type,
+        title: conversation.title,
+        created_by: user?.id ?? null,
+      })
+      .select('id, type, title, created_at')
+      .single();
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    if (uniqueMemberIds.length) {
+      const { error: memberError } = await supabase.from('chat_members').insert(uniqueMemberIds.map(agentId => {
+        const member = agents.find(item => item.id === agentId);
+        return {
+          clinic_id: clinicId,
+          conversation_id: data.id,
+          agent_id: agentId,
+          user_id: member?.user_id ?? null,
+        };
+      }));
+      if (memberError) toast.error(memberError.message);
+    }
+
+    const next: Conversation = {
+      id: data.id,
+      type: data.type,
+      title: data.title,
+      memberIds: uniqueMemberIds,
+      createdAt: data.created_at,
+    };
+    setConversations(prev => [next, ...prev]);
+    setActiveId(next.id);
   };
 
   const openGroupModal = () => {
@@ -149,9 +277,14 @@ export default function Chat() {
       id: crypto.randomUUID(),
       type: 'group',
       title: groupTitle.trim(),
-      memberIds: Array.from(groupMembers),
+      memberIds: Array.from(new Set([...groupMembers, myAgent?.id].filter(Boolean) as string[])),
       createdAt: new Date().toISOString(),
     };
+    if (dbReady && clinicId) {
+      createConversationInDb(conversation, conversation.memberIds);
+      setShowGroupModal(false);
+      return;
+    }
     setConversations(prev => [conversation, ...prev]);
     setActiveId(conversation.id);
     setShowGroupModal(false);
@@ -168,6 +301,17 @@ export default function Chat() {
 
   const inviteToActive = (agentId: string) => {
     if (!active || active.type !== 'group') return;
+    if (dbReady && clinicId) {
+      const member = agents.find(agent => agent.id === agentId);
+      supabase.from('chat_members').insert({
+        clinic_id: clinicId,
+        conversation_id: active.id,
+        agent_id: agentId,
+        user_id: member?.user_id ?? null,
+      }).then(({ error }) => {
+        if (error) toast.error(error.message);
+      });
+    }
     setConversations(prev => prev.map(conversation =>
       conversation.id === active.id && !conversation.memberIds.includes(agentId)
         ? { ...conversation, memberIds: [...conversation.memberIds, agentId] }
@@ -177,17 +321,64 @@ export default function Chat() {
 
   const sendMessage = () => {
     if (!active || !draft.trim()) return;
+    const text = draft.trim();
+    if (dbReady && clinicId) {
+      supabase
+        .from('chat_messages')
+        .insert({
+          clinic_id: clinicId,
+          conversation_id: active.id,
+          sender_agent_id: myAgent?.id ?? null,
+          sender_user_id: user?.id ?? null,
+          body: text,
+        })
+        .select('id, conversation_id, sender_agent_id, sender_user_id, body, created_at')
+        .single()
+        .then(({ data, error }) => {
+          if (error) {
+            toast.error(error.message);
+            return;
+          }
+          setMessages(prev => [...prev, {
+            id: data.id,
+            conversationId: data.conversation_id,
+            senderId: data.sender_user_id ?? data.sender_agent_id ?? meId,
+            senderAgentId: data.sender_agent_id,
+            senderName: myAgent ? agentLabel(myAgent) : meName,
+            text: data.body,
+            createdAt: data.created_at,
+          }]);
+        });
+      setDraft('');
+      return;
+    }
     const message: ChatMessage = {
       id: crypto.randomUUID(),
       conversationId: active.id,
       senderId: meId,
+      senderAgentId: myAgent?.id,
       senderName: meName,
-      text: draft.trim(),
+      text,
       createdAt: new Date().toISOString(),
     };
     setMessages(prev => [...prev, message]);
     setDraft('');
   };
+
+  const Avatar = ({ agent, fallback }: { agent?: Agent | null; fallback?: string }) => (
+    <div
+      className="h-10 w-10 shrink-0 overflow-hidden rounded-2xl border border-[#E3EAF2] flex items-center justify-center font-black text-[#1E325C]"
+      style={{ background: agent?.avatar_color || '#EFF6FF' }}
+    >
+      {agent?.avatar_url ? (
+        <img src={agent.avatar_url} alt={agent.name} className="h-full w-full object-cover" />
+      ) : agent?.avatar_icon ? (
+        <span className="text-lg">{agent.avatar_icon}</span>
+      ) : (
+        agentInitials(agent, fallback)
+      )}
+    </div>
+  );
 
   return (
     <PageLayout>
@@ -195,7 +386,10 @@ export default function Chat() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl font-bold text-[#0B1220]">Чат</h2>
-            <p className="text-sm text-[#64748B] mt-1">Личные сообщения и групповые обсуждения сотрудников</p>
+            <p className="text-sm text-[#64748B] mt-1">
+              Личные сообщения и групповые обсуждения сотрудников
+              {!dbReady && <span className="ml-2 text-[#D97706]">локальный режим до применения SQL</span>}
+            </p>
           </div>
           <button className="neu-btn-primary" onClick={openGroupModal}>
             <Plus size={16} />
@@ -217,11 +411,16 @@ export default function Chat() {
               </div>
             </div>
             <div className="overflow-y-auto p-3 space-y-2">
-              {filteredConversations.length === 0 ? (
+              {loading ? (
+                <div className="text-sm text-[#94A3B8] p-4 text-center">Загрузка...</div>
+              ) : filteredConversations.length === 0 ? (
                 <div className="text-sm text-[#94A3B8] p-4 text-center">Чатов пока нет</div>
               ) : filteredConversations.map(conversation => {
                 const last = [...messages].reverse().find(message => message.conversationId === conversation.id);
                 const isActive = active?.id === conversation.id;
+                const directAgent = conversation.type === 'direct'
+                  ? agents.find(agent => conversation.memberIds.includes(agent.id) && agent.id !== myAgent?.id) ?? agents.find(agent => conversation.memberIds.includes(agent.id))
+                  : null;
                 return (
                   <button
                     key={conversation.id}
@@ -229,9 +428,13 @@ export default function Chat() {
                     onClick={() => setActiveId(conversation.id)}
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`h-10 w-10 rounded-2xl flex items-center justify-center ${conversation.type === 'group' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {conversation.type === 'group' ? <Users size={18} /> : <MessageCircle size={18} />}
-                      </div>
+                      {conversation.type === 'group'
+                        ? (
+                          <div className="h-10 w-10 rounded-2xl flex items-center justify-center bg-purple-100 text-purple-700">
+                            <Users size={18} />
+                          </div>
+                        )
+                        : <Avatar agent={directAgent} fallback={conversation.title} />}
                       <div className="min-w-0">
                         <div className="font-bold text-[#0B1220] truncate">{conversation.title}</div>
                         <div className="text-xs text-[#94A3B8] truncate">{last?.text || `${conversation.memberIds.length} участников`}</div>
@@ -263,7 +466,8 @@ export default function Chat() {
                   ) : activeMessages.map(message => {
                     const mine = message.senderId === meId;
                     return (
-                      <div key={message.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                      <div key={message.id} className={`flex items-end gap-2 ${mine ? 'justify-end' : 'justify-start'}`}>
+                        {!mine && <Avatar agent={agents.find(agent => agent.id === message.senderAgentId)} fallback={message.senderName} />}
                         <div className={`max-w-[72%] rounded-2xl px-4 py-3 shadow-sm ${mine ? 'bg-[#1E325C] text-white' : 'bg-white border border-[#E3EAF2] text-[#0B1220]'}`}>
                           <div className={`text-[11px] font-semibold mb-1 ${mine ? 'text-white/70' : 'text-[#8EA0B7]'}`}>{message.senderName}</div>
                           <div className="text-sm whitespace-pre-wrap">{message.text}</div>
@@ -271,6 +475,7 @@ export default function Chat() {
                             {new Date(message.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                           </div>
                         </div>
+                        {mine && <Avatar agent={myAgent} fallback={meName} />}
                       </div>
                     );
                   })}
@@ -310,7 +515,10 @@ export default function Chat() {
                 const invited = active?.memberIds.includes(agent.id);
                 return (
                   <div key={agent.id} className="rounded-2xl border border-[#E3EAF2] bg-white/70 p-3">
-                    <div className="font-bold text-sm text-[#0B1220]">{agentLabel(agent)}</div>
+                    <div className="flex items-center gap-3">
+                      <Avatar agent={agent} />
+                      <div className="font-bold text-sm text-[#0B1220]">{agentLabel(agent)}</div>
+                    </div>
                     <div className="mt-3 flex gap-2">
                       <button className="neu-btn flex-1" style={{ padding: '7px 10px', fontSize: 12 }} onClick={() => createDirect(agent)}>
                         ЛС

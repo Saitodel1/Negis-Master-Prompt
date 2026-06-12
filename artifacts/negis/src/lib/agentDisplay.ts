@@ -3,6 +3,9 @@ export interface AgentDisplayInfo {
   name: string;
   user_id: string | null;
   role_id?: string | null;
+  avatar_url?: string | null;
+  avatar_icon?: string | null;
+  avatar_color?: string | null;
 }
 
 export const SYSTEM_ROLE_LABELS: Record<string, string> = {
@@ -23,6 +26,22 @@ export function agentDisplayName(
   const systemRole = agent.user_id ? SYSTEM_ROLE_LABELS[userRoleMap[agent.user_id]] : '';
   const title = customRole || systemRole;
   return title ? `${agent.name} · ${title}` : agent.name;
+}
+
+export function agentInitials(agent: Pick<AgentDisplayInfo, 'name'> | null | undefined, fallback = 'U') {
+  const source = agent?.name || fallback;
+  return source
+    .split(' ')
+    .map(part => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+export function agentAvatarStyle(agent: AgentDisplayInfo | null | undefined) {
+  return {
+    background: agent?.avatar_color || 'linear-gradient(145deg, #EFF6FF, #FFFFFF)',
+  };
 }
 
 export async function loadAgentRoleMaps(
