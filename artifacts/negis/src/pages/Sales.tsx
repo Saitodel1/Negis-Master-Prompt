@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { WazzupBadge } from '@/components/WazzupBadge';
+import { WazzupChat } from '@/components/WazzupChat';
 import { Search, Plus, X, Check, ArrowUpDown, Calendar, Trash2, User, Tag, CalendarPlus, ChevronLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useWazzupInbox } from '@/hooks/useWazzupInbox';
 import { toast } from 'sonner';
 import { trackEvent } from '@/lib/fbpixel';
 import { DayPicker } from 'react-day-picker';
@@ -110,6 +113,7 @@ function IndeterminateCheckbox({ checked, indeterminate, onChange }: {
 /* ═══════════════════════════════════════════════════════ */
 export default function Sales() {
   const { clinicId, user, userRole } = useAuth();
+  const { unreadCount, resetUnreadCount } = useWazzupInbox({ clinicId, enabled: Boolean(user) });
   const [leads, setLeads]       = useState<Lead[]>([]);
   const [statuses, setStatuses] = useState<LeadStatus[]>([]);
   const [agents, setAgents]     = useState<Agent[]>([]);
@@ -142,7 +146,7 @@ export default function Sales() {
 
   /* ── Lead forms ── */
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [leadDetailTab, setLeadDetailTab] = useState<'overview' | 'timeline' | 'bookings' | 'need' | 'procedures' | 'finance' | 'tasks'>('overview');
+  const [leadDetailTab, setLeadDetailTab] = useState<'overview' | 'timeline' | 'bookings' | 'need' | 'procedures' | 'finance' | 'whatsapp' | 'tasks'>('overview');
   const [leadBookings, setLeadBookings] = useState<BookingHistory[]>([]);
   const [leadBookingsLoading, setLeadBookingsLoading] = useState(false);
   const [quickNote, setQuickNote] = useState('');
@@ -964,12 +968,17 @@ export default function Sales() {
                   ['need', 'Потребность'],
                   ['procedures', 'Процедуры'],
                   ['finance', 'Финансы'],
+                  ['whatsapp', 'WhatsApp'],
                   ['tasks', 'Задачи'],
                 ] as const).map(([id, label]) => (
                   <button key={id} type="button"
-                    onClick={() => setLeadDetailTab(id)}
+                    onClick={() => {
+                      setLeadDetailTab(id);
+                      if (id === 'whatsapp') resetUnreadCount();
+                    }}
                     className={`h-9 px-5 rounded-full border text-sm font-semibold whitespace-nowrap shrink-0 transition-colors shadow-sm ${leadDetailTab === id ? 'border-[#1E325C] bg-[#1E325C] text-white' : 'border-[#E7ECF3] bg-white text-[#64748B] hover:border-[#CBD5E1] hover:text-[#1E325C]'}`}>
                     {label}
+                    {id === 'whatsapp' && <WazzupBadge count={unreadCount} />}
                   </button>
                 ))}
               </div>
@@ -1212,6 +1221,30 @@ export default function Sales() {
                           placeholder="Оплаты, долг, рассрочка, скидка..."
                           value={selectedLead.comment ?? ''}
                           onChange={e => setSelectedLead(l => l ? { ...l, comment: e.target.value } : l)} />
+                      </div>
+                    )}
+
+                    {leadDetailTab === 'whatsapp' && (
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4 text-sm text-[#64748B]">
+                          Чат открывается через Wazzup iFrame. API-ключ Wazzup остаётся на сервере в Supabase Edge Functions.
+                        </div>
+                        {clinicId && user ? (
+                          <WazzupChat
+                            clinicId={clinicId}
+                            userId={user.id}
+                            userName={user.email ?? undefined}
+                            contactPhone={selectedLead.phone}
+                            contactName={displayName(selectedLead)}
+                            leadId={selectedLead.id}
+                            onDealCreate={() => toast.message('Wazzup запросил создание сделки')}
+                            onDealOpen={() => toast.message('Wazzup запросил открытие сделки')}
+                          />
+                        ) : (
+                          <div className="rounded-xl border border-[#E7ECF3] p-6 text-sm text-[#64748B]">
+                            Нужно войти в CRM, чтобы открыть WhatsApp.
+                          </div>
+                        )}
                       </div>
                     )}
 
