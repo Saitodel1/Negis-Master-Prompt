@@ -34,8 +34,10 @@ npx supabase secrets set WAZZUP_DEFAULT_CLINIC_ID="<clinic_id>"
 ```powershell
 npx supabase functions deploy wazzup-iframe-url
 npx supabase functions deploy wazzup-send
-npx supabase functions deploy wazzup-webhook
+npx supabase functions deploy wazzup-webhook --no-verify-jwt
 ```
+
+`wazzup-webhook` must be deployed with `--no-verify-jwt`, because Wazzup is an external service and does not send a Supabase Auth JWT. The function checks `WAZZUP_CRM_KEY` by itself.
 
 ## 4. Register Wazzup webhook
 
