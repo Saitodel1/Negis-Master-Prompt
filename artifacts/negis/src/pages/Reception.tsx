@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { Check, X, Trash2, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
+import { Check, X, Trash2, ChevronLeft, ChevronRight, CalendarDays, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,10 +11,11 @@ import { ru } from 'date-fns/locale';
 interface Booking {
   id: string; patient_name: string; patient_phone: string | null; age: number | null;
   time: string; date: string; visited: boolean | null;
-  service_id: string | null; agent_id: string | null; lead_id: string | null;
+  service_id: string | null; agent_id: string | null; lead_id: string | null; status_id: string | null;
 }
 interface Service { id: string; name: string }
 interface Agent   { id: string; name: string; user_id: string | null }
+interface BookingStatus { id: string; name: string; color: string | null; sort_order: number | null }
 interface CrmLead {
   id: string;
   full_name: string | null;
@@ -52,10 +53,14 @@ export default function Reception() {
   const [bookings, setBookings]     = useState<Booking[]>([]);
   const [services, setServices]     = useState<Service[]>([]);
   const [agents,   setAgents]       = useState<Agent[]>([]);
+  const [bookingStatuses, setBookingStatuses] = useState<BookingStatus[]>([]);
   const [loading, setLoading]       = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [calOpen, setCalOpen]           = useState(false);
+  const [newStatusName, setNewStatusName] = useState('');
+  const [creatingStatus, setCreatingStatus] = useState(false);
+  const [draggingBookingId, setDraggingBookingId] = useState('');
   const calRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -71,12 +76,28 @@ export default function Reception() {
 
   const loadMeta = async () => {
     if (!clinicId) return;
-    const [{ data: svc }, { data: agt }] = await Promise.all([
+    const [{ data: svc }, { data: agt }, { data: statuses }] = await Promise.all([
       supabase.from('services').select('id, name').eq('clinic_id', clinicId),
       supabase.from('agents').select('id, name, user_id').eq('clinic_id', clinicId),
+      supabase.from('booking_statuses').select('id, name, color, sort_order').eq('clinic_id', clinicId).order('sort_order'),
     ]);
     setServices(svc ?? []);
     setAgents(agt ?? []);
+    if (statuses?.length) {
+      setBookingStatuses(statuses);
+    } else {
+      const { data: created, error } = await supabase
+        .from('booking_statuses')
+        .insert([
+          { clinic_id: clinicId, name: 'Записан', color: '#2859C5', sort_order: 0 },
+          { clinic_id: clinicId, name: 'Пришёл', color: '#16A34A', sort_order: 1 },
+          { clinic_id: clinicId, name: 'Не пришёл', color: '#DC2626', sort_order: 2 },
+        ])
+        .select('id, name, color, sort_order')
+        .order('sort_order');
+      if (error) toast.error(error.message);
+      setBookingStatuses(created ?? []);
+    }
   };
 
   const loadBookings = async () => {
@@ -84,7 +105,7 @@ export default function Reception() {
     setLoading(true);
     const { data, error } = await supabase
       .from('bookings')
-      .select('id, patient_name, patient_phone, age, time, date, visited, service_id, agent_id, lead_id')
+      .select('id, patient_name, patient_phone, age, time, date, visited, service_id, agent_id, lead_id, status_id')
       .eq('clinic_id', clinicId)
       .eq('date', fmtDate(selectedDate))
       .order('time');
@@ -96,6 +117,24 @@ export default function Reception() {
   const svcName = (id: string | null) => id ? (services.find(s => s.id === id)?.name ?? '—') : '—';
   const agtName = (id: string | null) => id ? (agents.find(a => a.id === id)?.name ?? '—') : '—';
   const currentAgentId = () => agents.find(a => a.user_id === user?.id)?.id ?? null;
+  const statusLooksArrived = (status: BookingStatus) => /приш/i.test(status.name) && !/не\s*приш/i.test(status.name);
+  const statusLooksMissed = (status: BookingStatus) => /не\s*приш/i.test(status.name);
+  const arrivedStatus = () => bookingStatuses.find(statusLooksArrived) ?? null;
+  const missedStatus = () => bookingStatuses.find(statusLooksMissed) ?? null;
+  const defaultStatus = () => bookingStatuses[0] ?? null;
+  const statusForBooking = (booking: Booking) => {
+    if (booking.status_id) {
+      const current = bookingStatuses.find(s => s.id === booking.status_id);
+      if (current) return current;
+    }
+    if (booking.visited === true) return arrivedStatus() ?? defaultStatus();
+    if (booking.visited === false) return missedStatus() ?? defaultStatus();
+    return defaultStatus();
+  };
+  const groupedBookings = bookingStatuses.map(status => ({
+    status,
+    items: bookings.filter(booking => statusForBooking(booking)?.id === status.id),
+  }));
 
   const appendVisitNote = (comment: string | null, booking: Booking) => {
     const note = [
@@ -201,7 +240,7 @@ export default function Reception() {
     return crmLeadId;
   };
 
-  const setVisited = async (id: string, visited: boolean) => {
+  const setVisited = async (id: string, visited: boolean, statusIdOverride?: string) => {
     const booking = bookings.find(b => b.id === id);
     let crmLeadId: string | null = null;
     if (visited) {
@@ -216,12 +255,54 @@ export default function Reception() {
         return;
       }
     }
-    const updatePayload: { visited: boolean; lead_id?: string } = { visited };
+    const updatePayload: { visited: boolean; lead_id?: string; status_id?: string | null } = {
+      visited,
+      status_id: statusIdOverride ?? (visited ? arrivedStatus()?.id : missedStatus()?.id) ?? null,
+    };
     if (crmLeadId) updatePayload.lead_id = crmLeadId;
     const { error } = await supabase.from('bookings').update(updatePayload).eq('id', id);
     if (error) { toast.error(error.message); return; }
-    setBookings(b => b.map(x => x.id === id ? { ...x, visited, lead_id: crmLeadId ?? x.lead_id } : x));
+    setBookings(b => b.map(x => x.id === id ? { ...x, visited, status_id: updatePayload.status_id ?? x.status_id, lead_id: crmLeadId ?? x.lead_id } : x));
     toast.success(visited ? 'Отмечен: Пришёл, пациент добавлен в Clients' : 'Отмечен: Не пришёл');
+  };
+
+  const moveBookingToStatus = async (booking: Booking, status: BookingStatus) => {
+    if (statusLooksArrived(status)) {
+      await setVisited(booking.id, true, status.id);
+      return;
+    }
+    if (statusLooksMissed(status)) {
+      await setVisited(booking.id, false, status.id);
+      return;
+    }
+    const { error } = await supabase
+      .from('bookings')
+      .update({ status_id: status.id, visited: null })
+      .eq('id', booking.id);
+    if (error) { toast.error(error.message); return; }
+    setBookings(prev => prev.map(item => item.id === booking.id ? { ...item, status_id: status.id, visited: null } : item));
+    toast.success('Запись перенесена');
+  };
+
+  const addStatusColumn = async () => {
+    if (!clinicId || !newStatusName.trim()) return;
+    setCreatingStatus(true);
+    const nextOrder = Math.max(-1, ...bookingStatuses.map(s => s.sort_order ?? 0)) + 1;
+    const { data, error } = await supabase
+      .from('booking_statuses')
+      .insert({
+        clinic_id: clinicId,
+        name: newStatusName.trim(),
+        color: '#64748B',
+        sort_order: nextOrder,
+      })
+      .select('id, name, color, sort_order')
+      .single();
+    setCreatingStatus(false);
+    if (error) { toast.error(error.message); return; }
+    setBookingStatuses(prev => [...prev, data]);
+    setNewStatusName('');
+    toast.success('Столбец добавлен');
   };
 
   const deleteBooking = async (id: string) => {
@@ -306,83 +387,126 @@ export default function Reception() {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="neu-card p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[1000px]">
-              <thead>
-                <tr className="border-b border-[#E7ECF3] text-[#64748B] text-sm">
-                  <th className="p-5 font-semibold w-24">Время</th>
-                  <th className="p-5 font-semibold">Имя</th>
-                  <th className="p-5 font-semibold">Телефон</th>
-                  <th className="p-5 font-semibold">Возраст</th>
-                  <th className="p-5 font-semibold">Услуга</th>
-                  <th className="p-5 font-semibold">Агент</th>
-                  <th className="p-5 font-semibold text-center w-72">Статус визита</th>
-                  <th className="p-5 font-semibold w-16"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={8} className="py-16 text-center text-[#94A3B8] text-sm">Загрузка...</td></tr>
-                ) : bookings.length === 0 ? (
-                  <tr><td colSpan={8} className="py-16 text-center text-[#94A3B8] text-sm">{emptyMsg}</td></tr>
-                ) : bookings.map(b => (
-                  <tr key={b.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors">
-                    <td className="p-5 font-bold text-[#1E293B] text-lg">{b.time}</td>
-                    <td className="p-5 font-semibold text-[#1E293B]">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span>{b.patient_name}</span>
-                        {b.lead_id && (
-                          <span className="px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#2859C5] text-[11px] font-bold">
-                            Клиент
-                          </span>
-                        )}
+        <div className="neu-card p-4 flex flex-wrap gap-3 items-center">
+          <input
+            className="neu-input text-sm flex-1 min-w-60"
+            placeholder="Название нового столбца"
+            value={newStatusName}
+            onChange={e => setNewStatusName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') addStatusColumn();
+            }}
+          />
+          <button
+            className="neu-btn-primary flex items-center gap-2"
+            onClick={addStatusColumn}
+            disabled={!newStatusName.trim() || creatingStatus}
+          >
+            <Plus size={15} />
+            {creatingStatus ? 'Добавление...' : 'Добавить столбец'}
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="neu-card py-16 text-center text-[#94A3B8] text-sm">Загрузка...</div>
+        ) : bookings.length === 0 ? (
+          <div className="neu-card py-16 text-center text-[#94A3B8] text-sm">{emptyMsg}</div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 gap-4 min-h-0">
+            {groupedBookings.map(({ status, items }) => (
+              <section
+                key={status.id}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => {
+                  e.preventDefault();
+                  const booking = bookings.find(item => item.id === e.dataTransfer.getData('text/plain'));
+                  setDraggingBookingId('');
+                  if (booking && statusForBooking(booking)?.id !== status.id) moveBookingToStatus(booking, status);
+                }}
+                className={`rounded-2xl border bg-white overflow-hidden h-[calc(100dvh-300px)] min-h-[520px] flex flex-col transition-colors ${draggingBookingId ? 'border-[#BFDBFE]' : 'border-[#E7ECF3]'}`}
+              >
+                <div className="p-4 border-b border-[#E7ECF3] bg-[#F8FAFC]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold text-[#0B1220]">{status.name}</h3>
+                      <p className="text-xs text-[#94A3B8] mt-0.5">{dateLabel(selectedDate)}</p>
+                    </div>
+                    <span className="rounded-full bg-white border border-[#E7ECF3] px-2.5 py-1 text-xs font-bold text-[#64748B]">
+                      {items.length}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3 space-y-3 overflow-y-auto overscroll-contain flex-1">
+                  {items.length === 0 ? (
+                    <div className="py-10 text-center text-sm text-[#94A3B8]">Нет записей</div>
+                  ) : items.map(b => (
+                    <article
+                      key={b.id}
+                      draggable
+                      onDragStart={e => {
+                        setDraggingBookingId(b.id);
+                        e.dataTransfer.setData('text/plain', b.id);
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragEnd={() => setDraggingBookingId('')}
+                      className={`rounded-xl border border-[#E7ECF3] bg-white p-4 shadow-sm cursor-grab active:cursor-grabbing transition ${draggingBookingId === b.id ? 'opacity-60 ring-2 ring-[#BFDBFE]' : ''}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-bold text-[#0B1220] truncate">{b.patient_name}</div>
+                          <div className="text-xs text-[#94A3B8] mt-0.5">{b.patient_phone ?? 'Телефон не указан'}</div>
+                        </div>
+                        <span className="rounded-full bg-[#EFF6FF] px-2.5 py-1 text-xs font-bold text-[#2859C5] shrink-0">
+                          {b.time}
+                        </span>
                       </div>
-                    </td>
-                    <td className="p-5 text-sm text-[#64748B]">{b.patient_phone ?? '—'}</td>
-                    <td className="p-5 text-sm text-[#64748B]">{b.age ?? '—'}</td>
-                    <td className="p-5 text-sm text-[#64748B]">{svcName(b.service_id)}</td>
-                    <td className="p-5 text-sm text-[#64748B]">{agtName(b.agent_id)}</td>
-                    <td className="p-5">
-                      <div className="flex items-center justify-center gap-2">
+                      <div className="mt-3 space-y-1 text-sm text-[#64748B]">
+                        <div>{svcName(b.service_id)}</div>
+                        <div>{agtName(b.agent_id)}</div>
+                        {b.age != null && <div>{b.age} лет</div>}
+                      </div>
+                      {b.lead_id && (
+                        <span className="mt-3 inline-flex px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#2859C5] text-[11px] font-bold">
+                          Клиент
+                        </span>
+                      )}
+                      <div className="mt-4 grid grid-cols-2 gap-2">
                         <button
                           onClick={() => setVisited(b.id, true)}
-                          className={`px-4 py-2 rounded-full font-semibold text-xs flex items-center gap-1.5 transition-all ${
+                          className={`px-3 py-2 rounded-lg font-semibold text-xs flex items-center justify-center gap-1.5 transition-all ${
                             b.visited === true
                               ? 'bg-green-100 text-green-700 border border-green-200'
-                              : 'neu-sm text-[#64748B] hover:text-green-600'
+                              : 'border border-[#BBF7D0] bg-[#F0FDF4] text-[#16A34A]'
                           }`}
                         >
-                          <Check size={14} strokeWidth={2.5} /> Пришёл
+                          <Check size={13} strokeWidth={2.5} /> Пришёл
                         </button>
                         <button
                           onClick={() => setVisited(b.id, false)}
-                          className={`px-4 py-2 rounded-full font-semibold text-xs flex items-center gap-1.5 transition-all ${
+                          className={`px-3 py-2 rounded-lg font-semibold text-xs flex items-center justify-center gap-1.5 transition-all ${
                             b.visited === false
                               ? 'bg-red-100 text-red-600 border border-red-200'
-                              : 'neu-sm text-[#64748B] hover:text-red-500'
+                              : 'border border-[#FEE2E2] bg-[#FEF2F2] text-[#DC2626]'
                           }`}
                         >
-                          <X size={14} strokeWidth={2.5} /> Не пришёл
+                          <X size={13} strokeWidth={2.5} /> Не пришёл
                         </button>
                       </div>
-                    </td>
-                    <td className="p-5">
                       <button
                         onClick={() => setDeletingId(b.id)}
-                        title="Удалить запись"
-                        className="neu-btn p-1.5 text-[#94A3B8] hover:text-red-500 transition-colors"
+                        className="mt-2 w-full rounded-lg border border-[#E7ECF3] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B] hover:text-red-500 transition-colors flex items-center justify-center gap-1.5"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={13} />
+                        Удалить
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ))}
           </div>
-        </div>
+        )}
 
         {/* Confirm delete */}
         {deletingId && (

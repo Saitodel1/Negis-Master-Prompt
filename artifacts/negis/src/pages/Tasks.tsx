@@ -40,6 +40,8 @@ const columns = [
   { id: 'done', title: 'Выполнено', hint: 'Закрытые задачи' },
 ] as const;
 
+type TaskColumnId = (typeof columns)[number]['id'];
+
 function taskBody(line: string) {
   return line.replace(/^\[([^\]]+)\]\s*Задача:\s*/i, '');
 }
@@ -83,11 +85,33 @@ function columnForTask(task: ClientTask, today: string) {
   return 'upcoming';
 }
 
+function localDateOffset(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+function upsertTaskField(line: string, label: string, value: string) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`((?:^|;)\\s*${escaped}:\\s*)[^;]+`, 'i');
+  if (re.test(line)) return line.replace(re, `$1${value}`);
+  return `${line}; ${label}: ${value}`;
+}
+
+function removeTaskField(line: string, label: string) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return line
+    .replace(new RegExp(`;\\s*${escaped}:\\s*[^;]+`, 'i'), '')
+    .replace(new RegExp(`^\\s*${escaped}:\\s*[^;]+;?\\s*`, 'i'), '')
+    .trim();
+}
+
 export default function Tasks() {
   const { clinicId, user, userRole } = useAuth();
   const [tasks, setTasks] = useState<ClientTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionTaskId, setActionTaskId] = useState('');
+  const [dragTaskId, setDragTaskId] = useState('');
   const [search, setSearch] = useState('');
   const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
@@ -191,6 +215,18 @@ export default function Tasks() {
     if (deleted) toast.success('Задача удалена');
   };
 
+  const moveTask = async (task: ClientTask, columnId: TaskColumnId) => {
+    const saved = await updateTaskLine(task, line => {
+      let next = upsertTaskField(line, 'статус', columnId === 'done' ? 'done' : 'todo');
+      if (columnId === 'overdue') next = upsertTaskField(next, 'срок', localDateOffset(-1));
+      if (columnId === 'today') next = upsertTaskField(next, 'срок', localDateOffset(0));
+      if (columnId === 'upcoming') next = upsertTaskField(next, 'срок', localDateOffset(1));
+      if (columnId === 'noDate') next = removeTaskField(next, 'срок');
+      return next;
+    });
+    if (saved) toast.success('Задача перенесена');
+  };
+
   const filteredTasks = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return tasks;
@@ -246,9 +282,19 @@ export default function Tasks() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 min-h-0">
           {columns.map(column => (
-            <section key={column.id} className="rounded-2xl border border-[#E7ECF3] bg-white overflow-hidden min-h-[520px]">
+            <section
+              key={column.id}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => {
+                e.preventDefault();
+                const task = tasks.find(item => item.id === e.dataTransfer.getData('text/plain'));
+                setDragTaskId('');
+                if (task && columnForTask(task, today) !== column.id) moveTask(task, column.id);
+              }}
+              className={`rounded-2xl border bg-white overflow-hidden h-[calc(100dvh-260px)] min-h-[520px] flex flex-col transition-colors ${dragTaskId ? 'border-[#BFDBFE]' : 'border-[#E7ECF3]'}`}
+            >
               <div className="p-4 border-b border-[#E7ECF3] bg-[#F8FAFC]">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -261,11 +307,21 @@ export default function Tasks() {
                 </div>
               </div>
 
-              <div className="p-3 space-y-3">
+              <div className="p-3 space-y-3 overflow-y-auto overscroll-contain flex-1">
                 {grouped[column.id].length === 0 ? (
                   <div className="py-10 text-center text-sm text-[#94A3B8]">Нет задач</div>
                 ) : grouped[column.id].map(task => (
-                  <article key={task.id} className="rounded-xl border border-[#E7ECF3] bg-white p-4 shadow-sm">
+                  <article
+                    key={task.id}
+                    draggable={actionTaskId !== task.id}
+                    onDragStart={e => {
+                      setDragTaskId(task.id);
+                      e.dataTransfer.setData('text/plain', task.id);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragEnd={() => setDragTaskId('')}
+                    className={`rounded-xl border border-[#E7ECF3] bg-white p-4 shadow-sm cursor-grab active:cursor-grabbing transition ${dragTaskId === task.id ? 'opacity-60 ring-2 ring-[#BFDBFE]' : ''}`}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="font-bold text-[#0B1220] truncate">{task.leadName}</div>
