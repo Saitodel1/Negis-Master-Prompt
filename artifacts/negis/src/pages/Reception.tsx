@@ -14,7 +14,7 @@ interface Booking {
   service_id: string | null; agent_id: string | null; lead_id: string | null;
 }
 interface Service { id: string; name: string }
-interface Agent   { id: string; name: string }
+interface Agent   { id: string; name: string; user_id: string | null }
 interface CrmLead {
   id: string;
   full_name: string | null;
@@ -48,7 +48,7 @@ const dateLabel = (d: Date) => {
 };
 
 export default function Reception() {
-  const { clinicId } = useAuth();
+  const { clinicId, user } = useAuth();
   const [bookings, setBookings]     = useState<Booking[]>([]);
   const [services, setServices]     = useState<Service[]>([]);
   const [agents,   setAgents]       = useState<Agent[]>([]);
@@ -73,7 +73,7 @@ export default function Reception() {
     if (!clinicId) return;
     const [{ data: svc }, { data: agt }] = await Promise.all([
       supabase.from('services').select('id, name').eq('clinic_id', clinicId),
-      supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
+      supabase.from('agents').select('id, name, user_id').eq('clinic_id', clinicId),
     ]);
     setServices(svc ?? []);
     setAgents(agt ?? []);
@@ -95,6 +95,7 @@ export default function Reception() {
 
   const svcName = (id: string | null) => id ? (services.find(s => s.id === id)?.name ?? '—') : '—';
   const agtName = (id: string | null) => id ? (agents.find(a => a.id === id)?.name ?? '—') : '—';
+  const currentAgentId = () => agents.find(a => a.user_id === user?.id)?.id ?? null;
 
   const appendVisitNote = (comment: string | null, booking: Booking) => {
     const note = [
@@ -153,7 +154,7 @@ export default function Reception() {
       phone: targetLead?.phone || booking.patient_phone,
       age: targetLead?.age ?? booking.age,
       source: targetLead?.source || 'Ресепшн',
-      assigned_to: targetLead?.assigned_to || booking.agent_id,
+      assigned_to: targetLead?.assigned_to || currentAgentId(),
       status_id: targetLead?.pipeline === 'sales'
         ? (targetLead.status_id || defaultStatusId)
         : defaultStatusId,
@@ -178,25 +179,28 @@ export default function Reception() {
       crmLeadId = data.id;
     }
 
-    if (crmLeadId && booking.lead_id !== crmLeadId) {
-      const { error } = await supabase.from('bookings').update({ lead_id: crmLeadId }).eq('id', booking.id);
-      if (error) throw error;
-    }
     return crmLeadId;
   };
 
   const setVisited = async (id: string, visited: boolean) => {
     const booking = bookings.find(b => b.id === id);
-    const { error } = await supabase.from('bookings').update({ visited }).eq('id', id);
-    if (error) { toast.error(error.message); return; }
     let crmLeadId: string | null = null;
-    if (visited && booking) {
+    if (visited) {
+      if (!booking) {
+        toast.error('Запись не найдена');
+        return;
+      }
       try {
         crmLeadId = await promoteBookingToCrm(booking);
       } catch (e: any) {
         toast.error(e.message || 'Не удалось добавить пациента в CRM');
+        return;
       }
     }
+    const updatePayload: { visited: boolean; lead_id?: string } = { visited };
+    if (crmLeadId) updatePayload.lead_id = crmLeadId;
+    const { error } = await supabase.from('bookings').update(updatePayload).eq('id', id);
+    if (error) { toast.error(error.message); return; }
     setBookings(b => b.map(x => x.id === id ? { ...x, visited, lead_id: crmLeadId ?? x.lead_id } : x));
     toast.success(visited ? 'Отмечен: Пришёл, пациент добавлен в CRM' : 'Отмечен: Не пришёл');
   };
