@@ -212,7 +212,7 @@ export default function Reception() {
       try {
         crmLeadId = await promoteBookingToCrm(booking);
       } catch (e: any) {
-        toast.error(e.message || 'Не удалось добавить пациента в CRM');
+        toast.error(e.message || 'Не удалось добавить пациента в Clients');
         return;
       }
     }
@@ -221,7 +221,7 @@ export default function Reception() {
     const { error } = await supabase.from('bookings').update(updatePayload).eq('id', id);
     if (error) { toast.error(error.message); return; }
     setBookings(b => b.map(x => x.id === id ? { ...x, visited, lead_id: crmLeadId ?? x.lead_id } : x));
-    toast.success(visited ? 'Отмечен: Пришёл, пациент добавлен в CRM' : 'Отмечен: Не пришёл');
+    toast.success(visited ? 'Отмечен: Пришёл, пациент добавлен в Clients' : 'Отмечен: Не пришёл');
   };
 
   const deleteBooking = async (id: string) => {

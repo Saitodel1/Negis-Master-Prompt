@@ -468,10 +468,10 @@ function CampaignDetailModal({ campaign, clinicId, onClose }: {
             </div>
           </div>
 
-          {/* CRM leads */}
+          {/* Clients leads */}
           <div>
             <h3 className="font-bold text-[#1E293B] mb-3 text-sm">
-              Лиды из CRM {!loadingCrm && `(${crmLeads.length})`}
+              Лиды из Clients {!loadingCrm && `(${crmLeads.length})`}
             </h3>
             {loadingCrm ? (
               <p className="text-sm text-[#94A3B8]">Загрузка...</p>
@@ -1455,8 +1455,8 @@ function WebhookSection({ clinicId }: { clinicId: string }) {
                 'Откройте Meta Business Suite (business.facebook.com)',
                 'Слева: All Tools → Instant Forms',
                 'Выберите Lead форму → Edit',
-                'Вкладка Settings → CRM Integration',
-                'Нажмите "Connect CRM" → Other',
+                'Вкладка Settings → Clients Integration',
+                'Нажмите "Connect Clients" → Other',
                 'Вставьте Webhook URL из поля выше',
                 'Нажмите "Save" → Done',
               ].map((step, i) => (
@@ -1682,7 +1682,7 @@ function LeadsImportTab({ clinicId }: { clinicId: string }) {
         <div>
           <h3 className="font-bold text-[#0B1220] mb-1">Импорт лидов из рекламы</h3>
           <p className="text-sm text-[#64748B] leading-relaxed">
-            Вытягивает реальные контакты из Facebook Lead Ads форм и TikTok Lead Generation прямо в CRM.
+            Вытягивает реальные контакты из Facebook Lead Ads форм и TikTok Lead Generation прямо в Clients.
             Использует разрешения <span className="font-mono text-xs bg-[#F1F5F9] px-1.5 py-0.5 rounded">leads_retrieval</span>.
             Дубликаты по номеру телефона автоматически пропускаются.
           </p>
@@ -1694,7 +1694,7 @@ function LeadsImportTab({ clinicId }: { clinicId: string }) {
         <div>
           <label className="block text-xs font-semibold text-[#64748B] mb-2">Куда добавлять лиды</label>
           <div className="flex gap-2">
-            {([['sales', 'CRM продаж'], ['booking', 'Лиды записей']] as const).map(([v, l]) => (
+            {([['sales', 'Clients продаж'], ['booking', 'Лиды записей']] as const).map(([v, l]) => (
               <button key={v} onClick={() => setPipeline(v)}
                 className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${pipeline === v ? 'neu-pressed-sm text-[#1A56DB]' : 'neu-sm text-[#64748B]'}`}>
                 {l}

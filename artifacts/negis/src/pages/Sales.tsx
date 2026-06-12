@@ -150,6 +150,7 @@ export default function Sales() {
   const [leadBookings, setLeadBookings] = useState<BookingHistory[]>([]);
   const [leadBookingsLoading, setLeadBookingsLoading] = useState(false);
   const [quickNote, setQuickNote] = useState('');
+  const [taskForm, setTaskForm] = useState({ text: '', dueDate: '' });
   const [procedureForm, setProcedureForm] = useState({
     received: '',
     planned: '',
@@ -222,6 +223,7 @@ export default function Sales() {
     if (selectedLead) {
       setLeadDetailTab('overview');
       setQuickNote('');
+      setTaskForm({ text: '', dueDate: '' });
       setProcedureForm({
         received: '',
         planned: '',
@@ -544,6 +546,7 @@ export default function Sales() {
   const crmPotentialValue = manualPotentialValue || potentialServiceValue;
   const crmPaidValue = manualPaidValue;
   const crmRemainingValue = Math.max(crmPotentialValue - crmPaidValue, 0);
+  const leadTaskLines = commentLines.filter(line => /^\[[^\]]+\]\s*Задача:/i.test(line));
   const timelineItems = selectedLead ? [
     { id: 'created', date: selectedLead.created_at, title: 'Лид создан', body: selectedLead.source ? `Источник: ${selectedLead.source}` : 'Первое обращение' },
     ...commentLines.map((line, index) => ({ id: `note-${index}`, date: selectedLead.created_at, title: 'Заметка', body: line })),
@@ -572,6 +575,12 @@ export default function Sales() {
   const appendQuickNote = async () => {
     const saved = await appendLeadHistory('Комментарий', quickNote);
     if (saved) setQuickNote('');
+  };
+  const appendClientTask = async () => {
+    if (!taskForm.text.trim()) { toast.error('Напишите задачу'); return; }
+    if (!taskForm.dueDate) { toast.error('Выберите дату задачи'); return; }
+    const saved = await appendLeadHistory('Задача', `${taskForm.text.trim()}; срок: ${taskForm.dueDate}; статус: todo`);
+    if (saved) setTaskForm({ text: '', dueDate: '' });
   };
   const appendProcedureHistory = async () => {
     if (!procedureForm.received.trim() && !procedureForm.planned.trim() && !procedureForm.paid.trim() && !procedureForm.purchaseAmount.trim() && !procedureForm.bought.trim()) {
@@ -621,7 +630,7 @@ export default function Sales() {
 
         {/* ── Header ── */}
         <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold">Negis CRM</h2>
+          <h2 className="text-2xl font-bold">Negis Clients</h2>
           <button className="neu-btn-primary flex items-center gap-2" onClick={() => setShowNew(true)}>
             <Plus size={16} /> Новый лид
           </button>
@@ -1243,7 +1252,7 @@ export default function Sales() {
                           />
                         ) : (
                           <div className="rounded-xl border border-[#E7ECF3] p-6 text-sm text-[#64748B]">
-                            Нужно войти в CRM, чтобы открыть WhatsApp.
+                            Нужно войти в Clients, чтобы открыть WhatsApp.
                           </div>
                         )}
                       </div>
@@ -1252,14 +1261,44 @@ export default function Sales() {
                     {leadDetailTab === 'tasks' && (
                       <div className="space-y-4">
                         <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4">
-                          <div className="font-semibold text-[#0B1220]">Следующее действие</div>
+                          <div className="font-semibold text-[#0B1220]">Новая задача</div>
                           <div className="text-sm text-[#64748B] mt-1">
-                            Добавьте задачу как заметку: когда связаться, что отправить, что уточнить, какой результат нужен.
+                            Напишите, что нужно сделать по клиенту, и выберите дату. Задача появится в общем разделе Tasks.
                           </div>
                         </div>
-                        <textarea style={{ ...IS, minHeight: 220, resize: 'vertical' } as React.CSSProperties}
-                          value={selectedLead.comment ?? ''}
-                          onChange={e => setSelectedLead(l => l ? { ...l, comment: e.target.value } : l)} />
+                        <div className="grid grid-cols-1 md:grid-cols-[1fr_180px] gap-4">
+                          <div>
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Что сделать</label>
+                            <textarea style={{ ...IS, minHeight: 140, resize: 'vertical' } as React.CSSProperties}
+                              placeholder="Например: связаться, отправить план лечения, уточнить оплату курса"
+                              value={taskForm.text}
+                              onChange={e => setTaskForm(f => ({ ...f, text: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="text-xs text-[#64748B] font-medium block mb-1.5">Дата задачи</label>
+                            <input type="date" style={IS} value={taskForm.dueDate}
+                              onChange={e => setTaskForm(f => ({ ...f, dueDate: e.target.value }))} />
+                            <button onClick={appendClientTask}
+                              disabled={!taskForm.text.trim() || !taskForm.dueDate}
+                              className="mt-3 w-full px-4 py-3 rounded-xl bg-[#1E325C] text-white text-sm font-semibold disabled:opacity-50">
+                              Добавить задачу
+                            </button>
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-[#E7ECF3] overflow-hidden">
+                          <div className="px-4 py-3 bg-[#F8FAFC] text-sm font-semibold text-[#0B1220]">Задачи клиента</div>
+                          {leadTaskLines.length === 0 ? (
+                            <div className="p-4 text-sm text-[#94A3B8]">По клиенту пока нет задач.</div>
+                          ) : (
+                            <div className="divide-y divide-[#EEF2F6]">
+                              {leadTaskLines.map((line, index) => (
+                                <div key={`${line}-${index}`} className="p-4 text-sm text-[#64748B]">
+                                  {line}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

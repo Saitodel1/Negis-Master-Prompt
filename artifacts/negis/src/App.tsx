@@ -12,6 +12,7 @@ import Dashboard from "@/pages/Dashboard";
 import Booking from "@/pages/Booking";
 import Reception from "@/pages/Reception";
 import Sales from "@/pages/Sales";
+import Tasks from "@/pages/Tasks";
 import Agent from "@/pages/Agent";
 import Admin from "@/pages/Admin";
 import Ads from "@/pages/Ads";
@@ -74,6 +75,7 @@ function Router() {
       <Route path="/booking" component={Booking} />
       <Route path="/reception" component={Reception} />
       <Route path="/sales" component={Sales} />
+      <Route path="/tasks" component={Tasks} />
       <Route path="/agent" component={Agent} />
       <Route path="/admin" component={Admin} />
       <Route path="/ads" component={Ads} />

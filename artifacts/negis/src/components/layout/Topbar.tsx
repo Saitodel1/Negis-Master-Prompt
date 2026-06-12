@@ -9,7 +9,8 @@ const PAGE_LABELS: Record<string, string> = {
   '/dashboard': 'DASHBOARD',
   '/booking':   'BOOKING',
   '/reception': 'RECEPTION',
-  '/sales':     'CRM',
+  '/sales':     'CLIENTS',
+  '/tasks':     'TASKS',
   '/agent':     'AGENT',
   '/admin':     'ADMIN',
 };
