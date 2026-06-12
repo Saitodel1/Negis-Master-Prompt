@@ -4,6 +4,7 @@ import { Calendar, TrendingUp, DollarSign, Users } from 'lucide-react';
 import { useGetDashboardMetrics } from '@workspace/api-client-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { agentDisplayName, loadAgentRoleMaps } from '@/lib/agentDisplay';
 
 const SLOT_HOURS = [10, 11, 12, 13, 14, 15, 16, 17];
 const MAX_PER_SLOT = 3;
@@ -11,6 +12,7 @@ const MAX_PER_SLOT = 3;
 interface AgentRace {
   id: string;
   name: string;
+  displayName: string;
   initials: string;
   bookings: number;
   weekly_target: number;
@@ -44,7 +46,7 @@ export default function Dashboard() {
     const weekStartStr = weekStart.toISOString().split('T')[0];
 
     const [{ data: agentsData }, { data: todayBookings }, { data: weekBookings }] = await Promise.all([
-      supabase.from('agents').select('id, name, weekly_target').eq('clinic_id', clinicId).order('name'),
+      supabase.from('agents').select('id, name, user_id, role_id, weekly_target').eq('clinic_id', clinicId).order('name'),
       supabase.from('bookings').select('time, agent_id').eq('clinic_id', clinicId).eq('date', today),
       supabase.from('bookings').select('agent_id').eq('clinic_id', clinicId).gte('date', weekStartStr),
     ]);
@@ -63,6 +65,7 @@ export default function Dashboard() {
     }
 
     if (agentsData) {
+      const maps = await loadAgentRoleMaps(supabase, clinicId, agentsData as any);
       const weekMap: Record<string, number> = {};
       for (const b of (weekBookings ?? [])) {
         if (b.agent_id) weekMap[b.agent_id] = (weekMap[b.agent_id] ?? 0) + 1;
@@ -71,7 +74,7 @@ export default function Dashboard() {
         const parts = a.name.trim().split(' ');
         const initials = parts.map((p: string) => p[0]?.toUpperCase() ?? '').slice(0, 2).join('');
         return {
-          id: a.id, name: a.name, initials,
+          id: a.id, name: a.name, displayName: agentDisplayName(a as any, maps.customRoleMap, maps.userRoleMap), initials,
           bookings: weekMap[a.id] ?? 0,
           weekly_target: a.weekly_target ?? 20,
         };
@@ -178,7 +181,7 @@ export default function Dashboard() {
                           {agent.initials}
                         </div>
                         <div>
-                          <p className="font-semibold text-sm">{agent.name}</p>
+                          <p className="font-semibold text-sm">{agent.displayName}</p>
                           <p className="text-xs text-[#64748B]">{agent.bookings} / {agent.weekly_target} записей</p>
                         </div>
                       </div>

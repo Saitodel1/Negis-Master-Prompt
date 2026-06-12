@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { agentDisplayName, loadAgentRoleMaps } from '@/lib/agentDisplay';
 import { toast } from 'sonner';
 import { trackEvent } from '@/lib/fbpixel';
 import Papa from 'papaparse';
@@ -37,7 +38,7 @@ interface Booking {
   time: string; date: string;
 }
 interface Service    { id: string; name: string; price: number }
-interface Agent      { id: string; name: string; user_id: string | null }
+interface Agent      { id: string; name: string; user_id: string | null; role_id?: string | null }
 interface Lead {
   id: string; clinic_id: string;
   full_name: string | null; phone: string | null; email: string | null;
@@ -145,6 +146,8 @@ export default function Booking() {
   const [bookings, setBookings]   = useState<Booking[]>([]);
   const [services, setServices]   = useState<Service[]>([]);
   const [agents,   setAgents]     = useState<Agent[]>([]);
+  const [customRoleMap, setCustomRoleMap] = useState<Record<string, string>>({});
+  const [userRoleMap, setUserRoleMap] = useState<Record<string, string>>({});
   const [myAgentId, setMyAgentId] = useState<string | null>(null);
   const [calLoading, setCalLoading] = useState(false);
   const [now, setNow] = useState<Date>(new Date());
@@ -242,11 +245,15 @@ export default function Booking() {
   const loadMeta = async () => {
     const [s, a, me] = await Promise.all([
       supabase.from('services').select('id, name, price').eq('clinic_id', clinicId),
-      supabase.from('agents').select('id, name, user_id').eq('clinic_id', clinicId).order('name'),
+      supabase.from('agents').select('id, name, user_id, role_id').eq('clinic_id', clinicId).order('name'),
       supabase.from('agents').select('id').eq('clinic_id', clinicId).eq('user_id', user?.id ?? '').single(),
     ]);
     setServices(s.data || []);
-    setAgents(a.data || []);
+    const agentRows = (a.data || []) as Agent[];
+    setAgents(agentRows);
+    const maps = await loadAgentRoleMaps(supabase, clinicId, agentRows);
+    setCustomRoleMap(maps.customRoleMap);
+    setUserRoleMap(maps.userRoleMap);
     if (me.data) setMyAgentId(me.data.id);
   };
 
@@ -698,7 +705,8 @@ export default function Booking() {
   const agentForLead = (lead: Lead) =>
     agents.find(a => a.id === lead.assigned_to) ??
     agents.find(a => a.user_id === lead.assigned_to) ?? null;
-  const agentName = (lead: Lead) => agentForLead(lead)?.name ?? '—';
+  const agentLabel = (agent: Agent | null | undefined) => agentDisplayName(agent, customRoleMap, userRoleMap);
+  const agentName = (lead: Lead) => agentLabel(agentForLead(lead));
 
   const statusColor = (lead: Lead) => lead.lead_statuses?.color ?? '#94A3B8';
   const statusName  = (lead: Lead) => lead.lead_statuses?.name  ?? '—';
@@ -926,7 +934,7 @@ export default function Booking() {
             {(userRole === 'owner' || userRole === 'manager') && (
               <select style={{ ...IS, width: 160 }} value={bkFilterAgent} onChange={e => setBkFilterAgent(e.target.value)}>
                 <option value="">Все агенты</option>
-                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
               </select>
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1018,7 +1026,7 @@ export default function Booking() {
                   <>
                     <select style={{ ...IS, width: 180 }} value={bkBulkAgentId} onChange={e => setBkBulkAgentId(e.target.value)}>
                       <option value="">— снять —</option>
-                      {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
                     </select>
                     <button
                       type="button"
@@ -1287,7 +1295,7 @@ export default function Booking() {
                   <select className="neu-input" value={calForm.agent_id}
                     onChange={e => setCalForm(f => ({ ...f, agent_id: e.target.value }))}>
                     <option value="">— не выбрано —</option>
-                    {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
                   </select>
                 </FieldGroup>
               )}
@@ -1349,7 +1357,7 @@ export default function Booking() {
                   <label style={{ fontSize: 11, fontWeight: 500, color: '#64748B', display: 'block', marginBottom: 5 }}>Ответственный</label>
                   <select style={IS} value={leadForm.assigned_to} onChange={e => setLeadForm(f => ({ ...f, assigned_to: e.target.value }))}>
                     <option value="">— выбрать —</option>
-                    {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
                   </select>
                 </div>
               )}
@@ -1423,7 +1431,7 @@ export default function Booking() {
                     <label style={{ fontSize: 11, fontWeight: 500, color: '#64748B', display: 'block', marginBottom: 5 }}>Ответственный</label>
                     <select style={IS} value={selectedLead.assigned_to ?? ''} onChange={e => setSelectedLead(l => l ? { ...l, assigned_to: e.target.value || null } : l)}>
                       <option value="">— выбрать —</option>
-                      {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
                     </select>
                   </div>
                 )}
@@ -1562,7 +1570,7 @@ export default function Booking() {
                         <label style={{ fontSize: 11, color: '#64748B', fontWeight: 500, display: 'block', marginBottom: 5 }}>Агент</label>
                         <select style={BkIS} value={bflForm.agent_id} onChange={e => setBflForm(f => ({ ...f, agent_id: e.target.value }))}>
                           <option value="">— выбрать —</option>
-                          {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                          {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
                         </select>
                       </div>
                       <div style={{ gridColumn: '1 / -1' }}>

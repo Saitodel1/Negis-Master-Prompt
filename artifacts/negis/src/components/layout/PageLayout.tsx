@@ -1,6 +1,6 @@
 import React from 'react';
-import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import { TopNav } from './TopNav';
 import { useAuth } from '@/contexts/AuthContext';
 import { Redirect } from 'wouter';
 
@@ -16,37 +16,33 @@ export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
-        style={{ background: '#F4F7FB' }}
+        style={{ background: '#EEF7F1' }}
       >
-        <div style={{ fontSize: 12, letterSpacing: '0.14em', color: '#94A3B8', fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ fontSize: 12, letterSpacing: '0.14em', color: '#8EA0B7', fontFamily: "'Inter', sans-serif" }}>
           ЗАГРУЗКА...
         </div>
       </div>
     );
   }
 
-  /* Allow through if: normal Supabase session OR active impersonation */
   if (requireAuth && !session && !isImpersonation) {
     return <Redirect to="/" />;
   }
 
   return (
     <div
-      className="min-h-[100dvh] flex font-sans"
+      className="min-h-[100dvh] flex flex-col font-sans"
       style={{
-        background: '#F4F7FB',
+        background: 'radial-gradient(circle at 12% 0%, rgba(201,236,214,0.78), transparent 30%), radial-gradient(circle at 86% 8%, rgba(218,231,255,0.62), transparent 28%), #EEF7F1',
         color: '#0B1220',
-        /* Push content down when impersonation banner is showing */
         paddingTop: isImpersonation ? 40 : 0,
       }}
     >
-      <Sidebar />
-      <div className="flex-1 flex flex-col" style={{ marginLeft: 78 }}>
-        <Topbar />
-        <main className="flex-1 overflow-y-auto" style={{ padding: '32px 40px' }}>
-          {children}
-        </main>
-      </div>
+      <Topbar />
+      <TopNav />
+      <main className="flex-1 overflow-y-auto" style={{ padding: '28px clamp(18px, 3vw, 40px) 40px' }}>
+        {children}
+      </main>
     </div>
   );
 }

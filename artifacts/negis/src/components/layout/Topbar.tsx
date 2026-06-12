@@ -4,15 +4,16 @@ import { Bell } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { agentDisplayName, loadAgentRoleMaps, type AgentDisplayInfo } from '@/lib/agentDisplay';
 
 const PAGE_LABELS: Record<string, string> = {
-  '/dashboard': 'DASHBOARD',
-  '/booking':   'BOOKING',
-  '/reception': 'RECEPTION',
-  '/sales':     'CLIENTS',
-  '/tasks':     'TASKS',
-  '/agent':     'AGENT',
-  '/admin':     'ADMIN',
+  '/dashboard': 'Дашборд',
+  '/booking':   'Запись',
+  '/reception': 'Ресепшн',
+  '/sales':     'Клиенты',
+  '/tasks':     'Задачи',
+  '/agent':     'Агент',
+  '/admin':     'Админ',
 };
 
 interface Notif {
@@ -76,7 +77,7 @@ export function Topbar() {
 
     const load = async () => {
       const [{ data: agentsData }, { data: bookings }] = await Promise.all([
-        supabase.from('agents').select('id, name').eq('clinic_id', clinicId),
+        supabase.from('agents').select('id, name, user_id, role_id').eq('clinic_id', clinicId),
         supabase
           .from('bookings')
           .select('id, patient_name, date, time, created_at')
@@ -85,7 +86,9 @@ export function Topbar() {
           .limit(15),
       ]);
 
-      agentsRef.current = Object.fromEntries((agentsData ?? []).map(a => [a.id, a.name]));
+      const agentRows = (agentsData ?? []) as AgentDisplayInfo[];
+      const maps = await loadAgentRoleMaps(supabase, clinicId, agentRows);
+      agentsRef.current = Object.fromEntries(agentRows.map(a => [a.id, agentDisplayName(a, maps.customRoleMap, maps.userRoleMap)]));
       setNotifs((bookings ?? []).map(buildNotif));
     };
 
@@ -127,9 +130,9 @@ export function Topbar() {
       className="flex items-center justify-between shrink-0 sticky top-0 z-10 px-8"
       style={{
         height: 56,
-        background: 'rgba(244,247,251,0.9)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid #E7ECF3',
+        background: 'rgba(239, 248, 242, 0.76)',
+        backdropFilter: 'blur(18px)',
+        borderBottom: '1px solid rgba(219, 232, 224, 0.85)',
       }}
     >
       {/* Left — breadcrumb label */}
@@ -138,21 +141,21 @@ export function Topbar() {
           style={{
             fontSize: 12,
             fontWeight: 500,
-            letterSpacing: '0.14em',
-            color: '#94A3B8',
+            letterSpacing: '0.16em',
+            color: '#8EA0B7',
             fontFamily: "'Inter', sans-serif",
             userSelect: 'none',
           }}
         >
           NEGIS
         </span>
-        <span style={{ color: '#DDE5EE', fontSize: 14 }}>/</span>
+        <span style={{ color: '#CAD8E5', fontSize: 14 }}>/</span>
         <span
           style={{
             fontSize: 12,
             fontWeight: 600,
-            letterSpacing: '0.14em',
-            color: '#475569',
+            letterSpacing: '0.08em',
+            color: '#4F6078',
             fontFamily: "'Inter', sans-serif",
             userSelect: 'none',
           }}

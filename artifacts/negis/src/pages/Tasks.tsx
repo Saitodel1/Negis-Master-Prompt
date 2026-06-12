@@ -259,11 +259,11 @@ export default function Tasks() {
       <div className="space-y-5">
         <div className="flex justify-between items-center gap-4">
           <div>
-            <h2 className="text-2xl font-bold">Tasks</h2>
+            <h2 className="text-2xl font-bold">Задачи</h2>
             <p className="text-sm text-[#64748B] mt-1">Задачи, созданные в карточках клиентов.</p>
           </div>
           <Link href="/sales">
-            <button className="neu-btn-primary">Открыть Clients</button>
+            <button className="neu-btn-primary">Открыть клиентов</button>
           </Link>
         </div>
 

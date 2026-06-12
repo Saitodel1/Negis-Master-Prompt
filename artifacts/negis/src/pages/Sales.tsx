@@ -6,6 +6,7 @@ import { Search, Plus, X, Check, ArrowUpDown, Calendar, Trash2, User, Tag, Calen
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWazzupInbox } from '@/hooks/useWazzupInbox';
+import { agentDisplayName, loadAgentRoleMaps } from '@/lib/agentDisplay';
 import { toast } from 'sonner';
 import { trackEvent } from '@/lib/fbpixel';
 import { DayPicker } from 'react-day-picker';
@@ -25,7 +26,7 @@ interface Lead {
   lead_statuses?: { name: string; color: string } | null;
 }
 interface LeadStatus { id: string; name: string; color: string }
-interface Agent { id: string; name: string; user_id: string | null }
+interface Agent { id: string; name: string; user_id: string | null; role_id?: string | null }
 interface Service { id: string; name: string; price: number }
 interface BookingHistory {
   id: string;
@@ -117,6 +118,8 @@ export default function Sales() {
   const [leads, setLeads]       = useState<Lead[]>([]);
   const [statuses, setStatuses] = useState<LeadStatus[]>([]);
   const [agents, setAgents]     = useState<Agent[]>([]);
+  const [customRoleMap, setCustomRoleMap] = useState<Record<string, string>>({});
+  const [userRoleMap, setUserRoleMap] = useState<Record<string, string>>({});
   const [myAgentId, setMyAgentId] = useState<string | null>(null);
   const [loading, setLoading]   = useState(true);
 
@@ -181,13 +184,17 @@ export default function Sales() {
     setLoading(true);
     const [{ data: sl }, { data: ag }, { data: sv }] = await Promise.all([
       supabase.from('lead_statuses').select('id, name, color').eq('clinic_id', clinicId).eq('pipeline', 'sales').order('sort_order'),
-      supabase.from('agents').select('id, name, user_id').eq('clinic_id', clinicId).order('name'),
+      supabase.from('agents').select('id, name, user_id, role_id').eq('clinic_id', clinicId).order('name'),
       supabase.from('services').select('id, name, price').eq('clinic_id', clinicId).order('name'),
     ]);
     setStatuses(sl ?? []);
-    setAgents(ag ?? []);
+    const agentRows = (ag ?? []) as Agent[];
+    setAgents(agentRows);
+    const maps = await loadAgentRoleMaps(supabase, clinicId, agentRows);
+    setCustomRoleMap(maps.customRoleMap);
+    setUserRoleMap(maps.userRoleMap);
     setServices(sv ?? []);
-    const mine = user && ag ? ag.find(a => a.user_id === user.id) : null;
+    const mine = user ? agentRows.find(a => a.user_id === user.id) : null;
     const mineId = mine?.id ?? null;
     setMyAgentId(mineId);
     await loadLeads(sl ?? [], mineId);
@@ -485,10 +492,11 @@ export default function Sales() {
   const agentForLead = (lead: Lead) =>
     agents.find(a => a.id === lead.assigned_to) ??
     agents.find(a => a.user_id === lead.assigned_to) ?? null;
-  const agentName = (lead: Lead) => agentForLead(lead)?.name ?? '—';
+  const agentLabel = (agent: Agent | null | undefined) => agentDisplayName(agent, customRoleMap, userRoleMap);
+  const agentName = (lead: Lead) => agentLabel(agentForLead(lead));
   const serviceName = (id: string | null) => id ? (services.find(s => s.id === id)?.name ?? '—') : '—';
   const servicePrice = (id: string | null) => id ? (services.find(s => s.id === id)?.price ?? 0) : 0;
-  const bookingAgentName = (id: string | null) => id ? (agents.find(a => a.id === id)?.name ?? '—') : '—';
+  const bookingAgentName = (id: string | null) => id ? agentLabel(agents.find(a => a.id === id)) : '—';
   const money = (value: number) => value.toLocaleString('ru-RU') + ' ₸';
   const parseMoneyValue = (value: string | null | undefined) => {
     if (!value) return 0;
@@ -630,7 +638,7 @@ export default function Sales() {
 
         {/* ── Header ── */}
         <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold">Negis Clients</h2>
+          <h2 className="text-2xl font-bold">Negis Клиенты</h2>
           <button className="neu-btn-primary flex items-center gap-2" onClick={() => setShowNew(true)}>
             <Plus size={16} /> Новый лид
           </button>
@@ -650,7 +658,7 @@ export default function Sales() {
           {(userRole === 'owner' || userRole === 'manager') && (
             <select className="neu-input text-sm w-40" value={filterAgent} onChange={e => setFilterAgent(e.target.value)}>
               <option value="">Все агенты</option>
-              {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
             </select>
           )}
           <select className="neu-input text-sm w-36" value={filterSource} onChange={e => setFilterSource(e.target.value)}>
@@ -715,7 +723,7 @@ export default function Sales() {
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <select style={BSEL} value={bulkAgentId} onChange={e => setBulkAgentId(e.target.value)}>
                   <option value="">— снять —</option>
-                  {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
                 </select>
                 <BulkConfirmBtn disabled={bulkLoading} onClick={() => bulkUpdate({ assigned_to: safeAgentId(bulkAgentId) })}>
                   {bulkLoading ? '...' : 'Применить'}
@@ -922,7 +930,7 @@ export default function Sales() {
                     <label className="text-xs text-[#64748B] font-medium block mb-1.5">Ответственный</label>
                     <select style={IS} value={form.assigned_to} onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))}>
                       <option value="">— выбрать —</option>
-                      {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
                     </select>
                   </div>
                 )}
@@ -1052,7 +1060,7 @@ export default function Sales() {
                               <label className="text-xs text-[#64748B] font-medium block mb-1.5">Ответственный</label>
                               <select style={IS} value={selectedLead.assigned_to ?? ''} onChange={e => setSelectedLead(l => l ? { ...l, assigned_to: e.target.value || null } : l)}>
                                 <option value="">— выбрать —</option>
-                                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
                               </select>
                             </div>
                           )}
@@ -1252,7 +1260,7 @@ export default function Sales() {
                           />
                         ) : (
                           <div className="rounded-xl border border-[#E7ECF3] p-6 text-sm text-[#64748B]">
-                            Нужно войти в Clients, чтобы открыть WhatsApp.
+                            Нужно войти в раздел «Клиенты», чтобы открыть WhatsApp.
                           </div>
                         )}
                       </div>
@@ -1263,7 +1271,7 @@ export default function Sales() {
                         <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4">
                           <div className="font-semibold text-[#0B1220]">Новая задача</div>
                           <div className="text-sm text-[#64748B] mt-1">
-                            Напишите, что нужно сделать по клиенту, и выберите дату. Задача появится в общем разделе Tasks.
+                            Напишите, что нужно сделать по клиенту, и выберите дату. Задача появится в общем разделе «Задачи».
                           </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-[1fr_180px] gap-4">
@@ -1437,7 +1445,7 @@ export default function Sales() {
                           <label style={{ fontSize: 11, color: '#64748B', fontWeight: 500, display: 'block', marginBottom: 5 }}>Агент</label>
                           <select style={{ ...BkIS }} value={bkForm.agent_id} onChange={e => setBkForm(f => ({ ...f, agent_id: e.target.value }))}>
                             <option value="">— выбрать —</option>
-                            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                            {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
                           </select>
                         </div>
                         <div style={{ gridColumn: '1 / -1' }}>

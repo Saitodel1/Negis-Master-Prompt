@@ -471,7 +471,7 @@ function CampaignDetailModal({ campaign, clinicId, onClose }: {
           {/* Clients leads */}
           <div>
             <h3 className="font-bold text-[#1E293B] mb-3 text-sm">
-              Лиды из Clients {!loadingCrm && `(${crmLeads.length})`}
+              Лиды из раздела «Клиенты» {!loadingCrm && `(${crmLeads.length})`}
             </h3>
             {loadingCrm ? (
               <p className="text-sm text-[#94A3B8]">Загрузка...</p>
@@ -1694,7 +1694,7 @@ function LeadsImportTab({ clinicId }: { clinicId: string }) {
         <div>
           <label className="block text-xs font-semibold text-[#64748B] mb-2">Куда добавлять лиды</label>
           <div className="flex gap-2">
-            {([['sales', 'Clients продаж'], ['booking', 'Лиды записей']] as const).map(([v, l]) => (
+            {([['sales', 'Клиенты / продажи'], ['booking', 'Лиды записей']] as const).map(([v, l]) => (
               <button key={v} onClick={() => setPipeline(v)}
                 className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${pipeline === v ? 'neu-pressed-sm text-[#1A56DB]' : 'neu-sm text-[#64748B]'}`}>
                 {l}

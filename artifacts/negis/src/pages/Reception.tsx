@@ -4,6 +4,7 @@ import { Check, X, Trash2, ChevronLeft, ChevronRight, CalendarDays, Plus } from 
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { agentDisplayName, loadAgentRoleMaps } from '@/lib/agentDisplay';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { ru } from 'date-fns/locale';
@@ -14,7 +15,7 @@ interface Booking {
   service_id: string | null; agent_id: string | null; lead_id: string | null; status_id: string | null;
 }
 interface Service { id: string; name: string }
-interface Agent   { id: string; name: string; user_id: string | null }
+interface Agent   { id: string; name: string; user_id: string | null; role_id?: string | null }
 interface BookingStatus { id: string; name: string; color: string | null; sort_order: number | null }
 interface CrmLead {
   id: string;
@@ -53,6 +54,8 @@ export default function Reception() {
   const [bookings, setBookings]     = useState<Booking[]>([]);
   const [services, setServices]     = useState<Service[]>([]);
   const [agents,   setAgents]       = useState<Agent[]>([]);
+  const [customRoleMap, setCustomRoleMap] = useState<Record<string, string>>({});
+  const [userRoleMap, setUserRoleMap] = useState<Record<string, string>>({});
   const [bookingStatuses, setBookingStatuses] = useState<BookingStatus[]>([]);
   const [loading, setLoading]       = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -78,11 +81,15 @@ export default function Reception() {
     if (!clinicId) return;
     const [{ data: svc }, { data: agt }, { data: statuses }] = await Promise.all([
       supabase.from('services').select('id, name').eq('clinic_id', clinicId),
-      supabase.from('agents').select('id, name, user_id').eq('clinic_id', clinicId),
+      supabase.from('agents').select('id, name, user_id, role_id').eq('clinic_id', clinicId),
       supabase.from('booking_statuses').select('id, name, color, sort_order').eq('clinic_id', clinicId).order('sort_order'),
     ]);
     setServices(svc ?? []);
-    setAgents(agt ?? []);
+    const agentRows = (agt ?? []) as Agent[];
+    setAgents(agentRows);
+    const maps = await loadAgentRoleMaps(supabase, clinicId, agentRows);
+    setCustomRoleMap(maps.customRoleMap);
+    setUserRoleMap(maps.userRoleMap);
     if (statuses?.length) {
       setBookingStatuses(statuses);
     } else {
@@ -115,7 +122,7 @@ export default function Reception() {
   };
 
   const svcName = (id: string | null) => id ? (services.find(s => s.id === id)?.name ?? '—') : '—';
-  const agtName = (id: string | null) => id ? (agents.find(a => a.id === id)?.name ?? '—') : '—';
+  const agtName = (id: string | null) => id ? agentDisplayName(agents.find(a => a.id === id), customRoleMap, userRoleMap) : '—';
   const currentAgentId = () => agents.find(a => a.user_id === user?.id)?.id ?? null;
   const statusLooksArrived = (status: BookingStatus) => /приш/i.test(status.name) && !/не\s*приш/i.test(status.name);
   const statusLooksMissed = (status: BookingStatus) => /не\s*приш/i.test(status.name);
@@ -251,7 +258,7 @@ export default function Reception() {
       try {
         crmLeadId = await promoteBookingToCrm(booking);
       } catch (e: any) {
-        toast.error(e.message || 'Не удалось добавить пациента в Clients');
+        toast.error(e.message || 'Не удалось добавить пациента в раздел «Клиенты»');
         return;
       }
     }
@@ -263,7 +270,7 @@ export default function Reception() {
     const { error } = await supabase.from('bookings').update(updatePayload).eq('id', id);
     if (error) { toast.error(error.message); return; }
     setBookings(b => b.map(x => x.id === id ? { ...x, visited, status_id: updatePayload.status_id ?? x.status_id, lead_id: crmLeadId ?? x.lead_id } : x));
-    toast.success(visited ? 'Отмечен: Пришёл, пациент добавлен в Clients' : 'Отмечен: Не пришёл');
+    toast.success(visited ? 'Отмечен: Пришёл, пациент добавлен в раздел «Клиенты»' : 'Отмечен: Не пришёл');
   };
 
   const moveBookingToStatus = async (booking: Booking, status: BookingStatus) => {

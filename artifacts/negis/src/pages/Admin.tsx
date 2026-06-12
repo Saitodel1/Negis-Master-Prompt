@@ -24,7 +24,7 @@ const PERMISSIONS = [
   { key: 'dashboard',  label: 'Дашборд' },
   { key: 'booking',    label: 'Запись' },
   { key: 'reception',  label: 'Ресепшн' },
-  { key: 'crm',        label: 'Clients' },
+  { key: 'crm',        label: 'Клиенты' },
   { key: 'admin',      label: 'Админ' },
   { key: 'reports',    label: 'Отчёты' },
   { key: 'ads',        label: 'Реклама' },
@@ -790,8 +790,8 @@ function StatusesTab({ clinicId }: { clinicId: string | null }) {
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <div>
-                <h3 className="text-lg font-bold">Статусы лидов — Negis Clients</h3>
-                <p className="text-xs text-[#64748B] mt-0.5">Используются в разделе Clients (отдел продаж)</p>
+                <h3 className="text-lg font-bold">Статусы лидов — Negis Клиенты</h3>
+                <p className="text-xs text-[#64748B] mt-0.5">Используются в разделе «Клиенты» (отдел продаж)</p>
               </div>
               <div className="flex gap-2">
                 {salesLeadStatuses.length === 0 && (
@@ -1398,7 +1398,7 @@ function ExportTab({ clinicId }: { clinicId: string | null }) {
       onExport: exportBookings,
     },
     {
-      id: 'leads', title: 'Лиды (Clients)', description: 'Все лиды: имя, телефон, источник, статус, ответственный',
+      id: 'leads', title: 'Лиды (Клиенты)', description: 'Все лиды: имя, телефон, источник, статус, ответственный',
       onExport: exportLeads,
     },
     {
