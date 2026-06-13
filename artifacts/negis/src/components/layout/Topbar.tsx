@@ -162,7 +162,7 @@ export function Topbar() {
       className="flex items-center justify-between shrink-0 sticky top-0 z-10 px-8"
       style={{
         height: 56,
-        background: 'rgba(244, 247, 251, 0.82)',
+        background: 'rgba(238, 244, 248, 0.86)',
         backdropFilter: 'blur(18px)',
         borderBottom: '1px solid rgba(224, 231, 239, 0.9)',
       }}
@@ -289,7 +289,7 @@ export function Topbar() {
                         {new Date(n.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
-                    {!n.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#2859C5]" />}
+                    {!n.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#0D9488]" />}
                   </div>
                   <div className="mt-3 flex gap-2">
                     <button

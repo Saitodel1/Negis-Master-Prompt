@@ -328,7 +328,7 @@ export function TopNav() {
                     <button
                       key={icon}
                       type="button"
-                      className={`rounded-2xl border p-2 text-lg transition ${avatarIcon === icon ? 'border-[#1E325C] bg-[#EFF6FF]' : 'border-[#E3EAF2] bg-white/70'}`}
+                      className={`rounded-2xl border p-2 text-lg transition ${avatarIcon === icon ? 'border-[#0D9488] bg-[#F0FDFA]' : 'border-[#E3EAF2] bg-white/70'}`}
                       onClick={() => { setAvatarIcon(icon); setAvatarUrl(''); }}
                     >
                       {icon}

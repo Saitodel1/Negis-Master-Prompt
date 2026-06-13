@@ -18,6 +18,7 @@ import {
 
 type CategoryKey = 'negis' | 'messengers' | 'bots' | 'telephony' | 'ai' | 'payments' | 'sms' | 'reputation';
 type Status = 'recommended' | 'available' | 'request' | 'soon' | 'connected';
+type LogoMeta = { domain?: string; text: string; bg: string };
 
 interface MarketplaceItem {
   id: string;
@@ -52,11 +53,47 @@ const STATUS_LABEL: Record<Status, string> = {
 };
 
 const STATUS_CLASS: Record<Status, string> = {
-  recommended: 'border-[#C7D2FE] bg-[#EEF2FF] text-[#4F46E5]',
-  available: 'border-[#BFDBFE] bg-[#EFF6FF] text-[#2859C5]',
+  recommended: 'border-[#99F6E4] bg-[#F0FDFA] text-[#0D9488]',
+  available: 'border-[#BFDBFE] bg-[#EFF6FF] text-[#3B82F6]',
   request: 'border-[#FDE68A] bg-[#FFFBEB] text-[#B45309]',
   soon: 'border-[#E2E8F0] bg-[#F1F5F9] text-[#64748B]',
   connected: 'border-[#BBF7D0] bg-[#F0FDF4] text-[#16A34A]',
+};
+
+const LOGOS: Record<string, LogoMeta> = {
+  'negis-app': { text: 'N', bg: 'linear-gradient(145deg, #0D9488, #3B82F6)' },
+  'negis-loyalty': { text: 'NL', bg: 'linear-gradient(145deg, #10B981, #0D9488)' },
+  'negis-ai': { text: 'AI', bg: 'linear-gradient(145deg, #3B82F6, #0D9488)' },
+  wazzup: { domain: 'wazzup24.ru', text: 'W', bg: '#18C37E' },
+  chat2desk: { domain: 'chat2desk.com', text: 'C2D', bg: '#2563EB' },
+  'sendpulse-whatsapp': { domain: 'sendpulse.com', text: 'SP', bg: '#10B981' },
+  '360dialog': { domain: '360dialog.com', text: '360', bg: '#22C55E' },
+  'telegram-bot': { domain: 'telegram.org', text: 'TG', bg: '#229ED9' },
+  salebot: { domain: 'salebot.pro', text: 'SB', bg: '#3B82F6' },
+  bothelp: { domain: 'bothelp.io', text: 'BH', bg: '#8B5CF6' },
+  zadarma: { domain: 'zadarma.com', text: 'Z', bg: '#F97316' },
+  'beeline-kz': { domain: 'beeline.kz', text: 'B', bg: '#FACC15' },
+  'beeline-kg': { domain: 'beeline.kg', text: 'B', bg: '#FACC15' },
+  binotel: { domain: 'binotel.kz', text: 'B', bg: '#F59E0B' },
+  kazakhtelecom: { domain: 'telecom.kz', text: 'KT', bg: '#2563EB' },
+  mango: { domain: 'mango-office.ru', text: 'M', bg: '#F97316' },
+  zvonobot: { domain: 'zvonobot.ru', text: 'ZB', bg: '#3B82F6' },
+  tomoru: { domain: 'tomoru.ru', text: 'T', bg: '#111827' },
+  openai: { domain: 'openai.com', text: 'AI', bg: '#0F172A' },
+  'kaspi-pay': { domain: 'kaspi.kz', text: 'K', bg: '#EF4444' },
+  'kaspi-qr': { domain: 'kaspi.kz', text: 'K', bg: '#EF4444' },
+  'halyk-epay': { domain: 'halykbank.kz', text: 'H', bg: '#10B981' },
+  'freedom-pay': { domain: 'freedompay.money', text: 'FP', bg: '#2563EB' },
+  paybox: { domain: 'paybox.money', text: 'PB', bg: '#0EA5E9' },
+  mbank: { domain: 'mbank.kg', text: 'M', bg: '#22C55E' },
+  elsom: { domain: 'elsom.kg', text: 'E', bg: '#2563EB' },
+  'o-money': { domain: 'o.kg', text: 'O!', bg: '#EF4444' },
+  'smsc-kz': { domain: 'smsc.kz', text: 'SMS', bg: '#3B82F6' },
+  mobizon: { domain: 'mobizon.kz', text: 'MZ', bg: '#10B981' },
+  infobip: { domain: 'infobip.com', text: 'IB', bg: '#F59E0B' },
+  '2gis': { domain: '2gis.kz', text: '2G', bg: '#22C55E' },
+  'google-reviews': { domain: 'google.com', text: 'G', bg: '#FFFFFF' },
+  'yandex-maps': { domain: 'yandex.ru', text: 'Я', bg: '#EF4444' },
 };
 
 const ITEMS: MarketplaceItem[] = [
@@ -423,7 +460,7 @@ export default function Marketplace() {
         <section className="overflow-hidden rounded-[28px] border border-white/70 bg-white/65 p-6 shadow-[10px_16px_38px_rgba(116,135,154,0.12),inset_1px_1px_0_rgba(255,255,255,0.9)] backdrop-blur-xl">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full bg-[#EFF6FF] px-3 py-1 text-xs font-bold text-[#2859C5]">
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#F0FDFA] px-3 py-1 text-xs font-bold text-[#0D9488]">
                 <Store size={14} />
                 Маркетплейс интеграций
               </div>
@@ -450,7 +487,7 @@ export default function Marketplace() {
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Найти сервис, канал или страну"
-                className="h-12 w-full rounded-2xl border border-[#DDE7F0] bg-white/75 pl-11 pr-4 text-sm font-semibold text-[#0B1220] outline-none transition focus:border-[#A9C8FF]"
+                className="h-12 w-full rounded-2xl border border-[rgba(100,116,139,0.18)] bg-white/75 pl-11 pr-4 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#0D9488] focus:ring-4 focus:ring-[#0D9488]/10"
               />
             </div>
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -463,7 +500,7 @@ export default function Marketplace() {
                     type="button"
                     onClick={() => setActiveCategory(category.key)}
                     className={`flex shrink-0 items-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold transition ${
-                      active ? 'bg-[#1E325C] text-white shadow-lg shadow-[#1E325C]/15' : 'bg-white/80 text-[#5F6F89] hover:bg-[#F8FAFC]'
+                      active ? 'bg-[#0D9488] text-white shadow-lg shadow-[#0D9488]/15' : 'bg-white/80 text-[#64748B] hover:bg-[#F8FBFF]'
                     }`}
                   >
                     <Icon size={16} />
@@ -542,7 +579,7 @@ function Metric({ value, label }: { value: number; label: string }) {
 function Step({ number, title, text }: { number: string; title: string; text: string }) {
   return (
     <div className="flex gap-3 rounded-2xl border border-[#E7ECF3] bg-white/70 p-4">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#1E325C] text-sm font-black text-white">{number}</div>
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#0D9488] text-sm font-black text-white">{number}</div>
       <div>
         <div className="text-sm font-black text-[#0B1220]">{title}</div>
         <div className="mt-1 text-sm leading-5 text-[#64748B]">{text}</div>
@@ -552,16 +589,11 @@ function Step({ number, title, text }: { number: string; title: string; text: st
 }
 
 function IntegrationCard({ item, onOpen }: { item: MarketplaceItem; onOpen: () => void }) {
-  const category = CATEGORIES.find(c => c.key === item.category);
-  const Icon = category?.icon ?? Store;
-
   return (
     <article className="rounded-[24px] border border-[#DDE7F0] bg-white/78 p-5 shadow-[8px_12px_28px_rgba(116,135,154,0.10)] transition hover:-translate-y-0.5 hover:shadow-[10px_18px_34px_rgba(116,135,154,0.16)]">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#EFF6FF] text-[#2859C5]">
-            <Icon size={22} />
-          </div>
+        <div className="flex min-w-0 items-start gap-4">
+          <BrandLogo item={item} />
           <div>
             <h3 className="text-base font-black text-[#0B1220]">{item.name}</h3>
             <div className="mt-1 flex flex-wrap gap-1.5">
@@ -582,7 +614,7 @@ function IntegrationCard({ item, onOpen }: { item: MarketplaceItem; onOpen: () =
 
       <div className="mt-4 flex flex-wrap gap-1.5">
         {item.tags.map(tag => (
-          <span key={tag} className="rounded-full bg-[#EFF6FF] px-2.5 py-1 text-[11px] font-bold text-[#2859C5]">
+          <span key={tag} className="rounded-full bg-[#EFF6FF] px-2.5 py-1 text-[11px] font-bold text-[#3B82F6]">
             {tag}
           </span>
         ))}
@@ -598,7 +630,7 @@ function IntegrationCard({ item, onOpen }: { item: MarketplaceItem; onOpen: () =
           className={`rounded-xl px-4 py-2.5 text-sm font-bold ${
             item.status === 'soon'
               ? 'bg-[#F1F5F9] text-[#94A3B8]'
-              : 'bg-[#1E325C] text-white shadow-lg shadow-[#1E325C]/15'
+              : 'bg-[#0D9488] text-white shadow-lg shadow-[#0D9488]/15'
           }`}
           onClick={onOpen}
         >
@@ -606,6 +638,41 @@ function IntegrationCard({ item, onOpen }: { item: MarketplaceItem; onOpen: () =
         </button>
       </div>
     </article>
+  );
+}
+
+function BrandLogo({ item }: { item: MarketplaceItem }) {
+  const category = CATEGORIES.find(c => c.key === item.category);
+  const Icon = category?.icon ?? Store;
+  const meta = LOGOS[item.id] ?? { text: item.name.slice(0, 2).toUpperCase(), bg: '#3B82F6' };
+  const src = meta.domain ? `https://www.google.com/s2/favicons?domain=${meta.domain}&sz=128` : '';
+
+  return (
+    <div
+      className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[22px] border border-[rgba(100,116,139,0.16)] bg-white shadow-[8px_12px_24px_rgba(100,116,139,0.12),inset_1px_1px_0_rgba(255,255,255,0.9)]"
+      style={{ background: meta.domain ? 'rgba(255,255,255,0.84)' : meta.bg }}
+    >
+      <span
+        className="absolute inset-0 flex items-center justify-center text-lg font-black"
+        style={{ color: meta.domain ? (meta.bg === '#FFFFFF' ? '#0F172A' : meta.bg) : '#FFFFFF' }}
+      >
+        {meta.text}
+      </span>
+      {src ? (
+        <img
+          src={src}
+          alt={`${item.name} logo`}
+          className="relative z-10 h-12 w-12 rounded-2xl object-contain"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={e => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+      ) : (
+        <Icon className="relative z-10 text-white/85" size={28} />
+      )}
+    </div>
   );
 }
 
@@ -626,7 +693,7 @@ function IntegrationModal({ item, onClose }: { item: MarketplaceItem; onClose: (
                 <span key={region} className="rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-bold text-[#64748B]">{region}</span>
               ))}
               {item.tags.map(tag => (
-                <span key={tag} className="rounded-full bg-[#EFF6FF] px-2.5 py-1 text-xs font-bold text-[#2859C5]">{tag}</span>
+                <span key={tag} className="rounded-full bg-[#EFF6FF] px-2.5 py-1 text-xs font-bold text-[#3B82F6]">{tag}</span>
               ))}
             </div>
           </div>
