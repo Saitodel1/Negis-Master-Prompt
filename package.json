@@ -9,6 +9,10 @@
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
+    "@vercel/node": "^5.8.17"
+  },
   "private": true,
   "devDependencies": {
     "prettier": "^3.8.3",
