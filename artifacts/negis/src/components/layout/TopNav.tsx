@@ -33,6 +33,55 @@ const NAV = [
   { href: '/admin', icon: Settings, label: 'Админ', roles: ['owner', 'manager'] },
 ];
 
+const MAX_AVATAR_SOURCE_BYTES = 8 * 1024 * 1024;
+const MAX_AVATAR_DATA_URL_BYTES = 220 * 1024;
+
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Не удалось прочитать фото'));
+    img.src = src;
+  });
+}
+
+async function compressAvatarFile(file: File) {
+  if (file.size > MAX_AVATAR_SOURCE_BYTES) {
+    throw new Error('Фото слишком большое. Выберите файл до 8 МБ.');
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(objectUrl);
+    const sourceWidth = img.naturalWidth || img.width;
+    const sourceHeight = img.naturalHeight || img.height;
+    const ratio = Math.min(1, 256 / Math.max(sourceWidth, sourceHeight));
+    const width = Math.max(1, Math.round(sourceWidth * ratio));
+    const height = Math.max(1, Math.round(sourceHeight * ratio));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Не удалось обработать фото');
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+
+    let dataUrl = canvas.toDataURL('image/jpeg', 0.78);
+    if (dataUrl.length > MAX_AVATAR_DATA_URL_BYTES) {
+      dataUrl = canvas.toDataURL('image/jpeg', 0.58);
+    }
+    if (dataUrl.length > MAX_AVATAR_DATA_URL_BYTES) {
+      throw new Error('Фото слишком тяжёлое. Попробуйте другое изображение.');
+    }
+    return dataUrl;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 export function TopNav() {
   const [location] = useLocation();
   const { signOut, user, userRole, clinicId } = useAuth();
@@ -101,18 +150,20 @@ export function TopNav() {
     </div>
   );
 
-  const handleAvatarFile = (file: File | undefined) => {
+  const handleAvatarFile = async (file: File | undefined) => {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       toast.error('Выберите изображение');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setAvatarUrl(String(reader.result));
+    try {
+      const compressed = await compressAvatarFile(file);
+      setAvatarUrl(compressed);
       setAvatarIcon('');
-    };
-    reader.readAsDataURL(file);
+      toast.success('Фото подготовлено');
+    } catch (e: any) {
+      toast.error(e.message || 'Не удалось обработать фото');
+    }
   };
 
   const saveProfile = async () => {
@@ -129,10 +180,7 @@ export function TopNav() {
       const updates: { data?: { full_name: string }; password?: string } = {
         data: {
           full_name: fullName.trim(),
-          avatar_url: avatarUrl || null,
-          avatar_icon: avatarIcon || null,
-          avatar_color: avatarColor || null,
-        } as any,
+        },
       };
       if (newPassword) updates.password = newPassword;
       const { error } = await supabase.auth.updateUser(updates);
