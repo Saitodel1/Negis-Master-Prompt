@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS chat_conversations (
   clinic_id   uuid NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
   type        text NOT NULL CHECK (type IN ('direct', 'group')),
   title       text NOT NULL,
-  created_by  uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_by  uuid,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS chat_members (
   clinic_id       uuid NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
   conversation_id uuid NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
   agent_id        uuid REFERENCES agents(id) ON DELETE CASCADE,
-  user_id         uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id         uuid,
   created_at      timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT chat_members_agent_or_user CHECK (agent_id IS NOT NULL OR user_id IS NOT NULL)
 );
@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   clinic_id        uuid NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
   conversation_id  uuid NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
   sender_agent_id  uuid REFERENCES agents(id) ON DELETE SET NULL,
-  sender_user_id   uuid REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT auth.uid(),
+  sender_user_id   uuid DEFAULT auth.uid(),
   body             text NOT NULL,
   read_by          uuid[] NOT NULL DEFAULT '{}',
   created_at       timestamptz NOT NULL DEFAULT now()
