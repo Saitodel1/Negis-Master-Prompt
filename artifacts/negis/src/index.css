@@ -351,18 +351,21 @@
     background: rgba(244, 247, 251, 0.72);
     border-bottom: 1px solid rgba(224, 231, 239, 0.9);
     backdrop-filter: blur(20px);
+    overflow: visible;
   }
 
   .topnav-scroll {
     scrollbar-width: thin;
     scrollbar-color: rgba(142, 160, 183, 0.35) transparent;
     overflow-y: visible;
-    padding-top: 12px;
+    padding-top: 28px;
     padding-bottom: 14px;
   }
 
   .dock-shell {
     overflow: visible;
+    align-items: flex-end;
+    min-height: 58px;
   }
 
   .topnav-scroll::-webkit-scrollbar {
@@ -413,8 +416,13 @@
   .topnav-item.is-active {
     color: #FFFFFF;
     background: linear-gradient(145deg, #253F73, #1E325C);
+    transform: translateY(-18px) scale(1.08);
     box-shadow: 7px 9px 20px rgba(30, 50, 92, 0.24),
                 inset 1px 1px 0 rgba(255, 255, 255, 0.18);
+  }
+
+  .topnav-item.is-active:hover {
+    transform: translateY(-22px) scale(1.16);
   }
 
   .soft-avatar,
