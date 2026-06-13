@@ -14,6 +14,7 @@ import Reception from "@/pages/Reception";
 import Sales from "@/pages/Sales";
 import Tasks from "@/pages/Tasks";
 import Chat from "@/pages/Chat";
+import Marketplace from "@/pages/Marketplace";
 import Agent from "@/pages/Agent";
 import Admin from "@/pages/Admin";
 import Ads from "@/pages/Ads";
@@ -78,6 +79,7 @@ function Router() {
       <Route path="/sales" component={Sales} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/chat" component={Chat} />
+      <Route path="/marketplace" component={Marketplace} />
       <Route path="/agent" component={Agent} />
       <Route path="/admin" component={Admin} />
       <Route path="/ads" component={Ads} />

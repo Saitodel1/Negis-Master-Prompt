@@ -14,6 +14,7 @@ import {
   Megaphone,
   ClipboardList,
   MessageCircle,
+  Store,
   Smile,
   Upload,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ const NAV = [
   { href: '/sales', icon: Briefcase, label: 'Клиенты', roles: ['owner', 'manager', 'agent'] },
   { href: '/tasks', icon: ClipboardList, label: 'Задачи', roles: ['owner', 'manager', 'agent'] },
   { href: '/chat', icon: MessageCircle, label: 'Чат', roles: ['owner', 'manager', 'agent', 'booking_agent', 'receptionist'] },
+  { href: '/marketplace', icon: Store, label: 'Маркет', roles: ['owner', 'manager'] },
   { href: '/ads', icon: Megaphone, label: 'Реклама', roles: ['owner', 'manager'] },
   { href: '/admin', icon: Settings, label: 'Админ', roles: ['owner', 'manager'] },
 ];

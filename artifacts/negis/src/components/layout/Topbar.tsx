@@ -13,6 +13,8 @@ const PAGE_LABELS: Record<string, string> = {
   '/sales': 'Клиенты',
   '/tasks': 'Задачи',
   '/chat': 'Чат',
+  '/marketplace': 'Маркетплейс',
+  '/ads': 'Реклама',
   '/agent': 'Агент',
   '/admin': 'Админ',
 };
