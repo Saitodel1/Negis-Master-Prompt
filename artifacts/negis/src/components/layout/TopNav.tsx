@@ -34,7 +34,7 @@ const NAV = [
 ];
 
 const MAX_AVATAR_SOURCE_BYTES = 8 * 1024 * 1024;
-const MAX_AVATAR_DATA_URL_BYTES = 220 * 1024;
+const MAX_AVATAR_DATA_URL_BYTES = 120 * 1024;
 
 function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
@@ -177,9 +177,20 @@ export function TopNav() {
     }
     setSaving(true);
     try {
-      const updates: { data?: { full_name: string }; password?: string } = {
+      const updates: {
+        data?: {
+          full_name: string;
+          avatar_url?: string | null;
+          avatar_icon?: string | null;
+          avatar_color?: string | null;
+        };
+        password?: string;
+      } = {
         data: {
           full_name: fullName.trim(),
+          avatar_url: avatarUrl || null,
+          avatar_icon: avatarIcon || null,
+          avatar_color: avatarColor || null,
         },
       };
       if (newPassword) updates.password = newPassword;
