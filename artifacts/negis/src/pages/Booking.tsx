@@ -11,6 +11,8 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { agentDisplayName, loadAgentRoleMaps } from '@/lib/agentDisplay';
+import { NegisQrScanner } from '@/components/NegisQrScanner';
+import { BOOKING_SOURCES, BONUS_STATUS_LABELS, CRM_SOURCES, QR_STATUS_LABELS, sourceLabelToValue, sourceValueToLabel } from '@/lib/negisApp';
 import { toast } from 'sonner';
 import { trackEvent } from '@/lib/fbpixel';
 import Papa from 'papaparse';
@@ -19,7 +21,8 @@ import * as XLSX from 'xlsx';
 /* ── Constants ──────────────────────────────────────────── */
 const SLOT_HOURS   = [10, 11, 12, 13, 14, 15, 16, 17];
 const MAX_PER_SLOT = 3;
-const SOURCES = ['Instagram', 'Google', 'WhatsApp', '2GIS', 'Вручную', 'Webhook', 'Import'];
+const SOURCES = CRM_SOURCES;
+const BOOKING_SOURCE_OPTIONS = BOOKING_SOURCES;
 const PERIOD_OPTIONS = [
   { value: 'all',       label: 'Все даты' },
   { value: 'today',     label: 'Сегодня' },
@@ -36,6 +39,8 @@ interface Booking {
   id: string; patient_name: string; patient_phone: string | null;
   age: number | null; service_id: string | null; agent_id: string | null;
   time: string; date: string;
+  source?: string | null; qr_status?: string | null; bonus_status?: string | null;
+  app_appointment_id?: string | null;
 }
 interface Service    { id: string; name: string; price: number }
 interface Agent      { id: string; name: string; user_id: string | null; role_id?: string | null }
@@ -157,6 +162,8 @@ export default function Booking() {
     patient_name: '', patient_phone: '', age: '', service_id: '', agent_id: '',
   });
   const [calSaving, setCalSaving] = useState(false);
+  const [calSourceFilter, setCalSourceFilter] = useState('');
+  const [showQrScanner, setShowQrScanner] = useState(false);
 
   /* ── Leads tab state ── */
   const [bkLeads, setBkLeads]       = useState<Lead[]>([]);
@@ -165,6 +172,7 @@ export default function Booking() {
   const [bkSearch, setBkSearch]       = useState('');
   const [bkFilterStatus, setBkFilterStatus] = useState('');
   const [bkFilterAgent, setBkFilterAgent]   = useState('');
+  const [bkFilterSource, setBkFilterSource] = useState('');
   const [bkSortBy, setBkSortBy]       = useState('created_at_desc');
   const [bkDateField, setBkDateField] = useState<'created_at' | 'updated_at'>('created_at');
   const [bkPeriodFilter, setBkPeriodFilter] = useState('all');
@@ -229,7 +237,7 @@ export default function Booking() {
     setBkPage(0);
     setSelectedBkLeadIds(new Set());
     setBkBulkPanel(null);
-  }, [bkSearch, bkFilterStatus, bkFilterAgent, bkSortBy, bkDateField, bkPeriodFilter, bkDateFrom, bkDateTo, bkPerPage]);
+  }, [bkSearch, bkFilterStatus, bkFilterAgent, bkFilterSource, bkSortBy, bkDateField, bkPeriodFilter, bkDateFrom, bkDateTo, bkPerPage]);
 
   useEffect(() => {
     if (showBfl && clinicId) loadBflSlots(bflDate);
@@ -259,12 +267,18 @@ export default function Booking() {
 
   const loadBookings = async () => {
     setCalLoading(true);
-    const { data } = await supabase
+    let q = supabase
       .from('bookings').select('*')
       .eq('clinic_id', clinicId).eq('date', fmtDate(selectedDate));
+    if (calSourceFilter) q = q.eq('source', sourceLabelToValue(calSourceFilter));
+    const { data } = await q;
     setBookings(data || []);
     setCalLoading(false);
   };
+
+  useEffect(() => {
+    if (clinicId) loadBookings();
+  }, [calSourceFilter]);
 
   const loadBkLeads = async () => {
     if (!clinicId) return;
@@ -342,6 +356,7 @@ export default function Booking() {
       duration_minutes: 0,
       time: slotLabel(modal.hour),
       date: fmtDate(selectedDate),
+      source: 'crm',
     });
     if (error) { toast.error(error.message); } else {
       toast.success('Запись добавлена'); trackEvent('Schedule'); setModal(null); loadBookings();
@@ -503,6 +518,7 @@ export default function Booking() {
       date:            format(bflDate, 'yyyy-MM-dd'),
       duration_minutes: 0,
       comment:         bflForm.comment || null,
+      source:          'crm',
     });
     setBflSaving(false);
     if (error) { toast.error(error.message); return; }
@@ -602,6 +618,7 @@ export default function Booking() {
   const displayedLeads = bkLeads.filter(l => {
     if (bkSearch && !(l.full_name ?? '').toLowerCase().includes(bkSearch.toLowerCase()) && !(l.phone ?? '').includes(bkSearch)) return false;
     if (bkFilterStatus && l.status_id !== bkFilterStatus) return false;
+    if (bkFilterSource && sourceValueToLabel(l.source) !== bkFilterSource) return false;
     if (bkFilterAgent) {
       const rowAgent = agents.find(a => a.id === l.assigned_to) ?? agents.find(a => a.user_id === l.assigned_to);
       if ((rowAgent?.id ?? l.assigned_to) !== bkFilterAgent) return false;
@@ -710,6 +727,8 @@ export default function Booking() {
 
   const statusColor = (lead: Lead) => lead.lead_statuses?.color ?? '#94A3B8';
   const statusName  = (lead: Lead) => lead.lead_statuses?.name  ?? '—';
+  const qrStatusLabel = (value?: string | null) => value ? (QR_STATUS_LABELS[value] ?? value) : '—';
+  const bonusStatusLabel = (value?: string | null) => value ? (BONUS_STATUS_LABELS[value] ?? value) : '—';
 
   const dayLabel = format(selectedDate, 'EEEE, d MMMM yyyy', { locale: ru });
 
@@ -723,10 +742,10 @@ export default function Booking() {
         padding: 4, width: 'fit-content',
         boxShadow: '0 2px 8px rgba(15,23,42,0.04)',
       }}>
-        {([
-          { key: 'calendar', label: 'Календарь' },
-          { key: 'leads',    label: 'Лиды на запись' },
-        ] as const).map(tab => (
+          {([
+            { key: 'calendar', label: 'Календарь' },
+            { key: 'leads',    label: 'Лиды на запись' },
+          ] as const).map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
@@ -741,6 +760,17 @@ export default function Booking() {
             {tab.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setShowQrScanner(true)}
+          style={{
+            padding: '8px 16px', borderRadius: 9, fontSize: 13, fontWeight: 600,
+            fontFamily: "'Inter', sans-serif", cursor: 'pointer',
+            border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#2859C5',
+          }}
+        >
+          Сканировать QR
+        </button>
       </div>
 
       {/* ══════════ CALENDAR TAB ══════════ */}
@@ -782,13 +812,21 @@ export default function Booking() {
           }}>
             <div style={{
               padding: '18px 24px', borderBottom: '1px solid #E7ECF3',
-              display: 'flex', alignItems: 'center', gap: 10,
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
             }}>
               <CalendarDays size={16} color="#2859C5" strokeWidth={1.75} />
               <span style={{ fontSize: 14, fontWeight: 600, color: '#0B1220', fontFamily: "'Inter', sans-serif" }}>
                 {dayLabel}
               </span>
               {calLoading && <span style={{ fontSize: 12, color: '#94A3B8', fontFamily: "'Inter', sans-serif" }}>загрузка...</span>}
+              <select
+                style={{ ...IS, width: 150, marginLeft: 'auto' }}
+                value={calSourceFilter}
+                onChange={e => setCalSourceFilter(e.target.value)}
+              >
+                <option value="">Все источники</option>
+                {BOOKING_SOURCE_OPTIONS.map(source => <option key={source} value={source}>{source}</option>)}
+              </select>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
@@ -937,6 +975,10 @@ export default function Booking() {
                 {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
               </select>
             )}
+            <select style={{ ...IS, width: 160 }} value={bkFilterSource} onChange={e => setBkFilterSource(e.target.value)}>
+              <option value="">Все источники</option>
+              {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <ArrowUpDown size={13} color="#94A3B8" />
               <select style={{ ...IS, width: 160 }} value={bkSortBy} onChange={e => setBkSortBy(e.target.value)}>
@@ -1182,7 +1224,11 @@ export default function Booking() {
                         {lead.full_name || '—'}
                       </td>
                       <td style={{ padding: '12px 16px', fontSize: 13, color: '#64748B' }}>{lead.phone ?? '—'}</td>
-                      <td style={{ padding: '12px 16px', fontSize: 13, color: '#64748B' }}>{lead.source ?? '—'}</td>
+                      <td style={{ padding: '12px 16px', fontSize: 13, color: '#64748B' }}>
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${sourceValueToLabel(lead.source) === 'Negis App' ? 'bg-[#EEF2FF] text-[#4F46E5]' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
+                          {sourceValueToLabel(lead.source)}
+                        </span>
+                      </td>
                       <td style={{ padding: '12px 16px' }}>
                         <span style={{
                           display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -1598,6 +1644,14 @@ export default function Booking() {
             </div>
           </div>
         </div>
+      )}
+      {showQrScanner && (
+        <NegisQrScanner
+          clinicId={clinicId}
+          userId={user?.id}
+          onClose={() => setShowQrScanner(false)}
+          onConfirmed={loadBookings}
+        />
       )}
     </PageLayout>
   );

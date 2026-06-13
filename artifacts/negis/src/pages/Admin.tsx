@@ -10,7 +10,16 @@ import { toast } from 'sonner';
 
 /* ─── Types ──────────────────────────────────────────────── */
 interface Role { id: string; name: string; permissions: Record<string, boolean> }
-interface Service { id: string; name: string; price: number }
+interface Service {
+  id: string; name: string; price: number;
+  visible_in_app?: boolean | null;
+  app_booking_enabled?: boolean | null;
+  duration_minutes?: number | null;
+  app_description?: string | null;
+  app_image_url?: string | null;
+  bonus_payment_enabled?: boolean | null;
+  max_bonus_percent?: number | null;
+}
 interface BookingStatus { id: string; name: string; color: string; sort_order: number }
 interface LeadStatus { id: string; name: string; color: string; sort_order: number; pipeline: string }
 interface Shift {
@@ -75,6 +84,7 @@ export default function Admin() {
     { id: 'branches', label: 'Филиалы' },
     { id: 'shifts', label: 'Смены' },
     { id: 'whatsapp', label: 'WhatsApp' },
+    { id: 'negis-app', label: 'Negis App / Лояльность' },
     { id: 'export', label: 'Импорт / Экспорт' },
     { id: 'settings', label: 'Настройки' },
   ];
@@ -109,6 +119,7 @@ export default function Admin() {
           {activeTab === 'branches' && <BranchesTab clinicId={clinicId} />}
           {activeTab === 'shifts' && <ShiftsTab clinicId={clinicId} />}
           {activeTab === 'whatsapp' && <WhatsAppTab clinicId={clinicId} />}
+          {activeTab === 'negis-app' && <NegisAppSettingsTab clinicId={clinicId} />}
           {activeTab === 'export' && <ExportTab clinicId={clinicId} />}
           {activeTab === 'settings' && <SettingsTabContent clinicId={clinicId} />}
         </div>
@@ -583,6 +594,13 @@ function ServicesTab({ clinicId }: { clinicId: string | null }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
+  const [durationMinutes, setDurationMinutes] = useState('0');
+  const [visibleInApp, setVisibleInApp] = useState(false);
+  const [appBookingEnabled, setAppBookingEnabled] = useState(false);
+  const [bonusPaymentEnabled, setBonusPaymentEnabled] = useState(true);
+  const [maxBonusPercent, setMaxBonusPercent] = useState('50');
+  const [appDescription, setAppDescription] = useState('');
+  const [appImageUrl, setAppImageUrl] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { if (clinicId) load(); }, [clinicId]);
@@ -594,19 +612,49 @@ function ServicesTab({ clinicId }: { clinicId: string | null }) {
     setLoading(false);
   };
 
-  const openCreate = () => { setEditing(null); setName(''); setPrice(''); setShowModal(true); };
-  const openEdit = (s: Service) => { setEditing(s); setName(s.name); setPrice(String(s.price)); setShowModal(true); };
+  const openCreate = () => {
+    setEditing(null); setName(''); setPrice(''); setDurationMinutes('0');
+    setVisibleInApp(false); setAppBookingEnabled(false); setBonusPaymentEnabled(true);
+    setMaxBonusPercent('50'); setAppDescription(''); setAppImageUrl(''); setShowModal(true);
+  };
+  const openEdit = (s: Service) => {
+    setEditing(s); setName(s.name); setPrice(String(s.price)); setDurationMinutes(String(s.duration_minutes ?? 0));
+    setVisibleInApp(Boolean(s.visible_in_app)); setAppBookingEnabled(Boolean(s.app_booking_enabled));
+    setBonusPaymentEnabled(s.bonus_payment_enabled !== false); setMaxBonusPercent(String(s.max_bonus_percent ?? 50));
+    setAppDescription(s.app_description ?? ''); setAppImageUrl(s.app_image_url ?? ''); setShowModal(true);
+  };
 
   const save = async () => {
     if (!name.trim()) { toast.error('Введите название услуги'); return; }
     const priceNum = Number(price) || 0;
+    const patch = {
+      name,
+      price: priceNum,
+      duration_minutes: Number(durationMinutes) || 0,
+      visible_in_app: visibleInApp,
+      app_booking_enabled: appBookingEnabled,
+      bonus_payment_enabled: bonusPaymentEnabled,
+      max_bonus_percent: Math.min(Math.max(Number(maxBonusPercent) || 50, 0), 50),
+      app_description: appDescription || null,
+      app_image_url: appImageUrl || null,
+    };
     setSaving(true);
     if (editing) {
-      const { error } = await supabase.from('services').update({ name, price: priceNum }).eq('id', editing.id);
-      if (error) { toast.error(error.message); } else { toast.success('Услуга обновлена'); }
+      const { error } = await supabase.from('services').update(patch).eq('id', editing.id);
+      if (error) {
+        if (error.message.includes('column')) {
+          const { error: fallbackError } = await supabase.from('services').update({ name, price: priceNum }).eq('id', editing.id);
+          if (fallbackError) toast.error(fallbackError.message); else toast.success('Услуга обновлена. Для Negis App полей выполните миграцию 006.');
+        } else toast.error(error.message);
+      } else { toast.success('Услуга обновлена'); }
     } else {
-      const { error } = await supabase.from('services').insert({ clinic_id: clinicId, name, price: priceNum });
-      if (error) { toast.error(error.message); } else { toast.success('Услуга добавлена'); }
+      const { error } = await supabase.from('services').insert({ clinic_id: clinicId, ...patch });
+      if (error) {
+        if (error.message.includes('column')) {
+          const { error: fallbackError } = await supabase.from('services').insert({ clinic_id: clinicId, name, price: priceNum });
+          if (fallbackError) toast.error(fallbackError.message); else toast.success('Услуга добавлена. Для Negis App полей выполните миграцию 006.');
+        } else toast.error(error.message);
+      } else { toast.success('Услуга добавлена'); }
     }
     setSaving(false); setShowModal(false); load();
   };
@@ -639,6 +687,11 @@ function ServicesTab({ clinicId }: { clinicId: string | null }) {
               <div>
                 <p className="font-bold text-[#1E293B]">{s.name}</p>
                 <p className="text-sm text-[#64748B]">{s.price.toLocaleString('ru')} ₸</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {s.visible_in_app && <span className="rounded-full bg-[#EEF2FF] px-2 py-0.5 text-[11px] font-bold text-[#4F46E5]">В приложении</span>}
+                  {s.app_booking_enabled && <span className="rounded-full bg-[#EFF6FF] px-2 py-0.5 text-[11px] font-bold text-[#2859C5]">Онлайн-запись</span>}
+                  {s.bonus_payment_enabled && <span className="rounded-full bg-[#F0FDF4] px-2 py-0.5 text-[11px] font-bold text-[#16A34A]">Бонусы до {s.max_bonus_percent ?? 50}%</span>}
+                </div>
               </div>
               <div className="flex gap-2">
                 <button className="neu-icon-btn h-8 w-8" onClick={() => openEdit(s)}><Edit2 size={14} /></button>
@@ -651,13 +704,31 @@ function ServicesTab({ clinicId }: { clinicId: string | null }) {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="neu-lg p-8 max-w-sm w-full space-y-4">
+          <div className="neu-lg p-8 max-w-xl w-full space-y-4">
             <h3 className="text-lg font-bold">{editing ? 'Редактировать услугу' : 'Новая услуга'}</h3>
             <input className="neu-input" placeholder="Название услуги" value={name} onChange={e => setName(e.target.value)} data-testid="input-service-name" />
             <div className="relative">
               <input className="neu-input pr-6" placeholder="Цена" type="number" value={price} onChange={e => setPrice(e.target.value)} data-testid="input-service-price" />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#64748B]">₸</span>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="neu-sm p-3 flex items-center gap-2 text-sm font-semibold text-[#475569]">
+                <input type="checkbox" checked={visibleInApp} onChange={e => setVisibleInApp(e.target.checked)} />
+                Показывать в Negis App
+              </label>
+              <label className="neu-sm p-3 flex items-center gap-2 text-sm font-semibold text-[#475569]">
+                <input type="checkbox" checked={appBookingEnabled} onChange={e => setAppBookingEnabled(e.target.checked)} />
+                Онлайн-запись
+              </label>
+              <label className="neu-sm p-3 flex items-center gap-2 text-sm font-semibold text-[#475569]">
+                <input type="checkbox" checked={bonusPaymentEnabled} onChange={e => setBonusPaymentEnabled(e.target.checked)} />
+                Оплата бонусами
+              </label>
+              <input className="neu-input" type="number" min={0} max={50} placeholder="Макс. % бонусами" value={maxBonusPercent} onChange={e => setMaxBonusPercent(e.target.value)} />
+            </div>
+            <input className="neu-input" type="number" placeholder="Длительность, мин" value={durationMinutes} onChange={e => setDurationMinutes(e.target.value)} />
+            <textarea className="neu-input min-h-24" placeholder="Описание для приложения" value={appDescription} onChange={e => setAppDescription(e.target.value)} />
+            <input className="neu-input" placeholder="Фото/иконка услуги URL" value={appImageUrl} onChange={e => setAppImageUrl(e.target.value)} />
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowModal(false)} className="neu-btn flex-1">Отмена</button>
               <button onClick={save} disabled={saving} className="neu-btn-primary flex-1 justify-center" data-testid="button-save-service">
@@ -669,6 +740,144 @@ function ServicesTab({ clinicId }: { clinicId: string | null }) {
       )}
 
       {deletingId && <ConfirmDialog msg="Удалить эту услугу?" onConfirm={remove} onCancel={() => setDeletingId(null)} />}
+    </div>
+  );
+}
+
+/* ─── Negis App / Loyalty Tab ───────────────────────────── */
+interface ClinicAppSettings {
+  app_enabled: boolean;
+  app_booking_enabled: boolean;
+  loyalty_enabled: boolean;
+  bonus_spend_enabled: boolean;
+  max_bonus_percent: number;
+  bonus_per_visit: number;
+  bonus_first_visit: number;
+}
+
+const DEFAULT_APP_SETTINGS: ClinicAppSettings = {
+  app_enabled: false,
+  app_booking_enabled: false,
+  loyalty_enabled: false,
+  bonus_spend_enabled: false,
+  max_bonus_percent: 50,
+  bonus_per_visit: 0,
+  bonus_first_visit: 0,
+};
+
+function NegisAppSettingsTab({ clinicId }: { clinicId: string | null }) {
+  const [settings, setSettings] = useState<ClinicAppSettings>(DEFAULT_APP_SETTINGS);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [dbReady, setDbReady] = useState(true);
+
+  useEffect(() => { if (clinicId) load(); }, [clinicId]);
+
+  const load = async () => {
+    if (!clinicId) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('clinic_app_settings')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .maybeSingle();
+    if (error) {
+      setDbReady(false);
+      setSettings(DEFAULT_APP_SETTINGS);
+    } else {
+      setDbReady(true);
+      setSettings({ ...DEFAULT_APP_SETTINGS, ...(data ?? {}) });
+    }
+    setLoading(false);
+  };
+
+  const update = (patch: Partial<ClinicAppSettings>) => {
+    setSettings(prev => ({ ...prev, ...patch }));
+  };
+
+  const save = async () => {
+    if (!clinicId) return;
+    setSaving(true);
+    const payload = {
+      clinic_id: clinicId,
+      ...settings,
+      max_bonus_percent: Math.min(Math.max(Number(settings.max_bonus_percent) || 50, 0), 50),
+      bonus_per_visit: Number(settings.bonus_per_visit) || 0,
+      bonus_first_visit: Number(settings.bonus_first_visit) || 0,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase
+      .from('clinic_app_settings')
+      .upsert(payload, { onConflict: 'clinic_id' });
+    setSaving(false);
+    if (error) {
+      setDbReady(false);
+      toast.error('Выполните SQL migration 006 для настроек Negis App');
+      return;
+    }
+    setDbReady(true);
+    toast.success('Настройки Negis App сохранены');
+  };
+
+  if (loading) return <p className="text-center text-[#64748B] py-12">Загрузка...</p>;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-bold">Negis App / Лояльность</h3>
+        <p className="mt-1 text-sm text-[#64748B]">
+          Эти настройки управляют видимостью клиники в клиентском приложении, онлайн-записью и бонусной программой.
+        </p>
+      </div>
+
+      {!dbReady && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+          Таблица настроек ещё не создана. Выполните SQL из <code>migrations/006_negis_app_mvp.sql</code>.
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <ToggleCard title="Показывать клинику в приложении" checked={settings.app_enabled} onChange={v => update({ app_enabled: v })} />
+        <ToggleCard title="Принимать онлайн-записи" checked={settings.app_booking_enabled} onChange={v => update({ app_booking_enabled: v })} />
+        <ToggleCard title="Участвовать в бонусной программе" checked={settings.loyalty_enabled} onChange={v => update({ loyalty_enabled: v })} />
+        <ToggleCard title="Принимать оплату бонусами" checked={settings.bonus_spend_enabled} onChange={v => update({ bonus_spend_enabled: v })} />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <NumberField label="Макс. процент оплаты бонусами" value={settings.max_bonus_percent} onChange={v => update({ max_bonus_percent: v })} suffix="%" />
+        <NumberField label="Бонусы за визит" value={settings.bonus_per_visit} onChange={v => update({ bonus_per_visit: v })} suffix="бонусов" />
+        <NumberField label="Бонусы за первый визит" value={settings.bonus_first_visit} onChange={v => update({ bonus_first_visit: v })} suffix="бонусов" />
+      </div>
+
+      <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4 text-sm text-[#64748B]">
+        Если онлайн-запись выключена, клиника может оставаться в каталоге приложения, но кнопка записи будет недоступна.
+        Списание бонусов CRM выполняет только через backend API, баланс напрямую не меняется.
+      </div>
+
+      <button className="neu-btn-primary px-5 py-3" disabled={saving} onClick={save}>
+        {saving ? 'Сохранение...' : 'Сохранить настройки'}
+      </button>
+    </div>
+  );
+}
+
+function ToggleCard({ title, checked, onChange }: { title: string; checked: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <label className="neu-sm flex items-center justify-between gap-4 p-4">
+      <span className="font-semibold text-[#1E293B]">{title}</span>
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="h-5 w-5 accent-[#1E325C]" />
+    </label>
+  );
+}
+
+function NumberField({ label, value, suffix, onChange }: { label: string; value: number; suffix: string; onChange: (value: number) => void }) {
+  return (
+    <div>
+      <label className="text-xs text-[#64748B] font-medium block mb-1.5">{label}</label>
+      <div className="relative">
+        <input className="neu-input pr-20" type="number" value={value} onChange={e => onChange(Number(e.target.value))} />
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#94A3B8]">{suffix}</span>
+      </div>
     </div>
   );
 }

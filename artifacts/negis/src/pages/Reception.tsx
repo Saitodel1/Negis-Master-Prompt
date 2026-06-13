@@ -1,10 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { Check, X, Trash2, ChevronLeft, ChevronRight, CalendarDays, Plus } from 'lucide-react';
+import { Check, X, Trash2, ChevronLeft, ChevronRight, CalendarDays, Plus, QrCode } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { agentDisplayName, loadAgentRoleMaps } from '@/lib/agentDisplay';
+import { NegisQrScanner } from '@/components/NegisQrScanner';
+import {
+  BONUS_STATUS_LABELS,
+  QR_STATUS_LABELS,
+  confirmAppAppointmentArrival,
+  isNegisAppSource,
+  sourceValueToLabel,
+} from '@/lib/negisApp';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { ru } from 'date-fns/locale';
@@ -13,6 +21,8 @@ interface Booking {
   id: string; patient_name: string; patient_phone: string | null; age: number | null;
   time: string; date: string; visited: boolean | null;
   service_id: string | null; agent_id: string | null; lead_id: string | null; status_id: string | null;
+  source?: string | null; app_appointment_id?: string | null; qr_status?: string | null; bonus_status?: string | null;
+  arrived_at?: string | null; arrival_confirmed_by?: string | null;
 }
 interface Service { id: string; name: string }
 interface Agent   { id: string; name: string; user_id: string | null; role_id?: string | null }
@@ -65,6 +75,8 @@ export default function Reception() {
   const [creatingStatus, setCreatingStatus] = useState(false);
   const [draggingBookingId, setDraggingBookingId] = useState('');
   const [focusedBookingId, setFocusedBookingId] = useState('');
+  const [viewFilter, setViewFilter] = useState<'today' | 'waiting' | 'arrived' | 'late' | 'noshow' | 'app'>('today');
+  const [showQrScanner, setShowQrScanner] = useState(false);
   const calRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -124,12 +136,24 @@ export default function Reception() {
   const loadBookings = async () => {
     if (!clinicId) return;
     setLoading(true);
-    const { data, error } = await supabase
+    const primary = await supabase
       .from('bookings')
-      .select('id, patient_name, patient_phone, age, time, date, visited, service_id, agent_id, lead_id, status_id')
+      .select('id, patient_name, patient_phone, age, time, date, visited, service_id, agent_id, lead_id, status_id, source, app_appointment_id, qr_status, bonus_status, arrived_at, arrival_confirmed_by')
       .eq('clinic_id', clinicId)
       .eq('date', fmtDate(selectedDate))
       .order('time');
+    let data = primary.data as Booking[] | null;
+    let error = primary.error;
+    if (error?.message?.includes('column')) {
+      const fallback = await supabase
+        .from('bookings')
+        .select('id, patient_name, patient_phone, age, time, date, visited, service_id, agent_id, lead_id, status_id')
+        .eq('clinic_id', clinicId)
+        .eq('date', fmtDate(selectedDate))
+        .order('time');
+      data = fallback.data as Booking[] | null;
+      error = fallback.error;
+    }
     if (error) toast.error(error.message);
     setBookings(data ?? []);
     setLoading(false);
@@ -152,9 +176,20 @@ export default function Reception() {
     if (booking.visited === false) return missedStatus() ?? defaultStatus();
     return defaultStatus();
   };
+  const filteredBookings = bookings.filter(booking => {
+    if (viewFilter === 'waiting') return booking.visited == null;
+    if (viewFilter === 'arrived') return booking.visited === true;
+    if (viewFilter === 'noshow') return booking.visited === false;
+    if (viewFilter === 'app') return isNegisAppSource(booking.source);
+    if (viewFilter === 'late') {
+      if (booking.visited !== null) return false;
+      return new Date(`${booking.date}T${booking.time}`) < new Date();
+    }
+    return true;
+  });
   const groupedBookings = bookingStatuses.map(status => ({
     status,
-    items: bookings.filter(booking => statusForBooking(booking)?.id === status.id),
+    items: filteredBookings.filter(booking => statusForBooking(booking)?.id === status.id),
   }));
 
   const appendVisitNote = (comment: string | null, booking: Booking) => {
@@ -283,6 +318,11 @@ export default function Reception() {
     if (crmLeadId) updatePayload.lead_id = crmLeadId;
     const { error } = await supabase.from('bookings').update(updatePayload).eq('id', id);
     if (error) { toast.error(error.message); return; }
+    if (visited && clinicId && booking && isNegisAppSource(booking.source) && booking.app_appointment_id) {
+      confirmAppAppointmentArrival(booking.app_appointment_id, clinicId, user?.id).catch((e: any) => {
+        toast.error(e.message || 'Backend Negis App не подтвердил начисление бонусов');
+      });
+    }
     setBookings(b => b.map(x => x.id === id ? { ...x, visited, status_id: updatePayload.status_id ?? x.status_id, lead_id: crmLeadId ?? x.lead_id } : x));
     toast.success(visited ? 'Отмечен: Пришёл, пациент добавлен в раздел «Клиенты»' : 'Отмечен: Не пришёл');
   };
@@ -341,6 +381,8 @@ export default function Reception() {
   };
 
   const emptyMsg = `Записей на ${dateLabel(selectedDate).toLowerCase()} нет`;
+  const qrStatusLabel = (value?: string | null) => value ? (QR_STATUS_LABELS[value] ?? value) : '—';
+  const bonusStatusLabel = (value?: string | null) => value ? (BONUS_STATUS_LABELS[value] ?? value) : '—';
 
   return (
     <PageLayout>
@@ -351,6 +393,13 @@ export default function Reception() {
 
           {/* Date nav */}
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowQrScanner(true)}
+              className="neu-btn-primary flex items-center gap-2 px-4 py-2 text-sm"
+            >
+              <QrCode size={15} />
+              Сканировать QR
+            </button>
             <button
               onClick={() => shiftDay(-1)}
               className="neu-btn p-2 text-[#64748B] hover:text-[#1A56DB]"
@@ -406,6 +455,26 @@ export default function Reception() {
               <ChevronRight size={16} />
             </button>
           </div>
+        </div>
+
+        <div className="neu-card p-3 flex flex-wrap gap-2">
+          {([
+            ['today', 'Сегодня'],
+            ['waiting', 'Ожидают прихода'],
+            ['arrived', 'Пришли'],
+            ['late', 'Опоздали'],
+            ['noshow', 'No-show'],
+            ['app', 'Из Negis App'],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setViewFilter(key)}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${viewFilter === key ? 'bg-[#1E325C] text-white shadow-sm' : 'bg-white text-[#64748B] border border-[#E7ECF3] hover:text-[#1E325C]'}`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         <div className="neu-card p-4 flex flex-wrap gap-3 items-center">
@@ -487,6 +556,21 @@ export default function Reception() {
                         <div>{agtName(b.agent_id)}</div>
                         {b.age != null && <div>{b.age} лет</div>}
                       </div>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${isNegisAppSource(b.source) ? 'bg-[#EEF2FF] text-[#4F46E5]' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
+                          {sourceValueToLabel(b.source)}
+                        </span>
+                        {isNegisAppSource(b.source) && (
+                          <>
+                            <span className="inline-flex rounded-full bg-[#EFF6FF] px-2 py-0.5 text-[11px] font-bold text-[#2859C5]">
+                              {qrStatusLabel(b.qr_status)}
+                            </span>
+                            <span className="inline-flex rounded-full bg-[#F0FDF4] px-2 py-0.5 text-[11px] font-bold text-[#16A34A]">
+                              Бонусы: {bonusStatusLabel(b.bonus_status)}
+                            </span>
+                          </>
+                        )}
+                      </div>
                       {b.lead_id && (
                         <span className="mt-3 inline-flex px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#2859C5] text-[11px] font-bold">
                           Клиент
@@ -541,6 +625,14 @@ export default function Reception() {
               </div>
             </div>
           </div>
+        )}
+        {showQrScanner && (
+          <NegisQrScanner
+            clinicId={clinicId}
+            userId={user?.id}
+            onClose={() => setShowQrScanner(false)}
+            onConfirmed={loadBookings}
+          />
         )}
       </div>
     </PageLayout>

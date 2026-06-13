@@ -7,6 +7,15 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWazzupInbox } from '@/hooks/useWazzupInbox';
 import { agentDisplayName, loadAgentRoleMaps } from '@/lib/agentDisplay';
+import {
+  BONUS_STATUS_LABELS,
+  CRM_SOURCES,
+  QR_STATUS_LABELS,
+  fetchAppClientByPhone,
+  isNegisAppSource,
+  sourceValueToLabel,
+  spendAppBonus,
+} from '@/lib/negisApp';
 import { toast } from 'sonner';
 import { trackEvent } from '@/lib/fbpixel';
 import { DayPicker } from 'react-day-picker';
@@ -23,6 +32,7 @@ interface Lead {
   age: number | null;
   source: string | null; status_id: string | null; comment: string | null;
   created_at: string;
+  app_client_id?: string | null; bonus_balance_cached?: number | null;
   lead_statuses?: { name: string; color: string } | null;
 }
 interface LeadStatus { id: string; name: string; color: string }
@@ -39,9 +49,13 @@ interface BookingHistory {
   time: string;
   visited: boolean | null;
   comment: string | null;
+  source?: string | null;
+  qr_status?: string | null;
+  bonus_status?: string | null;
+  app_appointment_id?: string | null;
 }
 
-const SOURCES = ['Instagram', 'Google', 'WhatsApp', '2GIS', 'Вручную', 'Webhook', 'Import'];
+const SOURCES = CRM_SOURCES;
 
 const SORT_OPTIONS = [
   { value: 'created_at_desc', label: 'Дата (новые)' },
@@ -154,6 +168,11 @@ export default function Sales() {
   const [leadBookingsLoading, setLeadBookingsLoading] = useState(false);
   const [quickNote, setQuickNote] = useState('');
   const [taskForm, setTaskForm] = useState({ text: '', dueDate: '' });
+  const [appClient, setAppClient] = useState<{ id?: string; bonus_balance?: number; bonusBalance?: number; linked?: boolean } | null>(null);
+  const [appClientLoading, setAppClientLoading] = useState(false);
+  const [bonusSpendAmount, setBonusSpendAmount] = useState('');
+  const [bonusSpendServicePrice, setBonusSpendServicePrice] = useState('');
+  const [bonusSpendLoading, setBonusSpendLoading] = useState(false);
   const [procedureForm, setProcedureForm] = useState({
     received: '',
     planned: '',
@@ -231,6 +250,9 @@ export default function Sales() {
       setLeadDetailTab('overview');
       setQuickNote('');
       setTaskForm({ text: '', dueDate: '' });
+      setAppClient(null);
+      setBonusSpendAmount('');
+      setBonusSpendServicePrice('');
       setProcedureForm({
         received: '',
         planned: '',
@@ -241,8 +263,10 @@ export default function Sales() {
         comment: '',
       });
       loadLeadBookings(selectedLead);
+      loadAppClient(selectedLead);
     } else {
       setLeadBookings([]);
+      setAppClient(null);
     }
   }, [selectedLead?.id]);
 
@@ -254,7 +278,7 @@ export default function Sales() {
       const rowAgent = agents.find(a => a.id === l.assigned_to) ?? agents.find(a => a.user_id === l.assigned_to);
       if ((rowAgent?.id ?? l.assigned_to) !== filterAgent) return false;
     }
-    if (filterSource && l.source !== filterSource) return false;
+    if (filterSource && sourceValueToLabel(l.source) !== filterSource) return false;
     if (periodFilter !== 'all') {
       const { from, to } = getDateRange(periodFilter, dateFrom, dateTo);
       const created = new Date(l.created_at);
@@ -299,13 +323,26 @@ export default function Sales() {
   const loadLeadBookings = async (lead: Lead) => {
     if (!clinicId) return;
     setLeadBookingsLoading(true);
-    const { data, error } = await supabase
+    const primary = await supabase
       .from('bookings')
-      .select('id, lead_id, patient_name, patient_phone, service_id, agent_id, date, time, visited, comment')
+      .select('id, lead_id, patient_name, patient_phone, service_id, agent_id, date, time, visited, comment, source, qr_status, bonus_status, app_appointment_id')
       .eq('clinic_id', clinicId)
       .order('date', { ascending: false })
       .order('time', { ascending: false })
       .limit(500);
+    let data = primary.data as BookingHistory[] | null;
+    let error = primary.error;
+    if (error?.message?.includes('column')) {
+      const fallback = await supabase
+        .from('bookings')
+        .select('id, lead_id, patient_name, patient_phone, service_id, agent_id, date, time, visited, comment')
+        .eq('clinic_id', clinicId)
+        .order('date', { ascending: false })
+        .order('time', { ascending: false })
+        .limit(500);
+      data = fallback.data as BookingHistory[] | null;
+      error = fallback.error;
+    }
     setLeadBookingsLoading(false);
     if (error) { toast.error(error.message); return; }
     const normalizedPhone = normalizePhoneForDuplicate(lead.phone);
@@ -314,6 +351,26 @@ export default function Sales() {
       (!!normalizedPhone && normalizePhoneForDuplicate(b.patient_phone) === normalizedPhone)
     );
     setLeadBookings(rows);
+  };
+
+  const loadAppClient = async (lead: Lead) => {
+    if (!lead.phone) return;
+    setAppClientLoading(true);
+    try {
+      const data = await fetchAppClientByPhone(lead.phone);
+      setAppClient(data);
+      const nextBalance = data.bonus_balance ?? data.bonusBalance ?? lead.bonus_balance_cached ?? 0;
+      if (data.id || nextBalance !== (lead.bonus_balance_cached ?? 0)) {
+        await supabase
+          .from('leads')
+          .update({ app_client_id: data.id ?? lead.app_client_id ?? null, bonus_balance_cached: nextBalance })
+          .eq('id', lead.id);
+      }
+    } catch {
+      setAppClient(null);
+    } finally {
+      setAppClientLoading(false);
+    }
   };
 
   const findDuplicateLeadByPhone = async (phone: string | null | undefined, ignoreId?: string) => {
@@ -413,9 +470,21 @@ export default function Sales() {
       status_id: selectedLead.status_id || null,
       assigned_to: assignedTo,
       comment: selectedLead.comment || null,
+      app_client_id: selectedLead.app_client_id || appClient?.id || null,
+      bonus_balance_cached: Number(appClient?.bonus_balance ?? appClient?.bonusBalance ?? selectedLead.bonus_balance_cached ?? 0),
     };
     const { error } = await supabase.from('leads').update(payload).eq('id', selectedLead.id);
     if (error) {
+      if (error.message.includes('column')) {
+        const legacyPayload = { ...payload } as Record<string, unknown>;
+        delete legacyPayload.app_client_id;
+        delete legacyPayload.bonus_balance_cached;
+        const { error: legacyError } = await supabase.from('leads').update(legacyPayload).eq('id', selectedLead.id);
+        setSaving(false);
+        if (legacyError) { toast.error(legacyError.message); return; }
+        toast.success('Лид обновлён. Для связки Negis App выполните миграцию 006.');
+        setSelectedLead(null); init(); return;
+      }
       // FK violation on assigned_to: stale DB data — clear it and retry
       if (error.message.includes('leads_assigned_to_fkey') || error.code === '23503') {
         const { error: e2 } = await supabase.from('leads')
@@ -498,6 +567,7 @@ export default function Sales() {
   const servicePrice = (id: string | null) => id ? (services.find(s => s.id === id)?.price ?? 0) : 0;
   const bookingAgentName = (id: string | null) => id ? agentLabel(agents.find(a => a.id === id)) : '—';
   const money = (value: number) => value.toLocaleString('ru-RU') + ' ₸';
+  const appBalance = Number(appClient?.bonus_balance ?? appClient?.bonusBalance ?? selectedLead?.bonus_balance_cached ?? 0);
   const parseMoneyValue = (value: string | null | undefined) => {
     if (!value) return 0;
     const raw = value.toLowerCase().replace(/\u00a0/g, ' ');
@@ -528,6 +598,8 @@ export default function Sales() {
     booking.visited === true ? '#16A34A'
       : booking.visited === false ? '#DC2626'
       : '#2859C5';
+  const qrStatusLabel = (value?: string | null) => value ? (QR_STATUS_LABELS[value] ?? value) : '—';
+  const bonusStatusLabel = (value?: string | null) => value ? (BONUS_STATUS_LABELS[value] ?? value) : '—';
   const sortedLeadBookings = [...leadBookings].sort((a, b) =>
     `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)
   );
@@ -615,6 +687,43 @@ export default function Sales() {
         bought: '',
         comment: '',
       });
+    }
+  };
+
+  const applyBonusSpend = async () => {
+    if (!clinicId || !selectedLead) return;
+    const servicePriceValue = parseMoneyValue(bonusSpendServicePrice);
+    const requested = parseMoneyValue(bonusSpendAmount);
+    const maxAllowed = Math.floor(servicePriceValue * 0.5);
+    if (!servicePriceValue) { toast.error('Укажите стоимость услуги'); return; }
+    if (!requested) { toast.error('Укажите сумму бонусов'); return; }
+    if (requested > maxAllowed) {
+      toast.error(`Можно списать максимум ${money(maxAllowed)} — 50% стоимости услуги`);
+      return;
+    }
+    if (requested > appBalance) {
+      toast.error('У клиента недостаточно бонусов');
+      return;
+    }
+    setBonusSpendLoading(true);
+    try {
+      await spendAppBonus({
+        clinic_id: clinicId,
+        client_phone: selectedLead.phone,
+        client_id: selectedLead.app_client_id || appClient?.id || null,
+        lead_id: selectedLead.id,
+        amount: requested,
+        service_price: servicePriceValue,
+      });
+      await appendLeadHistory('Бонусы Negis App', `списано: ${money(requested)}; стоимость услуги: ${money(servicePriceValue)}; к оплате деньгами: ${money(servicePriceValue - requested)}`);
+      toast.success('Списание отправлено в backend');
+      setBonusSpendAmount('');
+      setBonusSpendServicePrice('');
+      loadAppClient(selectedLead);
+    } catch (e: any) {
+      toast.error(e.message || 'Backend не списал бонусы');
+    } finally {
+      setBonusSpendLoading(false);
     }
   };
 
@@ -827,7 +936,11 @@ export default function Sales() {
                       </td>
                       <td className="p-4 font-medium text-[#0B1220]">{displayName(lead)}</td>
                       <td className="p-4 text-[#64748B]">{lead.phone ?? '—'}</td>
-                      <td className="p-4 text-[#64748B]">{lead.source ?? '—'}</td>
+                      <td className="p-4 text-[#64748B]">
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${sourceValueToLabel(lead.source) === 'Negis App' ? 'bg-[#EEF2FF] text-[#4F46E5]' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
+                          {sourceValueToLabel(lead.source)}
+                        </span>
+                      </td>
                       <td className="p-4">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
                           style={{ background: statusColor(lead) + '18', color: statusColor(lead) }}>
@@ -1024,6 +1137,29 @@ export default function Sales() {
                           </div>
                         </div>
 
+                        <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-bold text-[#0B1220]">Negis App</div>
+                              <div className="mt-1 text-xs text-[#64748B]">
+                                {appClientLoading
+                                  ? 'Проверяем связь с приложением...'
+                                  : (appClient?.id || selectedLead.app_client_id)
+                                    ? `App client ID: ${appClient?.id || selectedLead.app_client_id}`
+                                    : 'Клиент пока не найден в приложении по телефону'}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <span className={`rounded-full px-3 py-1 text-xs font-bold ${(appClient?.id || selectedLead.app_client_id) ? 'bg-[#DCFCE7] text-[#16A34A]' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
+                                {(appClient?.id || selectedLead.app_client_id) ? 'Связан' : 'Не связан'}
+                              </span>
+                              <span className="rounded-full bg-[#EFF6FF] px-3 py-1 text-xs font-bold text-[#2859C5]">
+                                Бонусы: {money(appBalance)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
                         <div className="grid grid-cols-2 gap-4">
                           <div className="col-span-2">
                             <label className="text-xs text-[#64748B] font-medium block mb-1.5">Полное имя</label>
@@ -1097,6 +1233,7 @@ export default function Sales() {
                                 <th className="text-left p-3">Дата</th>
                                 <th className="text-left p-3">Услуга</th>
                                 <th className="text-left p-3">Агент</th>
+                                <th className="text-left p-3">Источник</th>
                                 <th className="text-left p-3">Статус</th>
                                 <th className="text-left p-3">Комментарий</th>
                               </tr>
@@ -1105,8 +1242,21 @@ export default function Sales() {
                               {sortedLeadBookings.map(b => (
                                 <tr key={b.id} className="border-t border-[#EEF2F6]">
                                   <td className="p-3 font-semibold text-[#0B1220]">{b.date} {b.time}</td>
-                                  <td className="p-3 text-[#64748B]">{serviceName(b.service_id)}</td>
-                                  <td className="p-3 text-[#64748B]">{bookingAgentName(b.agent_id)}</td>
+                                   <td className="p-3 text-[#64748B]">{serviceName(b.service_id)}</td>
+                                   <td className="p-3 text-[#64748B]">{bookingAgentName(b.agent_id)}</td>
+                                   <td className="p-3">
+                                     <div className="flex flex-wrap gap-1">
+                                       <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${isNegisAppSource(b.source) ? 'bg-[#EEF2FF] text-[#4F46E5]' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
+                                         {sourceValueToLabel(b.source)}
+                                       </span>
+                                       {isNegisAppSource(b.source) && (
+                                         <>
+                                           <span className="rounded-full bg-[#EFF6FF] px-2 py-0.5 text-[11px] font-bold text-[#2859C5]">{qrStatusLabel(b.qr_status)}</span>
+                                           <span className="rounded-full bg-[#F0FDF4] px-2 py-0.5 text-[11px] font-bold text-[#16A34A]">{bonusStatusLabel(b.bonus_status)}</span>
+                                         </>
+                                       )}
+                                     </div>
+                                   </td>
                                   <td className="p-3">
                                     <span className="px-2.5 py-1 rounded-full text-xs font-semibold" style={{ background: bookingStatusColor(b) + '18', color: bookingStatusColor(b) }}>
                                       {bookingStatusLabel(b)}
@@ -1209,6 +1359,47 @@ export default function Sales() {
                             <div className="text-xs text-[#64748B]">Осталось получить</div>
                             <div className="text-xl font-black text-[#0B1220] mt-1">{money(crmRemainingValue)}</div>
                           </div>
+                        </div>
+                        <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="font-semibold text-[#0B1220]">Списать бонусы Negis App</div>
+                              <div className="mt-1 text-sm text-[#64748B]">
+                                Доступно: {money(appBalance)}. Максимум к списанию — 50% стоимости услуги.
+                              </div>
+                            </div>
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#2859C5]">
+                              Backend API
+                            </span>
+                          </div>
+                          <div className="mt-4 grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3">
+                            <input
+                              style={IS}
+                              placeholder="Стоимость услуги, например 20 000"
+                              value={bonusSpendServicePrice}
+                              onChange={e => setBonusSpendServicePrice(e.target.value)}
+                            />
+                            <input
+                              style={IS}
+                              placeholder="Списать бонусов"
+                              value={bonusSpendAmount}
+                              onChange={e => setBonusSpendAmount(e.target.value)}
+                            />
+                            <button
+                              type="button"
+                              onClick={applyBonusSpend}
+                              disabled={bonusSpendLoading || appBalance <= 0}
+                              className="rounded-xl bg-[#1E325C] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                            >
+                              Применить бонусы
+                            </button>
+                          </div>
+                          {bonusSpendServicePrice && (
+                            <div className="mt-3 text-xs text-[#64748B]">
+                              Максимум: {money(Math.floor(parseMoneyValue(bonusSpendServicePrice) * 0.5))};
+                              к оплате деньгами после списания: {money(Math.max(parseMoneyValue(bonusSpendServicePrice) - parseMoneyValue(bonusSpendAmount), 0))}
+                            </div>
+                          )}
                         </div>
                         <div className="rounded-xl border border-[#E7ECF3] overflow-hidden">
                           <div className="px-4 py-3 bg-[#F8FAFC] text-sm font-semibold text-[#0B1220]">Покупки и оплаты из истории</div>
