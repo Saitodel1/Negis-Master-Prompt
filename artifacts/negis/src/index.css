@@ -114,10 +114,14 @@
   }
   @media (min-width: 1024px) {
     #root {
-      zoom: 0.8;
-      width: 125%;
-      min-height: 125dvh;
+      zoom: 0.75;
+      width: 133.333333%;
     }
+  }
+
+  html,
+  body {
+    overflow-x: hidden;
   }
 
   body {
