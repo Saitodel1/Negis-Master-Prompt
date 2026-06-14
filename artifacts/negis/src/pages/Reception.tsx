@@ -393,10 +393,10 @@ export default function Reception() {
 
   return (
     <PageLayout>
-      <div className="space-y-4">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold">Приём клиентов</h2>
+          <h2 className="text-2xl font-bold">Приём клиентов</h2>
 
           {/* Date nav */}
           <div className="flex items-center gap-2">
@@ -464,7 +464,7 @@ export default function Reception() {
           </div>
         </div>
 
-        <div className="neu-card p-2.5 flex flex-wrap gap-2">
+        <div className="neu-card p-3 flex flex-wrap gap-2">
           {([
             ['today', 'Сегодня'],
             ['waiting', 'Ожидают прихода'],
@@ -477,14 +477,14 @@ export default function Reception() {
               key={key}
               type="button"
               onClick={() => setViewFilter(key)}
-              className={`rounded-full px-3.5 py-1.5 text-sm font-semibold transition ${viewFilter === key ? 'bg-[#0D9488] text-white shadow-sm' : 'bg-white text-[#64748B] border border-[#E7ECF3] hover:text-[#0D9488]'}`}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${viewFilter === key ? 'bg-[#1E325C] text-white shadow-sm' : 'bg-white text-[#64748B] border border-[#E7ECF3] hover:text-[#1E325C]'}`}
             >
               {label}
             </button>
           ))}
         </div>
 
-        <div className="neu-card p-3 flex flex-wrap gap-3 items-center">
+        <div className="neu-card p-4 flex flex-wrap gap-3 items-center">
           <input
             className="neu-input text-sm flex-1 min-w-60"
             placeholder="Название нового столбца"
@@ -509,7 +509,7 @@ export default function Reception() {
         ) : bookings.length === 0 ? (
           <div className="neu-card py-16 text-center text-[#94A3B8] text-sm">{emptyMsg}</div>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 gap-3 min-h-0">
+          <div className="grid grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 gap-4 min-h-0">
             {groupedBookings.map(({ status, items }) => (
               <section
                 key={status.id}
@@ -520,9 +520,9 @@ export default function Reception() {
                   setDraggingBookingId('');
                   if (booking && statusForBooking(booking)?.id !== status.id) moveBookingToStatus(booking, status);
                 }}
-                className={`rounded-2xl border bg-white overflow-hidden h-[clamp(360px,calc(100dvh-350px),560px)] flex flex-col transition-colors ${draggingBookingId ? 'border-[#99F6E4]' : 'border-[#E7ECF3]'}`}
+                className={`rounded-2xl border bg-white overflow-hidden h-[calc(100dvh-300px)] min-h-[520px] flex flex-col transition-colors ${draggingBookingId ? 'border-[#BFDBFE]' : 'border-[#E7ECF3]'}`}
               >
-                <div className="p-3 border-b border-[#E7ECF3] bg-[#F8FAFC]">
+                <div className="p-4 border-b border-[#E7ECF3] bg-[#F8FAFC]">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h3 className="font-bold text-[#0B1220]">{status.name}</h3>
@@ -534,7 +534,7 @@ export default function Reception() {
                   </div>
                 </div>
 
-                <div className="p-3 space-y-2.5 overflow-y-auto overscroll-contain flex-1">
+                <div className="p-3 space-y-3 overflow-y-auto overscroll-contain flex-1">
                   {items.length === 0 ? (
                     <div className="py-10 text-center text-sm text-[#94A3B8]">Нет записей</div>
                   ) : items.map(b => (
@@ -547,7 +547,7 @@ export default function Reception() {
                         e.dataTransfer.effectAllowed = 'move';
                       }}
                       onDragEnd={() => setDraggingBookingId('')}
-                      className={`rounded-xl border bg-white p-3 shadow-sm cursor-grab active:cursor-grabbing transition ${focusedBookingId === b.id ? 'border-[#0D9488] ring-4 ring-[#CCFBF1]' : 'border-[#E7ECF3]'} ${draggingBookingId === b.id ? 'opacity-60 ring-2 ring-[#99F6E4]' : ''}`}
+                      className={`rounded-xl border bg-white p-4 shadow-sm cursor-grab active:cursor-grabbing transition ${focusedBookingId === b.id ? 'border-[#2859C5] ring-4 ring-[#DBEAFE]' : 'border-[#E7ECF3]'} ${draggingBookingId === b.id ? 'opacity-60 ring-2 ring-[#BFDBFE]' : ''}`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
