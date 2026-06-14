@@ -24,15 +24,15 @@ import { toast } from 'sonner';
 import { agentInitials, type AgentDisplayInfo } from '@/lib/agentDisplay';
 
 const NAV = [
-  { href: '/dashboard', icon: BarChart2, label: 'Дашборд', roles: ['owner', 'manager'] },
-  { href: '/booking', icon: CalendarDays, label: 'Запись', roles: ['owner', 'manager', 'agent', 'booking_agent'] },
-  { href: '/reception', icon: Building2, label: 'Ресепшн', roles: ['owner', 'manager', 'receptionist', 'booking_agent'] },
-  { href: '/sales', icon: Briefcase, label: 'Клиенты', roles: ['owner', 'manager', 'agent'] },
-  { href: '/tasks', icon: ClipboardList, label: 'Задачи', roles: ['owner', 'manager', 'agent'] },
-  { href: '/chat', icon: MessageCircle, label: 'Чат', roles: ['owner', 'manager', 'agent', 'booking_agent', 'receptionist'] },
-  { href: '/marketplace', icon: Store, label: 'Маркет', roles: ['owner', 'manager'] },
-  { href: '/ads', icon: Megaphone, label: 'Реклама', roles: ['owner', 'manager'] },
-  { href: '/admin', icon: Settings, label: 'Админ', roles: ['owner', 'manager'] },
+  { href: '/dashboard', icon: BarChart2, label: 'Дашборд', permission: 'dashboard' },
+  { href: '/booking', icon: CalendarDays, label: 'Запись', permission: 'booking' },
+  { href: '/reception', icon: Building2, label: 'Ресепшн', permission: 'reception' },
+  { href: '/sales', icon: Briefcase, label: 'Клиенты', permission: 'crm' },
+  { href: '/tasks', icon: ClipboardList, label: 'Задачи', permission: 'tasks' },
+  { href: '/chat', icon: MessageCircle, label: 'Чат', permission: 'chat' },
+  { href: '/marketplace', icon: Store, label: 'Маркет', permission: 'marketplace' },
+  { href: '/ads', icon: Megaphone, label: 'Реклама', permission: 'ads' },
+  { href: '/admin', icon: Settings, label: 'Админ', permission: 'admin' },
 ];
 
 const MAX_AVATAR_SOURCE_BYTES = 8 * 1024 * 1024;
@@ -86,7 +86,7 @@ async function compressAvatarFile(file: File) {
 
 export function TopNav() {
   const [location] = useLocation();
-  const { signOut, user, userRole, clinicId } = useAuth();
+  const { signOut, user, userRole, rolePermissions, clinicId } = useAuth();
   const profileButtonRef = useRef<HTMLButtonElement | null>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [profilePanelPosition, setProfilePanelPosition] = useState({ left: 24, top: 128 });
@@ -98,7 +98,7 @@ export function TopNav() {
   const [avatarColor, setAvatarColor] = useState(user?.user_metadata?.avatar_color ?? '#EFF6FF');
   const [saving, setSaving] = useState(false);
 
-  const filtered = NAV.filter(item => !userRole || item.roles.includes(userRole));
+  const filtered = NAV.filter(item => userRole === 'owner' || userRole === 'manager' || rolePermissions[item.permission]);
   const initials = agentInitials(myAgent, user?.user_metadata?.full_name ?? user?.email ?? 'U');
   const avatarSrc = avatarUrl || myAgent?.avatar_url || user?.user_metadata?.avatar_url || '';
   const iconValue = avatarIcon || myAgent?.avatar_icon || user?.user_metadata?.avatar_icon || '';
@@ -139,7 +139,7 @@ export function TopNav() {
     if (rect) {
       setProfilePanelPosition({
         left: Math.max(16, Math.min(rect.left - 8, window.innerWidth - panelWidth - 16)),
-        top: Math.max(16, rect.bottom + 14),
+        top: Math.max(118, rect.bottom + 14),
       });
     }
     setFullName(user?.user_metadata?.full_name ?? '');

@@ -1,4 +1,5 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { useEffect, type ComponentType } from "react";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -27,6 +28,23 @@ import NotFound from "@/pages/not-found";
 import FbPixelInit from "@/components/FbPixelInit";
 
 const queryClient = new QueryClient();
+
+const ROUTE_PERMISSIONS: Record<string, string> = {
+  '/dashboard': 'dashboard',
+  '/booking': 'booking',
+  '/reception': 'reception',
+  '/sales': 'crm',
+  '/tasks': 'tasks',
+  '/chat': 'chat',
+  '/marketplace': 'marketplace',
+  '/admin': 'admin',
+  '/ads': 'ads',
+};
+
+function firstAllowedRoute(rolePermissions: Record<string, boolean>) {
+  const first = Object.entries(ROUTE_PERMISSIONS).find(([, permission]) => rolePermissions[permission]);
+  return first?.[0] ?? '/';
+}
 
 /* ── Impersonation Banner ────────────────────────────────── */
 function ImpersonationBanner() {
@@ -66,6 +84,19 @@ function ImpersonationBanner() {
   );
 }
 
+function ProtectedPage({ component: Component, permission }: { component: ComponentType; permission: string }) {
+  const { isLoading, userRole, rolePermissions } = useAuth();
+  const [, setLocation] = useLocation();
+  const allowed = userRole === 'owner' || userRole === 'manager' || !!rolePermissions[permission];
+
+  useEffect(() => {
+    if (!isLoading && !allowed) setLocation(firstAllowedRoute(rolePermissions));
+  }, [allowed, isLoading, rolePermissions, setLocation]);
+
+  if (isLoading || !allowed) return null;
+  return <Component />;
+}
+
 /* ── Router ── */
 function Router() {
   return (
@@ -73,16 +104,16 @@ function Router() {
       <Route path="/" component={Landing} />
       <Route path="/register" component={Register} />
       <Route path="/onboarding" component={Onboarding} />
-      <Route path="/dashboard" component={Dashboard} />
-      <Route path="/booking" component={Booking} />
-      <Route path="/reception" component={Reception} />
-      <Route path="/sales" component={Sales} />
-      <Route path="/tasks" component={Tasks} />
-      <Route path="/chat" component={Chat} />
-      <Route path="/marketplace" component={Marketplace} />
+      <Route path="/dashboard" component={() => <ProtectedPage component={Dashboard} permission="dashboard" />} />
+      <Route path="/booking" component={() => <ProtectedPage component={Booking} permission="booking" />} />
+      <Route path="/reception" component={() => <ProtectedPage component={Reception} permission="reception" />} />
+      <Route path="/sales" component={() => <ProtectedPage component={Sales} permission="crm" />} />
+      <Route path="/tasks" component={() => <ProtectedPage component={Tasks} permission="tasks" />} />
+      <Route path="/chat" component={() => <ProtectedPage component={Chat} permission="chat" />} />
+      <Route path="/marketplace" component={() => <ProtectedPage component={Marketplace} permission="marketplace" />} />
       <Route path="/agent" component={Agent} />
-      <Route path="/admin" component={Admin} />
-      <Route path="/ads" component={Ads} />
+      <Route path="/admin" component={() => <ProtectedPage component={Admin} permission="admin" />} />
+      <Route path="/ads" component={() => <ProtectedPage component={Ads} permission="ads" />} />
       <Route path="/ads/callback" component={AdsCallback} />
       <Route path="/privacy" component={Privacy} />
       <Route path="/terms" component={Terms} />

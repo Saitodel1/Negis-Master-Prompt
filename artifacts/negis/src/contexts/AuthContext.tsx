@@ -14,11 +14,15 @@ interface ImpersonationData {
   issued_by: string;
 }
 
+export type UserRole = 'owner' | 'manager' | 'agent' | 'booking_agent' | 'receptionist';
+export type RolePermissions = Record<string, boolean>;
+
 interface AuthContextType {
   session: Session | null;
   user: User | null;
   clinicId: string | null;
-  userRole: 'owner' | 'manager' | 'agent' | 'receptionist' | null;
+  userRole: UserRole | null;
+  rolePermissions: RolePermissions;
   isLoading: boolean;
   isImpersonation: boolean;
   impersonationClinicName: string | null;
@@ -29,6 +33,28 @@ interface AuthContextType {
 const IMP_KEY     = 'negis_impersonation';
 const CLINIC_KEY  = 'negis_clinic_id';
 const SESSION_KEY = 'negis_session';
+
+const ALL_PERMISSIONS: RolePermissions = {
+  dashboard: true,
+  booking: true,
+  reception: true,
+  crm: true,
+  tasks: true,
+  chat: true,
+  marketplace: true,
+  admin: true,
+  reports: true,
+  ads: true,
+  settings: true,
+};
+
+const SYSTEM_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
+  owner: ALL_PERMISSIONS,
+  manager: ALL_PERMISSIONS,
+  agent: { dashboard: true, booking: true, crm: true, tasks: true, chat: true },
+  booking_agent: { dashboard: true, booking: true, chat: true },
+  receptionist: { reception: true, chat: true },
+};
 
 function clearImpersonationStorage() {
   localStorage.removeItem(IMP_KEY);
@@ -61,7 +87,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session,                 setSession]                 = useState<Session | null>(null);
   const [user,                    setUser]                    = useState<User | null>(null);
   const [clinicId,                setClinicId]                = useState<string | null>(null);
-  const [userRole,                setUserRole]                = useState<'owner' | 'manager' | 'agent' | 'receptionist' | null>(null);
+  const [userRole,                setUserRole]                = useState<UserRole | null>(null);
+  const [rolePermissions,         setRolePermissions]         = useState<RolePermissions>({});
   const [isLoading,               setIsLoading]               = useState(true);
   const [isImpersonation,         setIsImpersonation]         = useState(false);
   const [impersonationClinicName, setImpersonationClinicName] = useState<string | null>(null);
@@ -82,6 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setClinicId(d.clinic_id);
     setImpersonationClinicName(d.clinic_name);
     setUserRole('owner');
+    setRolePermissions(ALL_PERMISSIONS);
   };
 
   /* ── 1. Init ──────────────────────────────────────────── */
@@ -146,6 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setClinicId(null);
         setUserRole(null);
+        setRolePermissions({});
         setIsLoading(false);
       }
     });
@@ -268,6 +297,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   /* ── 4. Fetch user role (normal auth only) ────────────── */
+  const fetchRolePermissions = async (userId: string, activeClinicId: string, role: UserRole) => {
+    if (role === 'owner' || role === 'manager') {
+      setRolePermissions(ALL_PERMISSIONS);
+      return;
+    }
+
+    const fallback = SYSTEM_ROLE_PERMISSIONS[role] ?? {};
+    const { data: agentRow } = await supabase
+      .from('agents')
+      .select('role_id')
+      .eq('clinic_id', activeClinicId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (!agentRow?.role_id) {
+      setRolePermissions(fallback);
+      return;
+    }
+
+    const { data: customRole } = await supabase
+      .from('roles')
+      .select('permissions')
+      .eq('clinic_id', activeClinicId)
+      .eq('id', agentRow.role_id)
+      .maybeSingle();
+
+    setRolePermissions((customRole?.permissions as RolePermissions | null) || fallback);
+  };
+
   const fetchUserRole = async (userId: string) => {
     try {
       const { data, error } = await supabase
@@ -278,7 +336,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
       if (data) {
         setClinicId(data.clinic_id);
-        setUserRole(data.role as any);
+        const role = data.role as UserRole;
+        setUserRole(role);
+        await fetchRolePermissions(userId, data.clinic_id, role);
       } else {
         setLocation('/onboarding');
       }
@@ -297,6 +357,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setImpersonationClinicName(null);
       setClinicId(null);
       setUserRole(null);
+      setRolePermissions({});
       /* Also terminate the Supabase session created for RLS */
       await supabase.auth.signOut();
       setLocation('/');
@@ -310,6 +371,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       session, user, clinicId, userRole, isLoading,
+      rolePermissions,
       isImpersonation, impersonationClinicName,
       signOut,
     }}>
