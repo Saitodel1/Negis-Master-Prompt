@@ -11,7 +11,6 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { agentDisplayName, loadAgentRoleMaps } from '@/lib/agentDisplay';
-import { NegisQrScanner } from '@/components/NegisQrScanner';
 import { BOOKING_SOURCES, BONUS_STATUS_LABELS, CRM_SOURCES, QR_STATUS_LABELS, sourceLabelToValue, sourceValueToLabel } from '@/lib/negisApp';
 import { toast } from 'sonner';
 import { trackEvent } from '@/lib/fbpixel';
@@ -120,7 +119,7 @@ function IndeterminateCheckbox({ checked, indeterminate, onChange }: {
       type="checkbox"
       checked={checked}
       onChange={onChange}
-      style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E325C' }}
+      style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#0D9488' }}
       onClick={e => e.stopPropagation()}
     />
   );
@@ -163,7 +162,6 @@ export default function Booking() {
   });
   const [calSaving, setCalSaving] = useState(false);
   const [calSourceFilter, setCalSourceFilter] = useState('');
-  const [showQrScanner, setShowQrScanner] = useState(false);
 
   /* ── Leads tab state ── */
   const [bkLeads, setBkLeads]       = useState<Lead[]>([]);
@@ -406,7 +404,7 @@ export default function Booking() {
       .insert({
         clinic_id: clinicId,
         name: 'Новый',
-        color: '#3B82F6',
+        color: '#0D9488',
         sort_order: 0,
         pipeline: 'booking',
       })
@@ -752,7 +750,7 @@ export default function Booking() {
             style={{
               padding: '8px 20px', borderRadius: 9, fontSize: 13, fontWeight: 500,
               fontFamily: "'Inter', sans-serif", cursor: 'pointer', border: 'none',
-              background: activeTab === tab.key ? '#1E325C' : 'transparent',
+              background: activeTab === tab.key ? '#0D9488' : 'transparent',
               color: activeTab === tab.key ? '#FFFFFF' : '#64748B',
               transition: 'all 0.15s ease',
             }}
@@ -760,17 +758,6 @@ export default function Booking() {
             {tab.label}
           </button>
         ))}
-        <button
-          type="button"
-          onClick={() => setShowQrScanner(true)}
-          style={{
-            padding: '8px 16px', borderRadius: 9, fontSize: 13, fontWeight: 600,
-            fontFamily: "'Inter', sans-serif", cursor: 'pointer',
-            border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#2859C5',
-          }}
-        >
-          Сканировать QR
-        </button>
       </div>
 
       {/* ══════════ CALENDAR TAB ══════════ */}
@@ -789,8 +776,8 @@ export default function Booking() {
               .rdp-head_cell { font-size: 11px; font-weight: 500; color: #94A3B8; letter-spacing: 0.08em; text-transform: uppercase; }
               .rdp-day { font-size: 13px; color: #475569; border-radius: 10px; }
               .rdp-day:hover:not([disabled]):not(.rdp-day_selected) { background: #EEF2F6 !important; color: #0B1220; }
-              .rdp-day_selected, .rdp-day_selected:hover { background: #1E325C !important; color: white !important; border-radius: 10px; font-weight: 600; }
-              .rdp-day_today:not(.rdp-day_selected) { color: #2859C5; font-weight: 600; }
+              .rdp-day_selected, .rdp-day_selected:hover { background: #0D9488 !important; color: white !important; border-radius: 10px; font-weight: 600; }
+              .rdp-day_today:not(.rdp-day_selected) { color: #0F766E; font-weight: 600; }
               .rdp-nav_button { color: #94A3B8; border-radius: 8px; }
               .rdp-nav_button:hover { background: #EEF2F6; color: #0B1220; }
             `}</style>
@@ -814,7 +801,7 @@ export default function Booking() {
               padding: '18px 24px', borderBottom: '1px solid #E7ECF3',
               display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
             }}>
-              <CalendarDays size={16} color="#2859C5" strokeWidth={1.75} />
+              <CalendarDays size={16} color="#0F766E" strokeWidth={1.75} />
               <span style={{ fontSize: 14, fontWeight: 600, color: '#0B1220', fontFamily: "'Inter', sans-serif" }}>
                 {dayLabel}
               </span>
@@ -874,7 +861,7 @@ export default function Booking() {
                           <div key={i} style={{
                             width: 6, height: 6, borderRadius: '50%',
                             background: i < count
-                              ? (full ? '#DC2626' : partial ? '#D97706' : '#2859C5')
+                              ? (full ? '#DC2626' : partial ? '#D97706' : '#0F766E')
                               : '#DDE5EE',
                           }} />
                         ))}
@@ -941,7 +928,7 @@ export default function Booking() {
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6,
                     padding: '9px 16px', borderRadius: 10,
-                    background: '#1E325C', border: 'none',
+                    background: '#0D9488', border: 'none',
                     fontSize: 13, fontWeight: 500, color: '#FFFFFF',
                     cursor: 'pointer', fontFamily: "'Inter', sans-serif",
                   }}
@@ -1032,7 +1019,7 @@ export default function Booking() {
             >
               <Check size={14} />{allBkFilteredSelected ? 'Снять выбор' : 'Выбрать все'}
             </button>
-            <span style={{ fontSize: 13, fontWeight: 600, color: selectedBkLeadIds.size > 0 ? '#1E325C' : '#94A3B8' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: selectedBkLeadIds.size > 0 ? '#0D9488' : '#94A3B8' }}>
               Выбрано: {selectedBkLeadIds.size}
             </span>
             {selectedBkLeadIds.size > 0 && (
@@ -1049,8 +1036,8 @@ export default function Booking() {
                       onClick={() => bulkUpdateBkLeads({ status_id: bkBulkStatusId })}
                       title="Применить статус"
                       style={{
-                        width: 34, height: 34, borderRadius: 9, border: '1px solid #BFDBFE',
-                        background: '#EFF6FF', color: '#2859C5', display: 'flex',
+                        width: 34, height: 34, borderRadius: 9, border: '1px solid #99F6E4',
+                        background: '#ECFDF5', color: '#0F766E', display: 'flex',
                         alignItems: 'center', justifyContent: 'center', cursor: bkBulkLoading ? 'default' : 'pointer',
                       }}
                     >
@@ -1076,8 +1063,8 @@ export default function Booking() {
                       onClick={() => bulkUpdateBkLeads({ assigned_to: safeAgentIdFn(bkBulkAgentId, agents) })}
                       title="Применить ответственного"
                       style={{
-                        width: 34, height: 34, borderRadius: 9, border: '1px solid #BFDBFE',
-                        background: '#EFF6FF', color: '#2859C5', display: 'flex',
+                        width: 34, height: 34, borderRadius: 9, border: '1px solid #99F6E4',
+                        background: '#ECFDF5', color: '#0F766E', display: 'flex',
                         alignItems: 'center', justifyContent: 'center', cursor: bkBulkLoading ? 'default' : 'pointer',
                       }}
                     >
@@ -1203,10 +1190,10 @@ export default function Booking() {
                       style={{
                         borderBottom: '1px solid #F1F5F9', cursor: 'pointer',
                         transition: 'background 0.12s',
-                        background: isSelected ? '#EFF6FF' : 'transparent',
+                        background: isSelected ? '#ECFDF5' : 'transparent',
                       }}
-                      onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = isSelected ? '#DBEAFE' : '#F8FAFC'}
-                      onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = isSelected ? '#EFF6FF' : 'transparent'}
+                      onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = isSelected ? '#CCFBF1' : '#F8FAFC'}
+                      onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = isSelected ? '#ECFDF5' : 'transparent'}
                     >
                       <td
                         style={{ padding: '12px 16px', width: 48 }}
@@ -1216,7 +1203,7 @@ export default function Booking() {
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => toggleBkLeadSelection(lead.id)}
-                          style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E325C' }}
+                          style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#0D9488' }}
                           onClick={e => e.stopPropagation()}
                         />
                       </td>
@@ -1350,7 +1337,7 @@ export default function Booking() {
               <button onClick={() => setModal(null)} style={{ flex: 1, background: '#F4F7FB', border: '1px solid #E7ECF3', borderRadius: 12, padding: '11px 0', fontSize: 14, color: '#475569', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
                 Отмена
               </button>
-              <button onClick={saveCalBooking} disabled={calSaving} style={{ flex: 2, background: '#1E325C', border: 'none', borderRadius: 12, padding: '11px 0', fontSize: 14, fontWeight: 500, color: 'white', cursor: calSaving ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif", opacity: calSaving ? 0.65 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <button onClick={saveCalBooking} disabled={calSaving} style={{ flex: 2, background: '#0D9488', border: 'none', borderRadius: 12, padding: '11px 0', fontSize: 14, fontWeight: 500, color: 'white', cursor: calSaving ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif", opacity: calSaving ? 0.65 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 {calSaving ? 'Сохранение...' : <><Plus size={15} /> Записать</>}
               </button>
             </div>
@@ -1416,7 +1403,7 @@ export default function Booking() {
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
               <button onClick={() => setShowNewLead(false)} style={{ flex: 1, padding: 11, borderRadius: 12, background: '#F4F7FB', border: '1px solid #E7ECF3', fontSize: 14, color: '#475569', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Отмена</button>
-              <button onClick={createLead} disabled={leadSaving} style={{ flex: 1, padding: 11, borderRadius: 12, background: '#1E325C', border: 'none', fontSize: 14, color: '#FFF', cursor: 'pointer', fontFamily: "'Inter', sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              <button onClick={createLead} disabled={leadSaving} style={{ flex: 1, padding: 11, borderRadius: 12, background: '#0D9488', border: 'none', fontSize: 14, color: '#FFF', cursor: 'pointer', fontFamily: "'Inter', sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                 <Check size={15} />{leadSaving ? 'Создание...' : 'Создать'}
               </button>
             </div>
@@ -1493,12 +1480,12 @@ export default function Booking() {
               <button onClick={() => deleteLead(selectedLead.id)} style={{ padding: '9px 14px', borderRadius: 10, background: '#FEF2F2', border: '1px solid #FEE2E2', fontSize: 13, color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
                 <Trash2 size={13} /> Удалить
               </button>
-              <button onClick={openBookFromLead} style={{ padding: '9px 14px', borderRadius: 10, background: '#EFF6FF', border: '1px solid #BFDBFE', fontSize: 13, color: '#2859C5', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <button onClick={openBookFromLead} style={{ padding: '9px 14px', borderRadius: 10, background: '#ECFDF5', border: '1px solid #99F6E4', fontSize: 13, color: '#0F766E', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
                 <CalendarPlus size={14} /> Создать запись
               </button>
               <div style={{ flex: 1 }} />
               <button onClick={() => setSelectedLead(null)} style={{ padding: '9px 14px', borderRadius: 10, background: '#F4F7FB', border: '1px solid #E7ECF3', fontSize: 13, color: '#475569', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Отмена</button>
-              <button onClick={updateLead} disabled={detailSaving} style={{ padding: '9px 18px', borderRadius: 10, background: '#1E325C', border: 'none', fontSize: 13, color: '#FFF', cursor: 'pointer', fontFamily: "'Inter', sans-serif", display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button onClick={updateLead} disabled={detailSaving} style={{ padding: '9px 18px', borderRadius: 10, background: '#0D9488', border: 'none', fontSize: 13, color: '#FFF', cursor: 'pointer', fontFamily: "'Inter', sans-serif", display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Check size={14} />{detailSaving ? 'Сохранение...' : 'Сохранить'}
               </button>
             </div>
@@ -1541,8 +1528,8 @@ export default function Booking() {
                   .bfl-rdp .rdp-head_cell { font-size: 10px; font-weight: 500; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.06em; }
                   .bfl-rdp .rdp-day { font-size: 12px; color: #475569; border-radius: 8px; }
                   .bfl-rdp .rdp-day:hover:not([disabled]):not(.rdp-day_selected) { background: #EEF2F6 !important; color: #0B1220; }
-                  .bfl-rdp .rdp-day_selected, .bfl-rdp .rdp-day_selected:hover { background: #1E325C !important; color: white !important; border-radius: 8px; font-weight: 600; }
-                  .bfl-rdp .rdp-day_today:not(.rdp-day_selected) { color: #2859C5; font-weight: 600; }
+                  .bfl-rdp .rdp-day_selected, .bfl-rdp .rdp-day_selected:hover { background: #0D9488 !important; color: white !important; border-radius: 8px; font-weight: 600; }
+                  .bfl-rdp .rdp-day_today:not(.rdp-day_selected) { color: #0F766E; font-weight: 600; }
                   .bfl-rdp .rdp-nav_button { color: #94A3B8; border-radius: 7px; }
                   .bfl-rdp .rdp-nav_button:hover { background: #EEF2F6; }
                 `}</style>
@@ -1581,9 +1568,9 @@ export default function Booking() {
                           onClick={() => setBflHour(sel ? null : h)}
                           style={{
                             padding: '10px 6px', borderRadius: 10, border: '1.5px solid',
-                            borderColor: sel ? '#1E325C' : full || past ? '#E7ECF3' : '#BFDBFE',
-                            background: sel ? '#1E325C' : full || past ? '#F8FAFC' : '#EFF6FF',
-                            color: sel ? '#FFF' : full || past ? '#CBD5E1' : '#1E325C',
+                            borderColor: sel ? '#0D9488' : full || past ? '#E7ECF3' : '#99F6E4',
+                            background: sel ? '#0D9488' : full || past ? '#F8FAFC' : '#ECFDF5',
+                            color: sel ? '#FFF' : full || past ? '#CBD5E1' : '#0D9488',
                             fontSize: 12, fontWeight: 500, cursor: avail ? 'pointer' : 'default',
                             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
                             fontFamily: "'Inter', sans-serif",
@@ -1629,7 +1616,7 @@ export default function Booking() {
                       onClick={saveBookFromLead}
                       disabled={bflSaving}
                       style={{
-                        padding: '11px 20px', borderRadius: 10, background: '#1E325C', border: 'none',
+                        padding: '11px 20px', borderRadius: 10, background: '#0D9488', border: 'none',
                         fontSize: 13, fontWeight: 600, color: '#FFF',
                         cursor: bflSaving ? 'default' : 'pointer', fontFamily: "'Inter', sans-serif",
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -1645,14 +1632,6 @@ export default function Booking() {
           </div>
         </div>
       )}
-      {showQrScanner && (
-        <NegisQrScanner
-          clinicId={clinicId}
-          userId={user?.id}
-          onClose={() => setShowQrScanner(false)}
-          onConfirmed={loadBookings}
-        />
-      )}
     </PageLayout>
   );
 }
@@ -1667,8 +1646,8 @@ function PagBtn({ children, onClick, disabled, active }: {
       disabled={disabled}
       style={{
         minWidth: 30, height: 30, borderRadius: 7, border: '1px solid',
-        borderColor: active ? '#1E325C' : '#E7ECF3',
-        background: active ? '#1E325C' : disabled ? 'transparent' : '#F4F7FB',
+        borderColor: active ? '#0D9488' : '#E7ECF3',
+        background: active ? '#0D9488' : disabled ? 'transparent' : '#F4F7FB',
         color: active ? '#FFFFFF' : disabled ? '#CBD5E1' : '#475569',
         fontSize: 12, fontWeight: active ? 600 : 400,
         cursor: disabled ? 'default' : 'pointer',

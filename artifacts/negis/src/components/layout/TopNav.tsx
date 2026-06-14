@@ -257,13 +257,12 @@ export function TopNav() {
 
   return (
     <>
-      <nav className="soft-dock sticky top-14 z-20 shrink-0 px-5 py-3">
-        <div className="flex items-center gap-3">
+      <div className="topnav-shell flex min-w-0 items-center justify-center gap-3">
           <button type="button" onClick={openProfile} className="shrink-0 border-0 bg-transparent p-0" title="Профиль">
             {renderAvatar()}
           </button>
 
-          <div className="topnav-scroll flex-1 overflow-x-auto">
+          <div className="topnav-scroll min-w-0 overflow-x-auto">
             <div className="dock-shell inline-flex min-w-max items-end gap-2 rounded-[34px] border border-white/70 bg-white/55 px-3 py-2 shadow-[8px_10px_28px_rgba(116,135,154,0.14),inset_1px_1px_0_rgba(255,255,255,0.9)] backdrop-blur-xl">
               {filtered.map(({ href, icon: Icon, label }) => {
                 const active = location === href || location.startsWith(href + '/');
@@ -278,12 +277,7 @@ export function TopNav() {
               })}
             </div>
           </div>
-
-          <button type="button" onClick={signOut} className="soft-icon-btn shrink-0" title="Выйти">
-            <LogOut size={18} />
-          </button>
-        </div>
-      </nav>
+      </div>
 
       {showProfile && (
         <div

@@ -1917,12 +1917,6 @@ function BranchesTab({ clinicId }: { clinicId: string | null }) {
         </div>
       )}
 
-      <div className="neu-sm p-4 border-l-4 border-[#3B82F6]">
-        <p className="text-xs font-semibold text-[#1D4ED8] mb-1">Требуется миграция базы данных</p>
-        <p className="text-xs text-[#475569]">
-          Для работы филиалов выполните SQL-миграцию из файла <code className="bg-[#F1F5F9] px-1 rounded">migrations/001_branches_leads_tariffs.sql</code> в Supabase Dashboard.
-        </p>
-      </div>
     </div>
   );
 }

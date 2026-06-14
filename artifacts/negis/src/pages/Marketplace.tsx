@@ -452,7 +452,11 @@ export default function Marketplace() {
     });
   }, [activeCategory, query]);
 
-  const priorityItems = ITEMS.filter(item => item.priority);
+  const allPriorityItems = ITEMS.filter(item => item.priority);
+  const priorityItems = activeCategory === 'all'
+    ? allPriorityItems
+    : filtered.filter(item => item.priority);
+  const visiblePriorityItems = priorityItems.length > 0 ? priorityItems : filtered.slice(0, 8);
 
   return (
     <PageLayout>
@@ -474,7 +478,7 @@ export default function Marketplace() {
             <div className="grid grid-cols-3 gap-3 text-center">
               <Metric value={ITEMS.length} label="инструментов" />
               <Metric value={CATEGORIES.length - 1} label="категорий" />
-              <Metric value={priorityItems.length} label="в приоритете" />
+              <Metric value={allPriorityItems.length} label="в приоритете" />
             </div>
           </div>
         </section>
@@ -512,12 +516,12 @@ export default function Marketplace() {
           </div>
         </section>
 
-        <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <section>
           <div className="rounded-[24px] border border-[#DDE7F0] bg-white/70 p-5 shadow-[8px_12px_28px_rgba(116,135,154,0.10)]">
             <h2 className="text-lg font-black text-[#0B1220]">Приоритет подключения</h2>
             <p className="mt-1 text-sm text-[#64748B]">То, что даст клинике быстрый эффект без противоречия основному продукту.</p>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-              {priorityItems.slice(0, 8).map(item => (
+              {visiblePriorityItems.slice(0, 8).map(item => (
                 <button
                   key={item.id}
                   type="button"
@@ -533,15 +537,6 @@ export default function Marketplace() {
                   </span>
                 </button>
               ))}
-            </div>
-          </div>
-
-          <div className="rounded-[24px] border border-[#DDE7F0] bg-[#F8FAFC]/85 p-5 shadow-[8px_12px_28px_rgba(116,135,154,0.10)]">
-            <h2 className="text-lg font-black text-[#0B1220]">Логика продажи</h2>
-            <div className="mt-4 space-y-3">
-              <Step number="1" title="Сначала Negis" text="Клиентская база, записи, задачи, финансы и история касаний должны жить внутри CRM." />
-              <Step number="2" title="Потом каналы" text="WhatsApp, телефония, платежи и отзывы подключаются как усилители процесса." />
-              <Step number="3" title="Не перегружаем" text="Реклама остается в разделе «Реклама», а онлайн-запись и календарь уже встроены в продукт." />
             </div>
           </div>
         </section>
@@ -572,18 +567,6 @@ function Metric({ value, label }: { value: number; label: string }) {
     <div className="rounded-2xl border border-[#E7ECF3] bg-white/78 px-5 py-4 shadow-[inset_1px_1px_0_rgba(255,255,255,0.9)]">
       <div className="text-2xl font-black text-[#0B1220]">{value}</div>
       <div className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-[#8EA0B7]">{label}</div>
-    </div>
-  );
-}
-
-function Step({ number, title, text }: { number: string; title: string; text: string }) {
-  return (
-    <div className="flex gap-3 rounded-2xl border border-[#E7ECF3] bg-white/70 p-4">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#0D9488] text-sm font-black text-white">{number}</div>
-      <div>
-        <div className="text-sm font-black text-[#0B1220]">{title}</div>
-        <div className="mt-1 text-sm leading-5 text-[#64748B]">{text}</div>
-      </div>
     </div>
   );
 }

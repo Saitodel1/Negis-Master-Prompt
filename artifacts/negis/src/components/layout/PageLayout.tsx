@@ -1,6 +1,5 @@
 import React from 'react';
 import { Topbar } from './Topbar';
-import { TopNav } from './TopNav';
 import { useAuth } from '@/contexts/AuthContext';
 import { Redirect } from 'wouter';
 
@@ -33,14 +32,13 @@ export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
     <div
       className="min-h-[100dvh] flex flex-col font-sans"
       style={{
-        background: 'radial-gradient(circle at 16% 0%, rgba(13, 148, 136, 0.10), transparent 30%), radial-gradient(circle at 86% 4%, rgba(59, 130, 246, 0.10), transparent 28%), #EEF4F8',
+        background: 'radial-gradient(circle at 16% 0%, rgba(13, 148, 136, 0.10), transparent 30%), radial-gradient(circle at 86% 4%, rgba(15, 118, 110, 0.08), transparent 28%), #EEF4F8',
         color: '#0F172A',
         paddingTop: isImpersonation ? 40 : 0,
       }}
     >
       <Topbar />
-      <TopNav />
-      <main className="flex-1 overflow-y-auto" style={{ padding: '28px clamp(18px, 3vw, 40px) 40px' }}>
+      <main className="flex-1 overflow-y-auto" style={{ padding: '24px clamp(18px, 3vw, 40px) 40px' }}>
         {children}
       </main>
     </div>

@@ -85,7 +85,8 @@ export default function Landing() {
     if (session) { setLocation(roleRoute(userRole)); return; }
     setError(''); setSuccessMsg('');
     loginForm.reset();
-    setModalState('login');
+    registerForm.reset();
+    setModalState('choice');
   };
 
   const closeModal = () => {

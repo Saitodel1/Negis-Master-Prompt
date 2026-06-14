@@ -5,6 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { agentDisplayName, loadAgentRoleMaps, type AgentDisplayInfo } from '@/lib/agentDisplay';
+import { TopNav } from './TopNav';
 
 const PAGE_LABELS: Record<string, string> = {
   '/dashboard': 'Дашборд',
@@ -159,15 +160,16 @@ export function Topbar() {
 
   return (
     <header
-      className="flex items-center justify-between shrink-0 sticky top-0 z-10 px-8"
+      className="grid shrink-0 sticky top-0 z-30 items-center gap-4 px-8"
       style={{
-        height: 56,
+        gridTemplateColumns: 'minmax(150px, 1fr) minmax(0, auto) minmax(190px, 1fr)',
+        height: 98,
         background: 'rgba(238, 244, 248, 0.86)',
         backdropFilter: 'blur(18px)',
         borderBottom: '1px solid rgba(224, 231, 239, 0.9)',
       }}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <span
           style={{
             fontSize: 12,
@@ -195,7 +197,11 @@ export function Topbar() {
         </span>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="min-w-0 justify-self-center">
+        <TopNav />
+      </div>
+
+      <div className="flex items-center justify-end gap-4">
         <span
           style={{
             fontSize: 12,
