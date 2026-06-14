@@ -141,7 +141,7 @@ export function TopNav() {
   };
 
   const renderAvatar = (sizeClass = 'soft-avatar') => (
-    <div className={`${sizeClass} overflow-hidden`} style={{ background: avatarBg }}>
+    <div className={`${sizeClass} shrink-0 overflow-hidden`} style={{ background: avatarBg }}>
       {avatarSrc ? (
         <img src={avatarSrc} alt="Профиль" className="h-full w-full object-cover" />
       ) : iconValue ? (
@@ -281,13 +281,13 @@ export function TopNav() {
 
       {showProfile && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-4 pb-8 pt-[118px]"
           style={{ background: 'rgba(92, 105, 120, 0.26)', backdropFilter: 'blur(14px)' }}
           onClick={e => {
             if (e.target === e.currentTarget) setShowProfile(false);
           }}
         >
-          <div className="soft-modal w-full max-w-[340px] max-h-[82dvh] overflow-y-auto p-5">
+          <div className="soft-modal w-full max-w-[360px] p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {renderAvatar()}
