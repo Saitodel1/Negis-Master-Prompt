@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Link, useLocation } from 'wouter';
 import {
   BarChart2,
@@ -87,7 +87,9 @@ async function compressAvatarFile(file: File) {
 export function TopNav() {
   const [location] = useLocation();
   const { signOut, user, userRole, clinicId } = useAuth();
+  const profileButtonRef = useRef<HTMLButtonElement | null>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [profilePanelPosition, setProfilePanelPosition] = useState({ left: 24, top: 128 });
   const [fullName, setFullName] = useState(user?.user_metadata?.full_name ?? '');
   const [newPassword, setNewPassword] = useState('');
   const [myAgent, setMyAgent] = useState<AgentDisplayInfo | null>(null);
@@ -132,6 +134,14 @@ export function TopNav() {
   }, [clinicId, user?.id]);
 
   const openProfile = () => {
+    const rect = profileButtonRef.current?.getBoundingClientRect();
+    const panelWidth = Math.min(360, window.innerWidth - 32);
+    if (rect) {
+      setProfilePanelPosition({
+        left: Math.max(16, Math.min(rect.left - 8, window.innerWidth - panelWidth - 16)),
+        top: Math.max(16, rect.bottom + 14),
+      });
+    }
     setFullName(user?.user_metadata?.full_name ?? '');
     setNewPassword('');
     setAvatarUrl(myAgent?.avatar_url || user?.user_metadata?.avatar_url || '');
@@ -260,7 +270,7 @@ export function TopNav() {
       <div className="topnav-shell flex min-w-0 items-center justify-center gap-3">
           <div className="topnav-scroll min-w-0 overflow-x-auto">
             <div className="dock-shell inline-flex min-w-max items-end gap-2 rounded-[34px] border border-white/70 bg-white/55 px-3 py-2 shadow-[8px_10px_28px_rgba(116,135,154,0.14),inset_1px_1px_0_rgba(255,255,255,0.9)] backdrop-blur-xl">
-              <button type="button" onClick={openProfile} className="topnav-item topnav-profile-item border-0" title="Профиль">
+              <button ref={profileButtonRef} type="button" onClick={openProfile} className="topnav-item topnav-profile-item border-0" title="Профиль">
                 {renderAvatar('soft-avatar topnav-profile-avatar')}
                 <span>Профиль</span>
               </button>
@@ -281,13 +291,21 @@ export function TopNav() {
 
       {showProfile && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-4 pb-8 pt-[118px]"
-          style={{ background: 'rgba(92, 105, 120, 0.26)', backdropFilter: 'blur(14px)' }}
+          className="fixed inset-0 z-50"
+          style={{ background: 'transparent' }}
           onClick={e => {
             if (e.target === e.currentTarget) setShowProfile(false);
           }}
         >
-          <div className="soft-modal w-full max-w-[360px] p-5">
+          <div
+            className="soft-modal absolute w-[min(360px,calc(100vw-32px))] overflow-y-auto p-5"
+            style={{
+              left: profilePanelPosition.left,
+              top: profilePanelPosition.top,
+              maxHeight: `calc(100dvh - ${profilePanelPosition.top + 16}px)`,
+            }}
+            onClick={e => e.stopPropagation()}
+          >
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {renderAvatar()}
