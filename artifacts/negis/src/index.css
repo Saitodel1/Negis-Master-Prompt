@@ -112,6 +112,14 @@
   * {
     @apply border-border;
   }
+  @media (min-width: 1024px) {
+    #root {
+      zoom: 0.8;
+      width: 125%;
+      min-height: 125dvh;
+    }
+  }
+
   body {
     @apply font-sans antialiased;
     background: radial-gradient(circle at 16% 0%, rgba(13, 148, 136, 0.10), transparent 30%),
@@ -459,6 +467,23 @@
 
   .topnav-item.is-active:hover {
     transform: translateY(-16px) scale(1.13);
+  }
+
+  .topnav-profile-item {
+    background: rgba(255, 255, 255, 0.44);
+  }
+
+  .topnav-profile-avatar {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    border-radius: 12px;
+    font-size: 10px;
+    box-shadow: none;
+  }
+
+  .topnav-profile-item:hover .topnav-profile-avatar {
+    transform: none;
   }
 
   @media (max-width: 1180px) {

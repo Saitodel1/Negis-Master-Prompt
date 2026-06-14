@@ -346,7 +346,14 @@ export default function Reception() {
   };
 
   const addStatusColumn = async () => {
-    if (!clinicId || !newStatusName.trim()) return;
+    if (!newStatusName.trim()) {
+      toast.error('Введите название столбца');
+      return;
+    }
+    if (!clinicId) {
+      toast.error('Клиника не выбрана');
+      return;
+    }
     setCreatingStatus(true);
     const nextOrder = Math.max(-1, ...bookingStatuses.map(s => s.sort_order ?? 0)) + 1;
     const { data, error } = await supabase
@@ -490,7 +497,7 @@ export default function Reception() {
           <button
             className="neu-btn-primary flex items-center gap-2"
             onClick={addStatusColumn}
-            disabled={!newStatusName.trim() || creatingStatus}
+            disabled={creatingStatus}
           >
             <Plus size={15} />
             {creatingStatus ? 'Добавление...' : 'Добавить столбец'}

@@ -258,12 +258,12 @@ export function TopNav() {
   return (
     <>
       <div className="topnav-shell flex min-w-0 items-center justify-center gap-3">
-          <button type="button" onClick={openProfile} className="shrink-0 border-0 bg-transparent p-0" title="Профиль">
-            {renderAvatar()}
-          </button>
-
           <div className="topnav-scroll min-w-0 overflow-x-auto">
             <div className="dock-shell inline-flex min-w-max items-end gap-2 rounded-[34px] border border-white/70 bg-white/55 px-3 py-2 shadow-[8px_10px_28px_rgba(116,135,154,0.14),inset_1px_1px_0_rgba(255,255,255,0.9)] backdrop-blur-xl">
+              <button type="button" onClick={openProfile} className="topnav-item topnav-profile-item border-0" title="Профиль">
+                {renderAvatar('soft-avatar topnav-profile-avatar')}
+                <span>Профиль</span>
+              </button>
               {filtered.map(({ href, icon: Icon, label }) => {
                 const active = location === href || location.startsWith(href + '/');
                 return (
@@ -287,8 +287,8 @@ export function TopNav() {
             if (e.target === e.currentTarget) setShowProfile(false);
           }}
         >
-          <div className="soft-modal w-full max-w-[380px] p-7">
-            <div className="mb-6 flex items-center justify-between">
+          <div className="soft-modal w-full max-w-[340px] max-h-[82dvh] overflow-y-auto p-5">
+            <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {renderAvatar()}
                 <div>
@@ -303,7 +303,7 @@ export function TopNav() {
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
                 <label className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#687995]">
                   <Smile size={12} />
@@ -317,12 +317,12 @@ export function TopNav() {
                     <input type="file" accept="image/*" className="hidden" onChange={e => handleAvatarFile(e.target.files?.[0])} />
                   </label>
                 </div>
-                <div className="mt-3 grid grid-cols-6 gap-2">
+                <div className="mt-3 grid grid-cols-6 gap-1.5">
                   {['🩺', '💬', '⭐', '⚡', '🌿', '💎'].map(icon => (
                     <button
                       key={icon}
                       type="button"
-                      className={`rounded-2xl border p-2 text-lg transition ${avatarIcon === icon ? 'border-[#0D9488] bg-[#F0FDFA]' : 'border-[#E3EAF2] bg-white/70'}`}
+                      className={`rounded-xl border p-1.5 text-base transition ${avatarIcon === icon ? 'border-[#0D9488] bg-[#F0FDFA]' : 'border-[#E3EAF2] bg-white/70'}`}
                       onClick={() => { setAvatarIcon(icon); setAvatarUrl(''); }}
                     >
                       {icon}
@@ -358,7 +358,7 @@ export function TopNav() {
               </div>
             </div>
 
-            <div className="mt-6 flex gap-3">
+            <div className="mt-5 flex gap-3">
               <button type="button" onClick={() => setShowProfile(false)} className="neu-btn flex-1">
                 Отмена
               </button>
