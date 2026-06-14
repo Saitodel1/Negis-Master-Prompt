@@ -112,14 +112,6 @@
   * {
     @apply border-border;
   }
-  @media (min-width: 1024px) {
-    #root {
-      zoom: 0.8;
-      width: 125%;
-      min-height: 125dvh;
-    }
-  }
-
   body {
     @apply font-sans antialiased;
     background: radial-gradient(circle at 16% 0%, rgba(13, 148, 136, 0.10), transparent 30%),
