@@ -60,6 +60,25 @@ const STATUS_CLASS: Record<Status, string> = {
   connected: 'border-[#BBF7D0] bg-[#F0FDF4] text-[#16A34A]',
 };
 
+const DEFAULT_WAZZUP_PARTNER_URL = 'https://wazzup24.ru/?utm_p=5sFySX';
+const WAZZUP_PARTNER_URL =
+  (import.meta.env.VITE_WAZZUP_PARTNER_URL as string | undefined)?.trim()
+  || DEFAULT_WAZZUP_PARTNER_URL;
+
+function connectUrlFor(item: MarketplaceItem) {
+  if (item.id === 'wazzup') return WAZZUP_PARTNER_URL;
+  return '';
+}
+
+function openConnectUrl(item: MarketplaceItem, fallback: () => void) {
+  const url = connectUrlFor(item);
+  if (!url) {
+    fallback();
+    return;
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 const LOGOS: Record<string, LogoMeta> = {
   'negis-app': { text: 'N', bg: 'linear-gradient(145deg, #0D9488, #3B82F6)' },
   'negis-loyalty': { text: 'NL', bg: 'linear-gradient(145deg, #10B981, #0D9488)' },
@@ -551,7 +570,12 @@ export default function Marketplace() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {filtered.map(item => (
-              <IntegrationCard key={item.id} item={item} onOpen={() => setSelected(item)} />
+              <IntegrationCard
+                key={item.id}
+                item={item}
+                onOpen={() => setSelected(item)}
+                onConnect={() => openConnectUrl(item, () => setSelected(item))}
+              />
             ))}
           </div>
         </section>
@@ -571,7 +595,7 @@ function Metric({ value, label }: { value: number; label: string }) {
   );
 }
 
-function IntegrationCard({ item, onOpen }: { item: MarketplaceItem; onOpen: () => void }) {
+function IntegrationCard({ item, onOpen, onConnect }: { item: MarketplaceItem; onOpen: () => void; onConnect: () => void }) {
   return (
     <article className="rounded-[24px] border border-[#DDE7F0] bg-white/78 p-5 shadow-[8px_12px_28px_rgba(116,135,154,0.10)] transition hover:-translate-y-0.5 hover:shadow-[10px_18px_34px_rgba(116,135,154,0.16)]">
       <div className="flex items-start justify-between gap-3">
@@ -615,7 +639,7 @@ function IntegrationCard({ item, onOpen }: { item: MarketplaceItem; onOpen: () =
               ? 'bg-[#F1F5F9] text-[#94A3B8]'
               : 'bg-[#0D9488] text-white shadow-lg shadow-[#0D9488]/15'
           }`}
-          onClick={onOpen}
+          onClick={item.status === 'soon' ? onOpen : onConnect}
         >
           {item.status === 'soon' ? 'Скоро' : item.status === 'request' ? 'Заявка' : 'Подключить'}
         </button>
@@ -660,6 +684,7 @@ function BrandLogo({ item }: { item: MarketplaceItem }) {
 }
 
 function IntegrationModal({ item, onClose }: { item: MarketplaceItem; onClose: () => void }) {
+  const connectUrl = connectUrlFor(item);
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/25 p-4 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-[#DDE7F0] bg-white shadow-2xl">
@@ -713,7 +738,12 @@ function IntegrationModal({ item, onClose }: { item: MarketplaceItem; onClose: (
 
           <div className="flex flex-wrap justify-end gap-3">
             <button type="button" className="neu-btn px-5" onClick={onClose}>Закрыть</button>
-            <button type="button" className="neu-btn-primary px-5">
+            <button
+              type="button"
+              className="neu-btn-primary flex items-center gap-2 px-5"
+              onClick={() => openConnectUrl(item, onClose)}
+            >
+              {connectUrl && item.id === 'wazzup' && <ExternalLink size={15} />}
               {item.status === 'soon' ? 'Запросить приоритет' : item.status === 'request' ? 'Оставить заявку' : 'Подключить'}
             </button>
           </div>

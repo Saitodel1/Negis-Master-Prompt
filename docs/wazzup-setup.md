@@ -1,5 +1,23 @@
 # Wazzup integration setup
 
+## 0. Partner link for Marketplace
+
+Add your Wazzup partner/referral URL to the frontend environment:
+
+```powershell
+VITE_WAZZUP_PARTNER_URL="https://wazzup24.ru/?utm_p=5sFySX"
+```
+
+When this variable is set, the Wazzup card in `Маркет` opens the partner link from the `Подключить` button. If it is empty, the CRM falls back to the normal details modal.
+
+Development client id received from Wazzup:
+
+```powershell
+VITE_WAZZUP_CLIENT_ID="a287e21e-b169-4c28-9470-9846a13fede2"
+```
+
+This id is not enough for production OAuth by itself. Use it only when Wazzup provides the full partner/OAuth flow: redirect URI, client secret or token exchange rules.
+
 ## 1. Apply database migration
 
 Run `supabase/migrations/20260612_wazzup.sql` in Supabase SQL Editor.
