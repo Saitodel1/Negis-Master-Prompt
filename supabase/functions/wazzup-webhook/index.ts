@@ -3,7 +3,7 @@ import { handleOptions, jsonResponse } from '../_shared/cors.ts';
 
 function webhookKeyMatches(req: Request) {
   const expected = Deno.env.get('WAZZUP_CRM_KEY');
-  if (!expected) return true;
+  if (!expected) return false;
   const url = new URL(req.url);
   return (
     bearerToken(req) === expected ||

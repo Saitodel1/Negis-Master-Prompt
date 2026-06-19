@@ -4,6 +4,7 @@ import {
   Bot,
   CheckCircle2,
   CreditCard,
+  ExternalLink,
   Headphones,
   Info,
   MessageCircle,

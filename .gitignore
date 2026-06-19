@@ -48,3 +48,6 @@ Thumbs.db
 .cache/
 .local/
 .vercel
+
+# Supabase CLI local state
+supabase/.temp/

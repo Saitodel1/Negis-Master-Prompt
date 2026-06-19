@@ -7,8 +7,21 @@ export function normalizeWazzupChatId(value: string | null | undefined) {
 
 async function invokeWazzupFunction<T>(name: string, body: Record<string, any>): Promise<T> {
   const { data, error } = await supabase.functions.invoke<T>(name, { body });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(formatWazzupError(error.message));
   return data as T;
+}
+
+function formatWazzupError(message: string) {
+  if (message.includes('WAZZUP_API_KEY')) {
+    return 'Wazzup почти готов. Осталось добавить API-ключ Wazzup на сервере.';
+  }
+  if (message.includes('FunctionsHttpError') || message.includes('Edge Function')) {
+    return 'Wazzup почти готов. Нужно проверить Supabase Edge Function для Wazzup.';
+  }
+  if (message.includes('not found') || message.includes('Function not found')) {
+    return 'Wazzup почти готов. Нужно задеплоить Supabase Edge Functions.';
+  }
+  return message;
 }
 
 export async function fetchWazzupIframeUrl(request: WazzupIframeUrlRequest) {
