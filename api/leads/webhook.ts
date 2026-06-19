@@ -8,10 +8,7 @@ if (!supabaseUrl || !serviceRoleKey) {
   throw new Error('SUPABASE_URL/VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required')
 }
 
-const supabase = createClient(
-  supabaseUrl,
-  serviceRoleKey
-)
+const supabase = createClient(supabaseUrl, serviceRoleKey)
 
 async function readBody(req: VercelRequest): Promise<Record<string, any>> {
   if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
@@ -43,6 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch {
     return res.status(400).json({ error: 'Invalid JSON body' })
   }
+
   const { full_name, phone, email, source, pipeline } = body
   const clinicIdValue = Array.isArray(clinicId) ? clinicId[0] : clinicId
   const leadPipeline = pipeline === 'sales' ? 'sales' : 'booking'
@@ -91,11 +89,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       clinic_id: clinicIdValue,
       pipeline: leadPipeline,
       full_name: full_name || null,
-      phone: phone,
+      phone,
       email: email || null,
       source: source || 'webhook',
       status_id: defaultStatus.id,
-      phone_normalized: normalizedPhone
+      phone_normalized: normalizedPhone,
     })
     .select()
     .single()

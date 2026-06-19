@@ -6,7 +6,7 @@
   "routes": [
     {
       "src": "/api/leads/webhook/([^/]+)",
-      "dest": "/api/leads/webhook/[clinicId].ts"
+      "dest": "/api/leads/webhook?clinicId=$1"
     },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/index.html" }
