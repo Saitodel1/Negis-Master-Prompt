@@ -164,9 +164,10 @@ export function Topbar() {
       style={{
         gridTemplateColumns: 'minmax(150px, 1fr) minmax(0, auto) minmax(190px, 1fr)',
         height: 98,
-        background: 'rgba(238, 244, 248, 0.86)',
-        backdropFilter: 'blur(18px)',
-        borderBottom: '1px solid rgba(224, 231, 239, 0.9)',
+        background: 'rgba(247, 250, 253, 0.86)',
+        backdropFilter: 'blur(22px)',
+        borderBottom: '1px solid rgba(218, 228, 238, 0.92)',
+        boxShadow: '0 12px 32px rgba(71, 85, 105, 0.06)',
       }}
     >
       <div className="flex min-w-0 items-center gap-2">
