@@ -536,4 +536,179 @@
                 inset 1px 1px 0 rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(22px);
   }
+
+  /* Internal app skin: keep every CRM page visually aligned with Admin. */
+  .ng-shell {
+    background: radial-gradient(circle at 16% 0%, rgba(13, 148, 136, 0.10), transparent 30%),
+                radial-gradient(circle at 86% 4%, rgba(15, 118, 110, 0.08), transparent 28%),
+                var(--ng-bg);
+  }
+
+  .ng-admin-skin {
+    color: var(--ng-text);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(142, 160, 183, 0.34) transparent;
+  }
+
+  .ng-admin-skin::-webkit-scrollbar,
+  .ng-admin-skin *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .ng-admin-skin::-webkit-scrollbar-track,
+  .ng-admin-skin *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .ng-admin-skin::-webkit-scrollbar-thumb,
+  .ng-admin-skin *::-webkit-scrollbar-thumb {
+    background: rgba(142, 160, 183, 0.30);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  .ng-admin-skin :is(h1, h2) {
+    color: var(--ng-text) !important;
+    font-weight: 800 !important;
+    letter-spacing: 0 !important;
+  }
+
+  .ng-admin-skin :is(h3, h4) {
+    color: var(--ng-text) !important;
+    font-weight: 750 !important;
+    letter-spacing: 0 !important;
+  }
+
+  .ng-admin-skin :is(p, label, th, td, span) {
+    letter-spacing: 0 !important;
+  }
+
+  .ng-admin-skin :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
+    background: var(--ng-surface) !important;
+    border: 1px solid var(--ng-border) !important;
+    border-radius: 16px !important;
+    color: var(--ng-text) !important;
+    box-shadow: inset 2px 2px 6px rgba(133, 153, 174, 0.10),
+                inset -2px -2px 7px rgba(255, 255, 255, 0.9) !important;
+    outline: none !important;
+  }
+
+  .ng-admin-skin :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea):focus {
+    border-color: var(--ng-primary) !important;
+    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.16),
+                inset 2px 2px 6px rgba(133, 153, 174, 0.08) !important;
+  }
+
+  .ng-admin-skin :is(input, textarea)::placeholder {
+    color: var(--ng-muted) !important;
+  }
+
+  .ng-admin-skin :is(div, section, article, aside)[class*="bg-white"][class*="border"],
+  .ng-admin-skin :is(div, section, article, aside)[class*="bg-[#F8FAFC]"][class*="border"],
+  .ng-admin-skin :is(div, section, article, aside)[class*="bg-[#FFFFFF]"][class*="border"] {
+    background: var(--ng-surface) !important;
+    border-color: var(--ng-border) !important;
+    box-shadow: 10px 14px 34px rgba(116, 135, 154, 0.11),
+                -6px -6px 18px rgba(255, 255, 255, 0.68),
+                inset 1px 1px 0 rgba(255, 255, 255, 0.84) !important;
+    backdrop-filter: blur(16px);
+  }
+
+  .ng-admin-skin :is(section, article, aside)[class*="rounded-xl"],
+  .ng-admin-skin :is(section, article, aside)[class*="rounded-2xl"] {
+    border-radius: 22px !important;
+  }
+
+  .ng-admin-skin table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .ng-admin-skin thead,
+  .ng-admin-skin tr[class*="bg-[#F8FAFC]"] {
+    background: rgba(248, 251, 255, 0.70) !important;
+  }
+
+  .ng-admin-skin tbody tr {
+    border-color: rgba(100, 116, 139, 0.14) !important;
+  }
+
+  .ng-admin-skin tbody tr:hover {
+    background: rgba(255, 255, 255, 0.58) !important;
+  }
+
+  .ng-admin-skin button:not(.topnav-item):not(.soft-icon-btn):not(.neu-btn):not(.neu-btn-primary):not(.neu-btn-danger):not(.neu-icon-btn) {
+    border-radius: 16px !important;
+    border: 1px solid var(--ng-border) !important;
+    background: var(--ng-surface) !important;
+    color: var(--ng-text-2) !important;
+    box-shadow: 5px 7px 18px rgba(116, 135, 154, 0.12),
+                -4px -4px 14px rgba(255, 255, 255, 0.72),
+                inset 1px 1px 0 rgba(255, 255, 255, 0.85) !important;
+    transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, color 0.15s ease !important;
+  }
+
+  .ng-admin-skin button:not(.topnav-item):not(.soft-icon-btn):not(.neu-btn):not(.neu-btn-primary):not(.neu-btn-danger):not(.neu-icon-btn):hover {
+    transform: translateY(-1px);
+    color: var(--ng-primary) !important;
+    background: rgba(255, 255, 255, 0.88) !important;
+  }
+
+  .ng-admin-skin button[class*="bg-[#1E325C]"],
+  .ng-admin-skin button[class*="bg-[#2859C5]"],
+  .ng-admin-skin button[class*="bg-blue"],
+  .ng-admin-skin button[style*="background: rgb(30, 50, 92)"],
+  .ng-admin-skin button[style*="background: #1E325C"],
+  .ng-admin-skin button[style*="background:#1E325C"] {
+    background: linear-gradient(145deg, #0FBAAA, #0D9488) !important;
+    border-color: rgba(13, 148, 136, 0.92) !important;
+    color: #FFFFFF !important;
+    box-shadow: 8px 10px 22px rgba(13, 148, 136, 0.22),
+                inset 1px 1px 0 rgba(255, 255, 255, 0.16) !important;
+  }
+
+  .ng-admin-skin button[class*="bg-green"],
+  .ng-admin-skin button[class*="text-[#16A34A]"],
+  .ng-admin-skin button[class*="text-green"] {
+    background: rgba(16, 185, 129, 0.12) !important;
+    border-color: rgba(16, 185, 129, 0.28) !important;
+    color: #0F8A63 !important;
+    box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.72) !important;
+  }
+
+  .ng-admin-skin button[class*="bg-red"],
+  .ng-admin-skin button[class*="text-[#DC2626]"],
+  .ng-admin-skin button[class*="text-red"] {
+    background: rgba(239, 68, 68, 0.10) !important;
+    border-color: rgba(239, 68, 68, 0.20) !important;
+    color: #DC2626 !important;
+    box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.70) !important;
+  }
+
+  .ng-admin-skin :is(.neu-card, .neu-lg, .neu-sm) {
+    border-color: var(--ng-border) !important;
+  }
+
+  .ng-admin-skin .rdp-day_selected,
+  .ng-admin-skin .rdp-day_selected:hover {
+    background: var(--ng-primary) !important;
+    color: #FFFFFF !important;
+  }
+
+  .ng-admin-skin .rdp-day_today:not(.rdp-day_selected) {
+    color: var(--ng-primary) !important;
+  }
+
+  @media (max-width: 768px) {
+    .ng-admin-skin {
+      font-size: 13px;
+    }
+
+    .ng-admin-skin :is(.neu-card, .neu-lg) {
+      padding: 18px;
+      border-radius: 20px;
+    }
+  }
 }
