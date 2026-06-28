@@ -706,8 +706,8 @@ function ServicesTab({ clinicId }: { clinicId: string | null }) {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="neu-lg p-8 max-w-xl w-full space-y-4">
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-start justify-center z-50 p-4 overflow-y-auto">
+          <div className="neu-lg p-8 max-w-xl w-full space-y-4 my-6 max-h-[calc(100dvh-48px)] overflow-y-auto">
             <h3 className="text-lg font-bold">{editing ? 'Редактировать услугу' : 'Новая услуга'}</h3>
             <input className="neu-input" placeholder="Название услуги" value={name} onChange={e => setName(e.target.value)} data-testid="input-service-name" />
             <div className="relative">

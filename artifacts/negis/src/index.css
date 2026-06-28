@@ -645,6 +645,21 @@
     backdrop-filter: blur(22px);
   }
 
+  .fixed.inset-0 > .neu-lg,
+  .fixed.inset-0 > .soft-modal {
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .fixed.inset-0:has(> .neu-lg),
+  .fixed.inset-0:has(> .soft-modal) {
+    overflow-y: auto;
+    align-items: flex-start;
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+
   /* Internal app skin: keep every CRM page visually aligned with Admin. */
   .ng-content,
   .ng-topbar {
