@@ -24,7 +24,7 @@ import { toast } from 'sonner';
 import { agentInitials, type AgentDisplayInfo } from '@/lib/agentDisplay';
 
 const NAV = [
-  { href: '/dashboard', icon: BarChart2, label: 'Дашборд', permission: 'dashboard' },
+  { href: '/dashboard', icon: BarChart2, label: 'Главная', permission: 'dashboard' },
   { href: '/booking', icon: CalendarDays, label: 'Запись', permission: 'booking' },
   { href: '/reception', icon: Building2, label: 'Ресепшн', permission: 'reception' },
   { href: '/sales', icon: Briefcase, label: 'Клиенты', permission: 'crm' },
@@ -138,8 +138,8 @@ export function TopNav() {
     const panelWidth = Math.min(360, window.innerWidth - 32);
     if (rect) {
       setProfilePanelPosition({
-        left: Math.max(16, Math.min(rect.left - 8, window.innerWidth - panelWidth - 16)),
-        top: Math.max(118, rect.bottom + 14),
+        left: Math.max(16, Math.min(rect.right + 14, window.innerWidth - panelWidth - 16)),
+        top: Math.max(16, Math.min(rect.top, window.innerHeight - 420)),
       });
     }
     setFullName(user?.user_metadata?.full_name ?? '');
@@ -267,27 +267,34 @@ export function TopNav() {
 
   return (
     <>
-      <div className="topnav-shell flex min-w-0 items-center justify-center gap-3">
-          <div className="topnav-scroll min-w-0 overflow-x-auto">
-            <div className="dock-shell inline-flex min-w-max items-end gap-2 rounded-[34px] border border-white/70 bg-white/55 px-3 py-2 shadow-[8px_10px_28px_rgba(116,135,154,0.14),inset_1px_1px_0_rgba(255,255,255,0.9)] backdrop-blur-xl">
-              <button ref={profileButtonRef} type="button" onClick={openProfile} className="topnav-item topnav-profile-item border-0" title="Профиль">
-                {renderAvatar('soft-avatar topnav-profile-avatar')}
-                <span>Профиль</span>
-              </button>
-              {filtered.map(({ href, icon: Icon, label }) => {
-                const active = location === href || location.startsWith(href + '/');
-                return (
-                  <Link key={href} href={href}>
-                    <div className={`topnav-item ${active ? 'is-active' : ''}`} title={label}>
-                      <Icon size={24} strokeWidth={active ? 2.35 : 1.9} />
-                      <span>{label}</span>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-      </div>
+      <aside className="control-rail">
+        <button ref={profileButtonRef} type="button" onClick={openProfile} className="control-avatar-btn" title="Профиль">
+          {renderAvatar('soft-avatar control-avatar')}
+        </button>
+
+        <nav className="control-nav-scroll">
+          {filtered.map(({ href, icon: Icon, label }) => {
+            const active = location === href || location.startsWith(href + '/');
+            return (
+              <Link key={href} href={href}>
+                <div className={`control-nav-item ${active ? 'is-active' : ''}`} title={label}>
+                  <Icon size={18} strokeWidth={active ? 2.3 : 1.9} />
+                  <span>{label}</span>
+                </div>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <button
+          type="button"
+          onClick={signOut}
+          className="control-logout"
+          title="Выйти"
+        >
+          <LogOut size={18} />
+        </button>
+      </aside>
 
       {showProfile && (
         <div

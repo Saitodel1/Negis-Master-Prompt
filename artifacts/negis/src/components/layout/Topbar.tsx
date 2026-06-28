@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'wouter';
-import { Bell, Check, Trash2 } from 'lucide-react';
+import { Bell, Check, RefreshCw, Trash2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,7 +8,7 @@ import { agentDisplayName, loadAgentRoleMaps, type AgentDisplayInfo } from '@/li
 import { TopNav } from './TopNav';
 
 const PAGE_LABELS: Record<string, string> = {
-  '/dashboard': 'Дашборд',
+  '/dashboard': 'Главная',
   '/booking': 'Запись',
   '/reception': 'Ресепшн',
   '/sales': 'Клиенты',
@@ -68,6 +68,7 @@ export function Topbar() {
   const { clinicId } = useAuth();
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
+  const [clock, setClock] = useState(() => new Date());
   const agentsRef = useRef<Record<string, string>>({});
   const readIdsRef = useRef<Set<string>>(new Set());
   const deletedIdsRef = useRef<Set<string>>(new Set());
@@ -76,11 +77,10 @@ export function Topbar() {
   const pageLabel = PAGE_LABELS[cleanLocation] ?? 'NEGIS';
   const unread = notifs.filter(n => !n.read).length;
 
-  const today = new Date().toLocaleDateString('ru', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  useEffect(() => {
+    const id = window.setInterval(() => setClock(new Date()), 30000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const fmtDate = (d: string) =>
     new Date(d + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
@@ -159,17 +159,19 @@ export function Topbar() {
   };
 
   return (
-    <header
-      className="grid shrink-0 sticky top-0 z-30 items-center gap-4 px-8"
-      style={{
-        gridTemplateColumns: 'minmax(150px, 1fr) minmax(0, auto) minmax(190px, 1fr)',
-        height: 98,
-        background: 'rgba(247, 250, 253, 0.86)',
-        backdropFilter: 'blur(22px)',
-        borderBottom: '1px solid rgba(218, 228, 238, 0.92)',
-        boxShadow: '0 12px 32px rgba(71, 85, 105, 0.06)',
-      }}
-    >
+    <>
+      <TopNav />
+      <header
+        className="ng-topbar grid shrink-0 sticky top-0 z-30 items-center gap-4 px-7"
+        style={{
+          gridTemplateColumns: 'minmax(220px, 1fr) minmax(240px, auto)',
+          height: 54,
+          background: 'rgba(247, 250, 253, 0.90)',
+          backdropFilter: 'blur(22px)',
+          borderBottom: '1px solid rgba(218, 228, 238, 0.92)',
+          boxShadow: '0 12px 32px rgba(71, 85, 105, 0.06)',
+        }}
+      >
       <div className="flex min-w-0 items-center gap-2">
         <span
           style={{
@@ -181,7 +183,7 @@ export function Topbar() {
             userSelect: 'none',
           }}
         >
-          NEGIS
+          NEGIS CRM V1.0
         </span>
         <span style={{ color: '#CAD8E5', fontSize: 14 }}>/</span>
         <span
@@ -198,27 +200,32 @@ export function Topbar() {
         </span>
       </div>
 
-      <div className="min-w-0 justify-self-center">
-        <TopNav />
-      </div>
-
       <div className="flex items-center justify-end gap-4">
         <span
           style={{
             fontSize: 12,
-            color: '#94A3B8',
+            color: '#607089',
             fontFamily: "'Inter', sans-serif",
-            letterSpacing: '0.01em',
+            letterSpacing: '0.08em',
             display: 'flex',
             alignItems: 'center',
             gap: 7,
+            textTransform: 'uppercase',
+            fontWeight: 800,
           }}
         >
           <span className="relative flex h-2 w-2 shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
           </span>
-          {today}
+          Online
+        </span>
+
+        <span
+          className="hidden sm:inline-flex items-center gap-2 text-xs font-bold text-[#607089]"
+          style={{ letterSpacing: '0.04em' }}
+        >
+          {clock.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
         </span>
 
         <Popover open={open} onOpenChange={setOpen}>
@@ -329,7 +336,18 @@ export function Topbar() {
             </div>
           </PopoverContent>
         </Popover>
+
+        <button
+          type="button"
+          className="neu-icon-btn"
+          style={{ width: 34, height: 34, borderRadius: 11 }}
+          title="Обновить"
+          onClick={() => window.location.reload()}
+        >
+          <RefreshCw size={15} strokeWidth={1.8} />
+        </button>
       </div>
-    </header>
+      </header>
+    </>
   );
 }

@@ -383,6 +383,108 @@
   .badge-error   { color: var(--ng-error);   background: rgba(239, 68, 68, 0.11); }
   .badge-muted   { color: var(--ng-muted);   background: rgba(148, 163, 184, 0.12); }
 
+  /* SaaS control rail */
+  .control-rail {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 60;
+    width: 92px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 26px 10px 18px;
+    background: linear-gradient(180deg, rgba(247, 250, 253, 0.96), rgba(230, 239, 247, 0.94));
+    border-right: 1px solid rgba(218, 228, 238, 0.94);
+    box-shadow: 16px 0 42px rgba(71, 85, 105, 0.08);
+    backdrop-filter: blur(22px);
+  }
+
+  .control-avatar-btn {
+    width: 46px;
+    height: 46px;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .control-avatar {
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
+    border-radius: 14px;
+    color: #FFFFFF;
+    background: conic-gradient(from 145deg, #2563EB, #7C3AED, #20C7B6, #F59E0B, #2563EB) !important;
+    box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18);
+  }
+
+  .control-nav-scroll {
+    width: 100%;
+    min-height: 0;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 9px;
+    overflow-y: auto;
+    overflow-x: visible;
+    padding: 22px 0 10px;
+    scrollbar-width: none;
+  }
+
+  .control-nav-scroll::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .control-nav-item,
+  .control-logout {
+    width: 72px;
+    min-height: 58px;
+    border-radius: 16px;
+    border: 1px solid rgba(218, 228, 238, 0.96);
+    background: rgba(255, 255, 255, 0.68);
+    color: #607089;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0;
+    text-align: center;
+    box-shadow: 7px 10px 20px rgba(84, 105, 130, 0.09),
+                -4px -4px 14px rgba(255, 255, 255, 0.78),
+                inset 1px 1px 0 rgba(255, 255, 255, 0.9);
+    transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+
+  .control-nav-item:hover,
+  .control-logout:hover {
+    color: #2563EB;
+    background: rgba(255, 255, 255, 0.86);
+    transform: translateX(3px);
+    box-shadow: 10px 14px 24px rgba(84, 105, 130, 0.14),
+                -4px -4px 14px rgba(255, 255, 255, 0.82);
+  }
+
+  .control-nav-item.is-active {
+    color: #FFFFFF;
+    border-color: rgba(37, 99, 235, 0.36);
+    background: linear-gradient(145deg, #2563EB, #14B8A6);
+    box-shadow: 0 14px 30px rgba(37, 99, 235, 0.24),
+                inset 1px 1px 0 rgba(255, 255, 255, 0.18);
+  }
+
+  .control-logout {
+    flex: 0 0 auto;
+    min-height: 48px;
+    color: #64748B;
+    cursor: pointer;
+  }
+
   .soft-dock {
     background: rgba(238, 244, 248, 0.78);
     border-bottom: 1px solid rgba(224, 231, 239, 0.9);
@@ -544,6 +646,11 @@
   }
 
   /* Internal app skin: keep every CRM page visually aligned with Admin. */
+  .ng-content,
+  .ng-topbar {
+    margin-left: 92px;
+  }
+
   .ng-shell {
     background: radial-gradient(circle at 12% -8%, rgba(37, 99, 235, 0.075), transparent 30%),
                 radial-gradient(circle at 88% -10%, rgba(20, 184, 166, 0.07), transparent 28%),
@@ -708,6 +815,36 @@
   }
 
   @media (max-width: 768px) {
+    .control-rail {
+      width: 76px;
+      padding: 18px 8px 14px;
+    }
+
+    .control-nav-item,
+    .control-logout {
+      width: 58px;
+      min-height: 52px;
+      font-size: 8px;
+    }
+
+    .control-avatar,
+    .control-avatar-btn {
+      width: 40px;
+      height: 40px;
+      min-width: 40px;
+    }
+
+    .ng-content,
+    .ng-topbar {
+      margin-left: 76px;
+    }
+
+    .ng-topbar {
+      grid-template-columns: minmax(0, 1fr) auto !important;
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+
     .ng-admin-skin {
       font-size: 13px;
     }
