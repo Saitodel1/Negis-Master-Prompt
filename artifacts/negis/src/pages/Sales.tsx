@@ -745,14 +745,6 @@ export default function Sales() {
     <PageLayout>
       <div className="space-y-5 h-full flex flex-col">
 
-        {/* ── Header ── */}
-        <div className="module-hero">
-          <div className="min-w-0">
-            <h2 className="module-hero-title">Клиенты</h2>
-            <p className="module-hero-text">Клиенты, история обращений, задачи, финансы и записи — всё в одном рабочем пространстве.</p>
-          </div>
-        </div>
-
         <div className="crm-workspace">
           <div className="crm-main">
 

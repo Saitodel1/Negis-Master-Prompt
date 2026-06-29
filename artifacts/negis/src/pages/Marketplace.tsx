@@ -54,7 +54,7 @@ const STATUS_LABEL: Record<Status, string> = {
 };
 
 const STATUS_CLASS: Record<Status, string> = {
-  recommended: 'border-[#99F6E4] bg-[#F0FDFA] text-[#0D9488]',
+  recommended: 'border-[#C8D7FF] bg-[#EEF4FF] text-[#4F7BFF]',
   available: 'border-[#BFDBFE] bg-[#EFF6FF] text-[#3B82F6]',
   request: 'border-[#FDE68A] bg-[#FFFBEB] text-[#B45309]',
   soon: 'border-[#E2E8F0] bg-[#F1F5F9] text-[#64748B]',
@@ -81,9 +81,9 @@ function openConnectUrl(item: MarketplaceItem, fallback: () => void) {
 }
 
 const LOGOS: Record<string, LogoMeta> = {
-  'negis-app': { text: 'N', bg: 'linear-gradient(145deg, #0D9488, #3B82F6)' },
-  'negis-loyalty': { text: 'NL', bg: 'linear-gradient(145deg, #10B981, #0D9488)' },
-  'negis-ai': { text: 'AI', bg: 'linear-gradient(145deg, #3B82F6, #0D9488)' },
+  'negis-app': { text: 'N', bg: 'linear-gradient(145deg, #4F7BFF, #3B82F6)' },
+  'negis-loyalty': { text: 'NL', bg: 'linear-gradient(145deg, #10B981, #4F7BFF)' },
+  'negis-ai': { text: 'AI', bg: 'linear-gradient(145deg, #3B82F6, #4F7BFF)' },
   wazzup: { domain: 'wazzup24.ru', text: 'W', bg: '#18C37E' },
   chat2desk: { domain: 'chat2desk.com', text: 'C2D', bg: '#2563EB' },
   'sendpulse-whatsapp': { domain: 'sendpulse.com', text: 'SP', bg: '#10B981' },
@@ -104,7 +104,7 @@ const LOGOS: Record<string, LogoMeta> = {
   'kaspi-qr': { domain: 'kaspi.kz', text: 'K', bg: '#EF4444' },
   'halyk-epay': { domain: 'halykbank.kz', text: 'H', bg: '#10B981' },
   'freedom-pay': { domain: 'freedompay.money', text: 'FP', bg: '#2563EB' },
-  paybox: { domain: 'paybox.money', text: 'PB', bg: '#0EA5E9' },
+  paybox: { domain: 'paybox.money', text: 'PB', bg: '#3F63F4' },
   mbank: { domain: 'mbank.kg', text: 'M', bg: '#22C55E' },
   elsom: { domain: 'elsom.kg', text: 'E', bg: '#2563EB' },
   'o-money': { domain: 'o.kg', text: 'O!', bg: '#EF4444' },
@@ -484,7 +484,7 @@ export default function Marketplace() {
         <section className="overflow-hidden rounded-[28px] border border-white/70 bg-white/65 p-6 shadow-[10px_16px_38px_rgba(116,135,154,0.12),inset_1px_1px_0_rgba(255,255,255,0.9)] backdrop-blur-xl">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full bg-[#F0FDFA] px-3 py-1 text-xs font-bold text-[#0D9488]">
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#EEF4FF] px-3 py-1 text-xs font-bold text-[#4F7BFF]">
                 <Store size={14} />
                 Маркетплейс интеграций
               </div>
@@ -511,7 +511,7 @@ export default function Marketplace() {
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Найти сервис, канал или страну"
-                className="h-12 w-full rounded-2xl border border-[rgba(100,116,139,0.18)] bg-white/75 pl-11 pr-4 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#0D9488] focus:ring-4 focus:ring-[#0D9488]/10"
+                className="h-12 w-full rounded-2xl border border-[rgba(100,116,139,0.18)] bg-white/75 pl-11 pr-4 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
               />
             </div>
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -524,7 +524,7 @@ export default function Marketplace() {
                     type="button"
                     onClick={() => setActiveCategory(category.key)}
                     className={`flex shrink-0 items-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold transition ${
-                      active ? 'bg-[#0D9488] text-white shadow-lg shadow-[#0D9488]/15' : 'bg-white/80 text-[#64748B] hover:bg-[#F8FBFF]'
+                      active ? 'bg-[#4F7BFF] text-white shadow-lg shadow-[#4F7BFF]/15' : 'bg-white/80 text-[#64748B] hover:bg-[#F8FBFF]'
                     }`}
                   >
                     <Icon size={16} />
@@ -638,7 +638,7 @@ function IntegrationCard({ item, onOpen, onConnect }: { item: MarketplaceItem; o
           className={`rounded-xl px-4 py-2.5 text-sm font-bold ${
             item.status === 'soon'
               ? 'bg-[#F1F5F9] text-[#94A3B8]'
-              : 'bg-[#0D9488] text-white shadow-lg shadow-[#0D9488]/15'
+              : 'bg-[#4F7BFF] text-white shadow-lg shadow-[#4F7BFF]/15'
           }`}
           onClick={item.status === 'soon' ? onOpen : onConnect}
         >

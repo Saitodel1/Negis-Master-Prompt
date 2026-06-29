@@ -138,8 +138,8 @@ export function TopNav() {
     const panelWidth = Math.min(360, window.innerWidth - 32);
     if (rect) {
       setProfilePanelPosition({
-        left: Math.max(16, Math.min(rect.right + 14, window.innerWidth - panelWidth - 16)),
-        top: Math.max(16, Math.min(rect.top, window.innerHeight - 420)),
+        left: Math.max(16, Math.min(rect.left, window.innerWidth - panelWidth - 16)),
+        top: Math.max(16, Math.min(rect.bottom + 14, window.innerHeight - 420)),
       });
     }
     setFullName(user?.user_metadata?.full_name ?? '');
@@ -253,7 +253,7 @@ export function TopNav() {
   };
 
   const inputStyle: CSSProperties = {
-    background: 'rgba(255,255,255,0.72)',
+    background: '#FFFFFF',
     border: '1px solid rgba(211,222,231,0.95)',
     borderRadius: 14,
     padding: '12px 14px',
@@ -262,7 +262,7 @@ export function TopNav() {
     fontFamily: "'Inter', sans-serif",
     outline: 'none',
     width: '100%',
-    boxShadow: 'inset 2px 2px 6px rgba(133, 153, 174, 0.10), inset -2px -2px 7px rgba(255,255,255,0.95)',
+    boxShadow: 'none',
   };
 
   return (
@@ -298,14 +298,13 @@ export function TopNav() {
 
       {showProfile && (
         <div
-          className="fixed inset-0 z-50"
-          style={{ background: 'transparent' }}
+          className="fixed inset-0 z-50 profile-popover-layer"
           onClick={e => {
             if (e.target === e.currentTarget) setShowProfile(false);
           }}
         >
           <div
-            className="soft-modal absolute w-[min(360px,calc(100vw-32px))] overflow-y-auto p-5"
+            className="soft-modal profile-popover absolute w-[min(360px,calc(100vw-32px))] overflow-y-auto p-5"
             style={{
               left: profilePanelPosition.left,
               top: profilePanelPosition.top,
@@ -347,7 +346,7 @@ export function TopNav() {
                     <button
                       key={icon}
                       type="button"
-                      className={`rounded-xl border p-1.5 text-base transition ${avatarIcon === icon ? 'border-[#0D9488] bg-[#F0FDFA]' : 'border-[#E3EAF2] bg-white/70'}`}
+                      className={`rounded-xl border p-1.5 text-base transition ${avatarIcon === icon ? 'border-[#4F7BFF] bg-[#EEF4FF]' : 'border-[#E3EAF2] bg-white/70'}`}
                       onClick={() => { setAvatarIcon(icon); setAvatarUrl(''); }}
                     >
                       {icon}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Topbar } from './Topbar';
+import { DepartmentHero } from './DepartmentHero';
 import { useAuth } from '@/contexts/AuthContext';
 import { Redirect } from 'wouter';
 
@@ -38,7 +39,8 @@ export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
       }}
     >
       <Topbar />
-      <main className="ng-content ng-admin-skin flex-1 overflow-y-auto" style={{ padding: '40px clamp(24px, 3vw, 44px) 44px' }}>
+      <main className="ng-content ng-admin-skin flex-1 overflow-y-auto" style={{ padding: '32px clamp(24px, 3vw, 44px) 44px' }}>
+        <DepartmentHero />
         {children}
       </main>
     </div>
