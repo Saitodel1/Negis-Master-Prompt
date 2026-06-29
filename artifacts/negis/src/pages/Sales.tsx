@@ -136,6 +136,7 @@ export default function Sales() {
   const [userRoleMap, setUserRoleMap] = useState<Record<string, string>>({});
   const [myAgentId, setMyAgentId] = useState<string | null>(null);
   const [loading, setLoading]   = useState(true);
+  const [clinicName, setClinicName] = useState('Клиника');
 
   /* ── Filters ── */
   const [search, setSearch]           = useState('');
@@ -197,6 +198,20 @@ export default function Sales() {
   const [bkSaving, setBkSaving]       = useState(false);
 
   useEffect(() => { if (clinicId) init(); }, [clinicId]);
+
+  useEffect(() => {
+    if (!clinicId) return;
+    const loadClinicName = async () => {
+      const { data } = await supabase
+        .from('clinics')
+        .select('*')
+        .eq('id', clinicId)
+        .maybeSingle();
+      const row = data as any;
+      setClinicName(row?.name || row?.clinic_name || row?.title || 'Клиника');
+    };
+    loadClinicName();
+  }, [clinicId]);
 
   const init = async () => {
     if (!clinicId) return;
@@ -746,11 +761,18 @@ export default function Sales() {
       <div className="space-y-5 h-full flex flex-col">
 
         {/* ── Header ── */}
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold">Negis Клиенты</h2>
-          <button className="neu-btn-primary flex items-center gap-2" onClick={() => setShowNew(true)}>
-            <Plus size={16} /> Новый лид
-          </button>
+        <div className="module-hero">
+          <div className="min-w-0">
+            <p className="module-hero-kicker">CLIENTS CENTER</p>
+            <h2 className="module-hero-title">{clinicName}</h2>
+            <p className="module-hero-text">Клиенты, история касаний, задачи, финансы и записи клиники в одном рабочем экране.</p>
+          </div>
+          <div className="module-hero-actions">
+            <button className="module-hero-button" onClick={() => setShowNew(true)}>
+              <Plus size={16} /> Новый лид
+            </button>
+            <div className="module-hero-logo">N</div>
+          </div>
         </div>
 
         {/* ── Filters ── */}
