@@ -7,19 +7,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { agentDisplayName, loadAgentRoleMaps, type AgentDisplayInfo } from '@/lib/agentDisplay';
 import { TopNav } from './TopNav';
 
-const PAGE_LABELS: Record<string, string> = {
-  '/dashboard': 'Главная',
-  '/booking': 'Запись',
-  '/reception': 'Ресепшн',
-  '/sales': 'Клиенты',
-  '/tasks': 'Задачи',
-  '/chat': 'Чат',
-  '/marketplace': 'Маркетплейс',
-  '/ads': 'Реклама',
-  '/agent': 'Агент',
-  '/admin': 'Админ',
-};
-
 interface Notif {
   id: string;
   clientName: string;
@@ -64,7 +51,7 @@ function writeStoredIds(key: string, ids: Set<string>) {
 }
 
 export function Topbar() {
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
   const { clinicId, user, userRole } = useAuth();
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
@@ -73,8 +60,6 @@ export function Topbar() {
   const readIdsRef = useRef<Set<string>>(new Set());
   const deletedIdsRef = useRef<Set<string>>(new Set());
 
-  const cleanLocation = location.split('?')[0];
-  const pageLabel = PAGE_LABELS[cleanLocation] ?? 'NEGIS';
   const unread = notifs.filter(n => !n.read).length;
 
   useEffect(() => {
@@ -164,42 +149,14 @@ export function Topbar() {
       <header
         className="ng-topbar grid shrink-0 sticky top-0 z-30 items-center gap-4 px-7"
         style={{
-          gridTemplateColumns: 'minmax(150px, 0.7fr) minmax(300px, 1.6fr) minmax(340px, auto)',
+          gridTemplateColumns: 'minmax(360px, 1fr) minmax(360px, auto)',
           height: 92,
-          background: 'rgba(255, 255, 255, 0.72)',
-          backdropFilter: 'blur(22px)',
+          background: '#FFFFFF',
+          backdropFilter: 'none',
           borderBottom: '1px solid rgba(218, 228, 238, 0.92)',
-          boxShadow: '0 12px 32px rgba(71, 85, 105, 0.06)',
+          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.035)',
         }}
       >
-      <div className="flex min-w-0 items-center gap-2">
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 500,
-            letterSpacing: '0.16em',
-            color: '#8EA0B7',
-            fontFamily: "'Inter', sans-serif",
-            userSelect: 'none',
-          }}
-        >
-          NEGIS CRM V1.0
-        </span>
-        <span style={{ color: '#CAD8E5', fontSize: 14 }}>/</span>
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 600,
-            letterSpacing: '0.08em',
-            color: '#4F6078',
-            fontFamily: "'Inter', sans-serif",
-            userSelect: 'none',
-          }}
-        >
-          {pageLabel}
-        </span>
-      </div>
-
       <div className="topbar-search">
         <Search size={18} />
         <input placeholder="Поиск по клиентам, тегам, задачам..." />
@@ -308,7 +265,7 @@ export function Topbar() {
                         {new Date(n.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
-                    {!n.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#0D9488]" />}
+                    {!n.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#4F7BFF]" />}
                   </div>
                   <div className="mt-3 flex gap-2">
                     <button

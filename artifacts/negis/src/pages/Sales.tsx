@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { WazzupBadge } from '@/components/WazzupBadge';
 import { WazzupChat } from '@/components/WazzupChat';
-import { Search, Plus, X, Check, ArrowUpDown, Calendar, Trash2, User, Tag, CalendarPlus, ChevronLeft } from 'lucide-react';
+import { Search, Plus, X, Check, ArrowUpDown, Calendar, Trash2, User, Tag, CalendarPlus, ChevronLeft, MessageCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWazzupInbox } from '@/hooks/useWazzupInbox';
@@ -119,7 +119,7 @@ function IndeterminateCheckbox({ checked, indeterminate, onChange }: {
   return (
     <input
       ref={ref} type="checkbox" checked={checked} onChange={onChange}
-      style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E325C' }}
+      style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#4F7BFF' }}
       onClick={e => e.stopPropagation()}
     />
   );
@@ -136,7 +136,6 @@ export default function Sales() {
   const [userRoleMap, setUserRoleMap] = useState<Record<string, string>>({});
   const [myAgentId, setMyAgentId] = useState<string | null>(null);
   const [loading, setLoading]   = useState(true);
-  const [clinicName, setClinicName] = useState('Клиника');
 
   /* ── Filters ── */
   const [search, setSearch]           = useState('');
@@ -198,20 +197,6 @@ export default function Sales() {
   const [bkSaving, setBkSaving]       = useState(false);
 
   useEffect(() => { if (clinicId) init(); }, [clinicId]);
-
-  useEffect(() => {
-    if (!clinicId) return;
-    const loadClinicName = async () => {
-      const { data } = await supabase
-        .from('clinics')
-        .select('*')
-        .eq('id', clinicId)
-        .maybeSingle();
-      const row = data as any;
-      setClinicName(row?.name || row?.clinic_name || row?.title || 'Клиника');
-    };
-    loadClinicName();
-  }, [clinicId]);
 
   const init = async () => {
     if (!clinicId) return;
@@ -763,15 +748,8 @@ export default function Sales() {
         {/* ── Header ── */}
         <div className="module-hero">
           <div className="min-w-0">
-            <p className="module-hero-kicker">CLIENTS CENTER</p>
-            <h2 className="module-hero-title">{clinicName}</h2>
-            <p className="module-hero-text">Клиенты, история касаний, задачи, финансы и записи клиники в одном рабочем экране.</p>
-          </div>
-          <div className="module-hero-actions">
-            <button className="module-hero-button" onClick={() => setShowNew(true)}>
-              <Plus size={16} /> Новый лид
-            </button>
-            <div className="module-hero-logo">N</div>
+            <h2 className="module-hero-title">Клиенты</h2>
+            <p className="module-hero-text">Клиенты, история обращений, задачи, финансы и записи — всё в одном рабочем пространстве.</p>
           </div>
         </div>
 
@@ -779,7 +757,7 @@ export default function Sales() {
           <div className="crm-main">
 
         {/* ── Filters ── */}
-        <div className="neu-card p-4 flex flex-wrap gap-3 items-center">
+        <div className="crm-filter-bar">
           <div className="relative flex-1 min-w-40">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
             <input type="text" placeholder="Имя или телефон"
@@ -829,6 +807,9 @@ export default function Sales() {
               <option value={0}>Все</option>
             </select>
           </div>
+          <button className="crm-create-btn" onClick={() => setShowNew(true)}>
+            <Plus size={16} /> Новый клиент
+          </button>
         </div>
 
         {/* ── Bulk action bar ── */}
@@ -914,7 +895,7 @@ export default function Sales() {
         )}
 
         {/* ── Table ── */}
-        <div className="neu-card flex-1 overflow-hidden p-0">
+        <div className="neu-card crm-table-card flex-1 overflow-hidden p-0">
           <div className="overflow-x-auto h-full">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -955,12 +936,25 @@ export default function Sales() {
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => toggleOne(lead.id)}
-                          style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E325C' }}
+                          style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#4F7BFF' }}
                           onClick={e => e.stopPropagation()}
                         />
                       </td>
-                      <td className="p-4 font-medium text-[#0B1220]">{displayName(lead)}</td>
-                      <td className="p-4 text-[#64748B]">{lead.phone ?? '—'}</td>
+                      <td className="p-4 font-medium text-[#0B1220]">
+                        <div className="client-cell">
+                          <span className="client-avatar">{displayName(lead).slice(0, 1).toUpperCase()}</span>
+                          <span>
+                            <strong>{displayName(lead)}</strong>
+                            <small>{lead.app_client_id ? 'Постоянный клиент' : 'Новый клиент'}</small>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-4 text-[#64748B]">
+                        <span className="client-phone">
+                          {lead.phone ?? '—'}
+                          {lead.phone && <MessageCircle size={15} />}
+                        </span>
+                      </td>
                       <td className="p-4 text-[#64748B]">
                         <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${sourceValueToLabel(lead.source) === 'Negis App' ? 'bg-[#EEF2FF] text-[#4F46E5]' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
                           {sourceValueToLabel(lead.source)}
