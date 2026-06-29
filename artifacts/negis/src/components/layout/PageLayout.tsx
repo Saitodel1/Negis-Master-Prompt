@@ -39,7 +39,7 @@ export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
       }}
     >
       <Topbar />
-      <main className="ng-content ng-admin-skin flex-1 overflow-y-auto" style={{ padding: '32px clamp(24px, 3vw, 44px) 44px' }}>
+      <main className="ng-content ng-admin-skin flex-1 overflow-y-auto" style={{ padding: '24px clamp(24px, 3vw, 44px) 44px' }}>
         <DepartmentHero />
         {children}
       </main>

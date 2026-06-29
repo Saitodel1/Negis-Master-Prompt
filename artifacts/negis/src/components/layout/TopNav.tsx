@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Link, useLocation } from 'wouter';
 import {
   BarChart2,
@@ -87,7 +87,6 @@ async function compressAvatarFile(file: File) {
 export function TopNav() {
   const [location] = useLocation();
   const { signOut, user, userRole, rolePermissions, clinicId } = useAuth();
-  const profileButtonRef = useRef<HTMLButtonElement | null>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [profilePanelPosition, setProfilePanelPosition] = useState({ left: 24, top: 128 });
   const [fullName, setFullName] = useState(user?.user_metadata?.full_name ?? '');
@@ -133,15 +132,12 @@ export function TopNav() {
     loadProfile();
   }, [clinicId, user?.id]);
 
-  const openProfile = () => {
-    const rect = profileButtonRef.current?.getBoundingClientRect();
+  const openProfileAt = (left: number, top: number) => {
     const panelWidth = Math.min(360, window.innerWidth - 32);
-    if (rect) {
-      setProfilePanelPosition({
-        left: Math.max(16, Math.min(rect.left, window.innerWidth - panelWidth - 16)),
-        top: Math.max(16, Math.min(rect.bottom + 14, window.innerHeight - 420)),
-      });
-    }
+    setProfilePanelPosition({
+      left: Math.max(16, Math.min(left, window.innerWidth - panelWidth - 16)),
+      top: Math.max(16, Math.min(top, window.innerHeight - 420)),
+    });
     setFullName(user?.user_metadata?.full_name ?? '');
     setNewPassword('');
     setAvatarUrl(myAgent?.avatar_url || user?.user_metadata?.avatar_url || '');
@@ -149,6 +145,15 @@ export function TopNav() {
     setAvatarColor(myAgent?.avatar_color || user?.user_metadata?.avatar_color || '#EFF6FF');
     setShowProfile(true);
   };
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ left?: number; top?: number }>).detail ?? {};
+      openProfileAt(detail.left ?? 24, detail.top ?? 96);
+    };
+    window.addEventListener('negis:open-profile', handler);
+    return () => window.removeEventListener('negis:open-profile', handler);
+  }, [myAgent, user?.user_metadata?.full_name, user?.user_metadata?.avatar_url, user?.user_metadata?.avatar_icon, user?.user_metadata?.avatar_color]);
 
   const renderAvatar = (sizeClass = 'soft-avatar') => (
     <div className={`${sizeClass} shrink-0 overflow-hidden`} style={{ background: avatarBg }}>
@@ -268,10 +273,6 @@ export function TopNav() {
   return (
     <>
       <aside className="control-rail">
-        <button ref={profileButtonRef} type="button" onClick={openProfile} className="control-avatar-btn" title="Профиль">
-          {renderAvatar('soft-avatar control-avatar')}
-        </button>
-
         <nav className="control-nav-scroll">
           {filtered.map(({ href, icon: Icon, label }) => {
             const active = location === href || location.startsWith(href + '/');

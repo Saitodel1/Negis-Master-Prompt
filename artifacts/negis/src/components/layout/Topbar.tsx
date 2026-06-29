@@ -4,7 +4,7 @@ import { Bell, CalendarDays, Check, ChevronDown, Plus, RefreshCw, Search, Trash2
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { agentDisplayName, loadAgentRoleMaps, type AgentDisplayInfo } from '@/lib/agentDisplay';
+import { agentDisplayName, agentInitials, loadAgentRoleMaps, type AgentDisplayInfo } from '@/lib/agentDisplay';
 import { TopNav } from './TopNav';
 
 interface Notif {
@@ -56,16 +56,36 @@ export function Topbar() {
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
   const [clock, setClock] = useState(() => new Date());
+  const [profileAgent, setProfileAgent] = useState<AgentDisplayInfo | null>(null);
   const agentsRef = useRef<Record<string, string>>({});
   const readIdsRef = useRef<Set<string>>(new Set());
   const deletedIdsRef = useRef<Set<string>>(new Set());
 
   const unread = notifs.filter(n => !n.read).length;
+  const avatarSrc = profileAgent?.avatar_url || user?.user_metadata?.avatar_url || '';
+  const avatarIcon = profileAgent?.avatar_icon || user?.user_metadata?.avatar_icon || '';
+  const avatarBg = profileAgent?.avatar_color || user?.user_metadata?.avatar_color || '#17233A';
+  const displayName = user?.user_metadata?.full_name || profileAgent?.name || user?.email || 'Профиль';
+  const initials = agentInitials(profileAgent, displayName);
 
   useEffect(() => {
     const id = window.setInterval(() => setClock(new Date()), 30000);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!clinicId || !user?.id) return;
+    const loadProfileAgent = async () => {
+      const { data } = await supabase
+        .from('agents')
+        .select('id, name, user_id, role_id, avatar_url, avatar_icon, avatar_color')
+        .eq('clinic_id', clinicId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      setProfileAgent((data as AgentDisplayInfo | null) ?? null);
+    };
+    loadProfileAgent();
+  }, [clinicId, user?.id]);
 
   const fmtDate = (d: string) =>
     new Date(d + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
@@ -328,12 +348,27 @@ export function Topbar() {
           <RefreshCw size={15} strokeWidth={1.8} />
         </button>
 
-        <button type="button" className="topbar-profile" onClick={() => setLocation('/admin')}>
-          <span className="topbar-profile-avatar">
-            {(user?.user_metadata?.full_name || user?.email || 'N').slice(0, 1).toUpperCase()}
+        <button
+          type="button"
+          className="topbar-profile"
+          onClick={event => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            window.dispatchEvent(new CustomEvent('negis:open-profile', {
+              detail: { left: rect.left, top: rect.bottom + 14 },
+            }));
+          }}
+        >
+          <span className="topbar-profile-avatar" style={{ background: avatarBg }}>
+            {avatarSrc ? (
+              <img src={avatarSrc} alt="Профиль" />
+            ) : avatarIcon ? (
+              <span>{avatarIcon}</span>
+            ) : (
+              initials
+            )}
           </span>
           <span className="topbar-profile-text">
-            <strong>{user?.user_metadata?.full_name || 'Профиль'}</strong>
+            <strong>{displayName}</strong>
             <small>{userRole === 'owner' ? 'Руководитель' : userRole || 'Сотрудник'}</small>
           </span>
           <ChevronDown size={16} />
