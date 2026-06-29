@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'wouter';
-import { Bell, Check, RefreshCw, Trash2 } from 'lucide-react';
+import { Bell, CalendarDays, Check, ChevronDown, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -65,7 +65,7 @@ function writeStoredIds(key: string, ids: Set<string>) {
 
 export function Topbar() {
   const [location, setLocation] = useLocation();
-  const { clinicId } = useAuth();
+  const { clinicId, user, userRole } = useAuth();
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
   const [clock, setClock] = useState(() => new Date());
@@ -164,9 +164,9 @@ export function Topbar() {
       <header
         className="ng-topbar grid shrink-0 sticky top-0 z-30 items-center gap-4 px-7"
         style={{
-          gridTemplateColumns: 'minmax(220px, 1fr) minmax(240px, auto)',
-          height: 54,
-          background: 'rgba(247, 250, 253, 0.90)',
+          gridTemplateColumns: 'minmax(150px, 0.7fr) minmax(300px, 1.6fr) minmax(340px, auto)',
+          height: 92,
+          background: 'rgba(255, 255, 255, 0.72)',
           backdropFilter: 'blur(22px)',
           borderBottom: '1px solid rgba(218, 228, 238, 0.92)',
           boxShadow: '0 12px 32px rgba(71, 85, 105, 0.06)',
@@ -198,6 +198,11 @@ export function Topbar() {
         >
           {pageLabel}
         </span>
+      </div>
+
+      <div className="topbar-search">
+        <Search size={18} />
+        <input placeholder="Поиск по клиентам, тегам, задачам..." />
       </div>
 
       <div className="flex items-center justify-end gap-4">
@@ -341,10 +346,40 @@ export function Topbar() {
           type="button"
           className="neu-icon-btn"
           style={{ width: 34, height: 34, borderRadius: 11 }}
+          title="Календарь"
+          onClick={() => setLocation('/booking')}
+        >
+          <CalendarDays size={15} strokeWidth={1.8} />
+        </button>
+
+        <button
+          type="button"
+          className="topbar-add-btn"
+          title="Добавить"
+          onClick={() => setLocation('/sales')}
+        >
+          <Plus size={18} />
+        </button>
+
+        <button
+          type="button"
+          className="neu-icon-btn"
+          style={{ width: 34, height: 34, borderRadius: 11 }}
           title="Обновить"
           onClick={() => window.location.reload()}
         >
           <RefreshCw size={15} strokeWidth={1.8} />
+        </button>
+
+        <button type="button" className="topbar-profile" onClick={() => setLocation('/admin')}>
+          <span className="topbar-profile-avatar">
+            {(user?.user_metadata?.full_name || user?.email || 'N').slice(0, 1).toUpperCase()}
+          </span>
+          <span className="topbar-profile-text">
+            <strong>{user?.user_metadata?.full_name || 'Профиль'}</strong>
+            <small>{userRole === 'owner' ? 'Руководитель' : userRole || 'Сотрудник'}</small>
+          </span>
+          <ChevronDown size={16} />
         </button>
       </div>
       </header>

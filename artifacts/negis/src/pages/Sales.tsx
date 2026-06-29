@@ -775,6 +775,9 @@ export default function Sales() {
           </div>
         </div>
 
+        <div className="crm-workspace">
+          <div className="crm-main">
+
         {/* ── Filters ── */}
         <div className="neu-card p-4 flex flex-wrap gap-3 items-center">
           <div className="relative flex-1 min-w-40">
@@ -1011,6 +1014,88 @@ export default function Sales() {
             )}
           </div>
         )}
+
+          </div>
+
+          <aside className="crm-filter-panel">
+            <div className="crm-filter-head">
+              <h3>Фильтры</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterStatus('');
+                  setFilterAgent('');
+                  setFilterSource('');
+                  setPeriodFilter('all');
+                  setDateFrom('');
+                  setDateTo('');
+                }}
+              >
+                Сбросить
+              </button>
+            </div>
+
+            <label className="crm-filter-field">
+              <span>Дата</span>
+              <select value={periodFilter} onChange={e => { setPeriodFilter(e.target.value); setDateFrom(''); setDateTo(''); }}>
+                {PERIOD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </label>
+
+            {periodFilter === 'custom' && (
+              <div className="grid grid-cols-2 gap-2">
+                <label className="crm-filter-field">
+                  <span>От</span>
+                  <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+                </label>
+                <label className="crm-filter-field">
+                  <span>До</span>
+                  <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+                </label>
+              </div>
+            )}
+
+            <label className="crm-filter-field">
+              <span>Статус</span>
+              <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                <option value="">Все статусы</option>
+                {statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </label>
+
+            {(userRole === 'owner' || userRole === 'manager') && (
+              <label className="crm-filter-field">
+                <span>Ответственный</span>
+                <select value={filterAgent} onChange={e => setFilterAgent(e.target.value)}>
+                  <option value="">Все агенты</option>
+                  {agents.map(a => <option key={a.id} value={a.id}>{agentLabel(a)}</option>)}
+                </select>
+              </label>
+            )}
+
+            <label className="crm-filter-field">
+              <span>Источник</span>
+              <select value={filterSource} onChange={e => setFilterSource(e.target.value)}>
+                <option value="">Все источники</option>
+                {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+
+            <div className="crm-quick-filters">
+              <span>Быстрые фильтры</span>
+              <div>
+                <button type="button" onClick={() => setPeriodFilter('today')}>Сегодня</button>
+                <button type="button" onClick={() => setPeriodFilter('7days')}>7 дней</button>
+                <button type="button" onClick={() => setFilterSource('Import')}>Import</button>
+                <button type="button" onClick={() => setFilterStatus(statuses[0]?.id ?? '')}>Новые лиды</button>
+              </div>
+            </div>
+
+            <button type="button" className="crm-apply-filter">
+              Применить фильтры
+            </button>
+          </aside>
+        </div>
 
         {/* ── New Lead Modal ── */}
         {showNew && (
