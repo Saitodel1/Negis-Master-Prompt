@@ -370,16 +370,58 @@
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 60;
-    width: 236px;
+    width: 232px;
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 22px;
-    padding: 32px 24px 24px;
+    gap: 30px;
+    padding: 28px 24px 24px;
     background: #FFFFFF;
     border-right: 1px solid rgba(226, 232, 240, 0.88);
     box-shadow: none;
     backdrop-filter: none;
+  }
+
+  .control-brand {
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #71839B;
+  }
+
+  .control-brand-mark {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(145deg, #EEF4FF, #FFFFFF);
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    color: #4F7BFF;
+    font-size: 17px;
+    font-weight: 850;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.055);
+  }
+
+  .control-brand strong,
+  .control-brand span {
+    display: block;
+    line-height: 1.15;
+  }
+
+  .control-brand strong {
+    font-size: 12px;
+    font-weight: 850;
+    letter-spacing: 0.17em;
+  }
+
+  .control-brand span {
+    margin-top: 4px;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.03em;
   }
 
   .control-nav-scroll {
@@ -404,7 +446,7 @@
   .control-logout {
     width: 100%;
     min-height: 52px;
-    border-radius: 14px;
+    border-radius: 12px;
     border: 1px solid transparent;
     background: transparent;
     color: #5F708C;
@@ -414,8 +456,8 @@
     justify-content: flex-start;
     gap: 12px;
     padding: 0 16px;
-    font-size: 13px;
-    font-weight: 760;
+    font-size: 14px;
+    font-weight: 700;
     line-height: 1;
     letter-spacing: 0;
     text-align: center;
@@ -425,14 +467,14 @@
 
   .control-nav-item:hover,
   .control-logout:hover {
-    color: #3157E8;
-    background: #F4F7FF;
-    transform: translateX(2px);
+    color: #2457FF;
+    background: #F7FAFF;
+    transform: translateX(1px);
     box-shadow: none;
   }
 
   .control-nav-item.is-active {
-    color: #3157E8;
+    color: #2457FF;
     border-color: rgba(79, 123, 255, 0.16);
     background: #EEF4FF;
     box-shadow: inset 3px 0 0 #4F7BFF;
@@ -446,17 +488,17 @@
   }
 
   .topbar-search {
-    min-height: 52px;
+    min-height: 56px;
     display: flex;
     align-items: center;
     gap: 12px;
-    width: min(100%, 700px);
+    width: min(100%, 720px);
     border: 1px solid rgba(226, 232, 240, 0.92);
     border-radius: 18px;
     background: #FFFFFF;
     color: #64748B;
     padding: 0 18px;
-    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.055);
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.045);
   }
 
   .topbar-search input {
@@ -483,12 +525,19 @@
     justify-content: center;
     color: #3157E8;
     background: #FFFFFF;
-    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.07);
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.065);
     cursor: pointer;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, color 0.16s ease;
+  }
+
+  .topbar-add-btn:hover {
+    transform: translateY(-1px);
+    color: #2457FF;
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.085);
   }
 
   .topbar-profile {
-    min-width: 220px;
+    min-width: 242px;
     align-self: stretch;
     margin: 0;
     padding: 0 18px;
@@ -500,12 +549,17 @@
     gap: 13px;
     color: #0F172A;
     cursor: pointer;
+    transition: background 0.16s ease;
+  }
+
+  .topbar-profile:hover {
+    background: #F8FAFF;
   }
 
   .topbar-profile-avatar {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
     border-radius: 50%;
     display: inline-flex;
     align-items: center;
@@ -586,7 +640,7 @@
   }
 
   .crm-filter-bar {
-    min-height: 92px;
+    min-height: 88px;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -595,12 +649,12 @@
     border: 1px solid rgba(226, 232, 240, 0.92);
     border-radius: 22px;
     background: #FFFFFF;
-    box-shadow: 0 18px 38px rgba(71, 85, 105, 0.06);
+    box-shadow: 0 18px 38px rgba(71, 85, 105, 0.055);
   }
 
   .crm-workspace {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-columns: minmax(0, 1fr) 320px;
     gap: 28px;
     align-items: start;
   }
@@ -614,13 +668,13 @@
 
   .crm-filter-panel {
     position: sticky;
-    top: 116px;
+    top: 136px;
     min-height: 560px;
     border: 1px solid rgba(226, 232, 240, 0.88);
     border-radius: 22px;
     background: #FFFFFF;
     padding: 26px 24px;
-    box-shadow: 0 22px 46px rgba(71, 85, 105, 0.07);
+    box-shadow: 0 22px 46px rgba(71, 85, 105, 0.06);
     backdrop-filter: none;
   }
 
@@ -651,18 +705,19 @@
   .crm-table-card {
     border-radius: 22px !important;
     background: #FFFFFF !important;
-    box-shadow: 0 18px 38px rgba(71, 85, 105, 0.06) !important;
+    border: 1px solid rgba(226, 232, 240, 0.88) !important;
+    box-shadow: 0 18px 38px rgba(71, 85, 105, 0.055) !important;
   }
 
   .crm-table-card th {
-    height: 64px;
+    height: 60px;
     color: #71839B !important;
     font-size: 13px;
     font-weight: 750 !important;
   }
 
   .crm-table-card td {
-    height: 72px;
+    height: 76px;
     color: #44577A;
     font-size: 14px;
     vertical-align: middle;
@@ -684,8 +739,8 @@
   }
 
   .client-avatar {
-    width: 36px;
-    height: 36px;
+    width: 38px;
+    height: 38px;
     border-radius: 50%;
     display: inline-flex;
     align-items: center;
@@ -809,12 +864,12 @@
     height: 46px;
     margin-top: 28px;
     border: 0;
-    border-radius: 10px;
-    background: linear-gradient(145deg, #3157FF, #2445E8);
+    border-radius: 12px;
+    background: #4F7BFF;
     color: #FFFFFF;
     font-size: 13px;
     font-weight: 850;
-    box-shadow: 0 15px 28px rgba(49, 87, 255, 0.22);
+    box-shadow: 0 15px 28px rgba(79, 123, 255, 0.20);
     cursor: pointer;
   }
 
@@ -887,7 +942,7 @@
   /* Internal app skin: keep every CRM page visually aligned with Admin. */
   .ng-content,
   .ng-topbar {
-    margin-left: 236px;
+    margin-left: 232px;
   }
 
   .ng-shell {
@@ -986,7 +1041,7 @@
     background: rgba(246, 248, 252, 0.72) !important;
   }
 
-  .ng-admin-skin button:not(.topnav-item):not(.soft-icon-btn):not(.neu-btn):not(.neu-btn-primary):not(.neu-btn-danger):not(.neu-icon-btn) {
+  .ng-admin-skin button:not(.topnav-item):not(.soft-icon-btn):not(.neu-btn):not(.neu-btn-primary):not(.neu-btn-danger):not(.neu-icon-btn):not(.crm-create-btn):not(.crm-apply-filter) {
     border-radius: 16px !important;
     border: 1px solid var(--ng-border) !important;
     background: var(--ng-surface) !important;
@@ -995,10 +1050,42 @@
     transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, color 0.15s ease !important;
   }
 
-  .ng-admin-skin button:not(.topnav-item):not(.soft-icon-btn):not(.neu-btn):not(.neu-btn-primary):not(.neu-btn-danger):not(.neu-icon-btn):hover {
+  .ng-admin-skin button:not(.topnav-item):not(.soft-icon-btn):not(.neu-btn):not(.neu-btn-primary):not(.neu-btn-danger):not(.neu-icon-btn):not(.crm-create-btn):not(.crm-apply-filter):hover {
     transform: translateY(-1px);
     color: var(--ng-primary) !important;
     background: #F8FAFF !important;
+  }
+
+  .ng-admin-skin .department-hero h1 {
+    color: #FFFFFF !important;
+    font-size: 48px !important;
+    line-height: 52px !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.04em !important;
+  }
+
+  .ng-admin-skin .department-hero p {
+    color: rgba(255, 255, 255, 0.82) !important;
+    font-size: 17px !important;
+    line-height: 28px !important;
+    font-weight: 400 !important;
+    letter-spacing: -0.01em !important;
+  }
+
+  .ng-admin-skin .crm-create-btn,
+  .ng-admin-skin .crm-apply-filter {
+    background: #4F7BFF !important;
+    border-color: rgba(79, 123, 255, 0.58) !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 14px 26px rgba(79, 123, 255, 0.18) !important;
+  }
+
+  .ng-admin-skin .crm-create-btn:hover,
+  .ng-admin-skin .crm-apply-filter:hover {
+    background: #426BEB !important;
+    color: #FFFFFF !important;
+    transform: translateY(-1px);
+    box-shadow: 0 16px 30px rgba(79, 123, 255, 0.22) !important;
   }
 
   .ng-admin-skin button[class*="bg-[#1E325C]"],
@@ -1106,8 +1193,18 @@
       font-size: 30px;
     }
 
+    .ng-admin-skin .department-hero h1 {
+      font-size: 30px !important;
+      line-height: 34px !important;
+    }
+
     .department-hero p {
       font-size: 14px;
+    }
+
+    .ng-admin-skin .department-hero p {
+      font-size: 14px !important;
+      line-height: 22px !important;
     }
 
     .crm-workspace {

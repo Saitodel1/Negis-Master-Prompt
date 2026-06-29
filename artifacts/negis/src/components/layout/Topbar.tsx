@@ -169,12 +169,12 @@ export function Topbar() {
       <header
         className="ng-topbar grid shrink-0 sticky top-0 z-30 items-center gap-4 px-7"
         style={{
-          gridTemplateColumns: 'minmax(360px, 1fr) minmax(360px, auto)',
-          height: 92,
+          gridTemplateColumns: 'minmax(420px, 1fr) minmax(440px, auto)',
+          height: 112,
           background: '#FFFFFF',
           backdropFilter: 'none',
           borderBottom: '1px solid rgba(218, 228, 238, 0.92)',
-          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.035)',
+          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.025)',
         }}
       >
       <div className="topbar-search">

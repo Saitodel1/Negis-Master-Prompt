@@ -273,6 +273,14 @@ export function TopNav() {
   return (
     <>
       <aside className="control-rail">
+        <div className="control-brand" aria-label="Negis">
+          <div className="control-brand-mark">N</div>
+          <div>
+            <strong>NEGIS</strong>
+            <span>CRM v1.0</span>
+          </div>
+        </div>
+
         <nav className="control-nav-scroll">
           {filtered.map(({ href, icon: Icon, label }) => {
             const active = location === href || location.startsWith(href + '/');
