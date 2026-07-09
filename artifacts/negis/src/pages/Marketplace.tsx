@@ -1,19 +1,24 @@
-import { useMemo, useState, type ComponentType } from 'react';
+import { useMemo, useState, type ComponentType, type Dispatch, type SetStateAction } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import {
   Bot,
   CheckCircle2,
+  Copy,
   CreditCard,
+  Database,
   ExternalLink,
   Headphones,
   Info,
+  KeyRound,
   MessageCircle,
   PhoneCall,
   Search,
+  Settings,
   ShieldCheck,
   Sparkles,
   Star,
   Store,
+  Webhook,
   X,
 } from 'lucide-react';
 
@@ -31,6 +36,15 @@ interface MarketplaceItem {
   summary: string;
   details: string;
   priority?: boolean;
+}
+
+interface ChatbotDraft {
+  provider: string;
+  model: string;
+  verifyToken: string;
+  systemPrompt: string;
+  testPhone: string;
+  testMessage: string;
 }
 
 const CATEGORIES: { key: CategoryKey | 'all'; label: string; icon: ComponentType<{ size?: number }> }[] = [
@@ -84,6 +98,7 @@ const LOGOS: Record<string, LogoMeta> = {
   'negis-app': { text: 'N', bg: 'linear-gradient(145deg, #4F7BFF, #3B82F6)' },
   'negis-loyalty': { text: 'NL', bg: 'linear-gradient(145deg, #10B981, #4F7BFF)' },
   'negis-ai': { text: 'AI', bg: 'linear-gradient(145deg, #3B82F6, #4F7BFF)' },
+  'negis-chatbot': { text: 'NB', bg: 'linear-gradient(145deg, #182A4B, #4F7BFF)' },
   wazzup: { domain: 'wazzup24.ru', text: 'W', bg: '#18C37E' },
   chat2desk: { domain: 'chat2desk.com', text: 'C2D', bg: '#2563EB' },
   'sendpulse-whatsapp': { domain: 'sendpulse.com', text: 'SP', bg: '#10B981' },
@@ -148,6 +163,17 @@ const ITEMS: MarketplaceItem[] = [
     tags: ['AI', 'Подсказки', 'Продажи'],
     summary: 'AI-помощник для подсказок менеджеру по клиентской карточке, задачам и истории касаний.',
     details: 'Будет анализировать историю клиента, оплаты, процедуры и переписки, чтобы предлагать следующий шаг: позвонить, пригласить, предложить курс или закрыть долг.',
+  },
+  {
+    id: 'negis-chatbot',
+    name: 'Negis Чатбот',
+    category: 'negis',
+    region: ['KZ', 'KG'],
+    status: 'recommended',
+    tags: ['WhatsApp бот', 'AI', 'Meta API', 'CRM'],
+    summary: 'AI-бот для WhatsApp: отвечает клиентам, ведёт историю сообщений и передаёт данные в CRM Negis.',
+    details: 'Модуль для официального WhatsApp Cloud API: принимает сообщения через webhook, использует AI-провайдера, сохраняет историю в Supabase и может создавать касания в карточке клиента.',
+    priority: true,
   },
   {
     id: 'wazzup',
@@ -462,6 +488,26 @@ export default function Marketplace() {
   const [activeCategory, setActiveCategory] = useState<CategoryKey | 'all'>('all');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<MarketplaceItem | null>(null);
+  const [chatbotDraft, setChatbotDraft] = useState<ChatbotDraft>(() => {
+    try {
+      const saved = localStorage.getItem('negis_chatbot_market_draft');
+      if (saved) return JSON.parse(saved) as ChatbotDraft;
+    } catch {
+      // ignore malformed local draft
+    }
+    return {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      verifyToken: 'negis_verify_2026',
+      systemPrompt: 'Ты ассистент клиники. Отвечай кратко, уточняй услугу, имя, телефон и удобное время записи. Не ставь диагнозы.',
+      testPhone: '',
+      testMessage: 'Здравствуйте, хочу записаться на консультацию',
+    };
+  });
+
+  const saveChatbotDraft = () => {
+    localStorage.setItem('negis_chatbot_market_draft', JSON.stringify(chatbotDraft));
+  };
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -561,6 +607,13 @@ export default function Marketplace() {
           </div>
         </section>
 
+        <NegisChatbotSection
+          draft={chatbotDraft}
+          onChange={setChatbotDraft}
+          onSave={saveChatbotDraft}
+          onOpenDetails={() => setSelected(ITEMS.find(item => item.id === 'negis-chatbot') ?? null)}
+        />
+
         <section>
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -592,6 +645,181 @@ function Metric({ value, label }: { value: number; label: string }) {
     <div className="rounded-2xl border border-[#E7ECF3] bg-white/78 px-5 py-4 shadow-[inset_1px_1px_0_rgba(255,255,255,0.9)]">
       <div className="text-2xl font-black text-[#0B1220]">{value}</div>
       <div className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-[#8EA0B7]">{label}</div>
+    </div>
+  );
+}
+
+function NegisChatbotSection({
+  draft,
+  onChange,
+  onSave,
+  onOpenDetails,
+}: {
+  draft: ChatbotDraft;
+  onChange: Dispatch<SetStateAction<ChatbotDraft>>;
+  onSave: () => void;
+  onOpenDetails: () => void;
+}) {
+  const webhookUrl = 'https://crm.negis.online/api/webhook';
+  const update = (patch: Partial<ChatbotDraft>) => onChange(prev => ({ ...prev, ...patch }));
+  const copyWebhook = () => navigator.clipboard?.writeText(webhookUrl);
+
+  return (
+    <section className="rounded-[28px] border border-[#DDE7F0] bg-white p-6 shadow-[0_18px_38px_rgba(71,85,105,0.055)]">
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+        <div className="max-w-3xl">
+          <div className="inline-flex items-center gap-2 rounded-full bg-[#EEF4FF] px-3 py-1 text-xs font-black text-[#4F7BFF]">
+            <Bot size={14} />
+            Собственный модуль Negis
+          </div>
+          <h2 className="mt-4 text-2xl font-black tracking-tight text-[#0B1220]">Negis Чатбот</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#64748B]">
+            WhatsApp-бот для клиники: принимает сообщения через Meta Cloud API, отвечает через AI,
+            сохраняет историю и готовит данные для карточки клиента в CRM.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 text-center">
+          <InfoBox label="Webhook" value="Готовится" />
+          <InfoBox label="AI" value={draft.provider} />
+          <InfoBox label="Канал" value="WhatsApp" />
+        </div>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-5 2xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-[22px] border border-[#E7ECF3] bg-[#F8FAFC] p-5">
+          <div className="flex items-center gap-2 text-sm font-black text-[#0B1220]">
+            <Settings size={17} className="text-[#4F7BFF]" />
+            Настройки бота
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label className="space-y-1.5">
+              <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#71839B]">AI провайдер</span>
+              <select
+                value={draft.provider}
+                onChange={e => update({
+                  provider: e.target.value,
+                  model: e.target.value === 'deepseek' ? 'deepseek-chat' : e.target.value === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-sonnet-latest',
+                })}
+                className="h-11 w-full rounded-2xl border border-[#DDE7F0] bg-white px-4 text-sm font-semibold text-[#0B1220] outline-none focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
+              >
+                <option value="deepseek">DeepSeek</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Claude</option>
+              </select>
+            </label>
+
+            <label className="space-y-1.5">
+              <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#71839B]">Модель</span>
+              <input
+                value={draft.model}
+                onChange={e => update({ model: e.target.value })}
+                className="h-11 w-full rounded-2xl border border-[#DDE7F0] bg-white px-4 text-sm font-semibold text-[#0B1220] outline-none focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
+              />
+            </label>
+
+            <label className="space-y-1.5">
+              <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#71839B]">Verify token</span>
+              <input
+                value={draft.verifyToken}
+                onChange={e => update({ verifyToken: e.target.value })}
+                className="h-11 w-full rounded-2xl border border-[#DDE7F0] bg-white px-4 text-sm font-semibold text-[#0B1220] outline-none focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
+              />
+            </label>
+
+            <label className="space-y-1.5">
+              <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#71839B]">Тестовый номер</span>
+              <input
+                value={draft.testPhone}
+                onChange={e => update({ testPhone: e.target.value })}
+                placeholder="77785019133"
+                className="h-11 w-full rounded-2xl border border-[#DDE7F0] bg-white px-4 text-sm font-semibold text-[#0B1220] outline-none focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
+              />
+            </label>
+          </div>
+
+          <label className="mt-4 block space-y-1.5">
+            <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#71839B]">Системный промпт</span>
+            <textarea
+              value={draft.systemPrompt}
+              onChange={e => update({ systemPrompt: e.target.value })}
+              className="min-h-28 w-full resize-y rounded-2xl border border-[#DDE7F0] bg-white px-4 py-3 text-sm font-medium leading-6 text-[#0B1220] outline-none focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
+            />
+          </label>
+
+          <label className="mt-4 block space-y-1.5">
+            <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#71839B]">Тестовое сообщение</span>
+            <input
+              value={draft.testMessage}
+              onChange={e => update({ testMessage: e.target.value })}
+              className="h-11 w-full rounded-2xl border border-[#DDE7F0] bg-white px-4 text-sm font-semibold text-[#0B1220] outline-none focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
+            />
+          </label>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button type="button" className="crm-create-btn" onClick={onSave}>
+              Сохранить черновик
+            </button>
+            <button type="button" className="neu-btn" onClick={onOpenDetails}>
+              <Info size={14} />
+              Подробнее
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-[22px] border border-[#E7ECF3] bg-white p-5">
+            <div className="flex items-center gap-2 text-sm font-black text-[#0B1220]">
+              <Webhook size={17} className="text-[#4F7BFF]" />
+              Webhook Meta
+            </div>
+            <div className="mt-3 flex items-center gap-2 rounded-2xl border border-[#DDE7F0] bg-[#F8FAFC] px-4 py-3">
+              <code className="min-w-0 flex-1 truncate text-xs font-bold text-[#475569]">{webhookUrl}</code>
+              <button type="button" className="neu-icon-btn h-8 w-8" onClick={copyWebhook} title="Скопировать">
+                <Copy size={14} />
+              </button>
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-[#64748B]">
+              <StepLine icon={KeyRound} text={`VERIFY_TOKEN = ${draft.verifyToken || 'negis_verify_2026'}`} />
+              <StepLine icon={MessageCircle} text="Подписка Meta: messages" />
+              <StepLine icon={Database} text="Таблицы: bot_settings, bot_messages" />
+            </div>
+          </div>
+
+          <div className="rounded-[22px] border border-[#E7ECF3] bg-white p-5">
+            <div className="text-sm font-black text-[#0B1220]">Статус внедрения</div>
+            <div className="mt-4 space-y-3">
+              <StatusRow done label="Раздел в Маркете" />
+              <StatusRow done label="Черновик настроек" />
+              <StatusRow label="api/webhook.js на Vercel" />
+              <StatusRow label="SQL таблицы Supabase" />
+              <StatusRow label="ENV переменные Vercel" />
+              <StatusRow label="Проверка Meta Webhook" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StepLine({ icon: Icon, text }: { icon: ComponentType<{ size?: number; className?: string }>; text: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl bg-[#F8FAFC] px-3 py-2">
+      <Icon size={15} className="shrink-0 text-[#4F7BFF]" />
+      <span className="min-w-0 truncate">{text}</span>
+    </div>
+  );
+}
+
+function StatusRow({ done, label }: { done?: boolean; label: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm font-semibold text-[#475569]">{label}</span>
+      <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${done ? 'bg-[#F0FDF4] text-[#16A34A]' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
+        {done ? 'Готово' : 'Нужно'}
+      </span>
     </div>
   );
 }
