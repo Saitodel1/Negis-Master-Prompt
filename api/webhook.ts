@@ -128,7 +128,7 @@ async function loadBotSettings() {
     return fallback
   }
 
-  const values = Object.fromEntries(data.map(row => [row.key, row.value]))
+  const values = Object.fromEntries((data as Array<{ key: string; value: string }>).map(row => [row.key, row.value]))
 
   return {
     systemPrompt: values.system_prompt || fallback.systemPrompt,
@@ -155,7 +155,7 @@ async function loadMessageHistory(phone: string): Promise<ChatMessage[]> {
 
   return data
     .reverse()
-    .map(row => ({
+    .map((row: { direction: string; content: string }) => ({
       role: row.direction === 'outgoing' ? 'assistant' : 'user',
       content: row.content,
     }))
@@ -204,8 +204,8 @@ async function callAI(
       }),
     })
 
-    const data = await response.json()
-    if (!response.ok) {
+    const data = await (response as any).json()
+    if (!(response as any).ok) {
       console.error('anthropic error', data)
       return 'Сейчас не удалось получить ответ ассистента. Менеджер скоро подключится.'
     }
@@ -232,8 +232,8 @@ async function callAI(
     }),
   })
 
-  const data = await response.json()
-  if (!response.ok) {
+  const data = await (response as any).json()
+  if (!(response as any).ok) {
     console.error(`${provider} error`, data)
     return 'Сейчас не удалось получить ответ ассистента. Менеджер скоро подключится.'
   }
@@ -261,8 +261,8 @@ async function sendWhatsApp(to: string, text: string) {
     }),
   })
 
-  const data = await response.json()
-  if (!response.ok) {
+  const data = await (response as any).json()
+  if (!(response as any).ok) {
     console.error('whatsapp send error', data)
   }
 }
