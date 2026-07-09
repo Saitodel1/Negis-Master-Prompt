@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { trackEvent } from '@/lib/fbpixel';
 import { ArrowLeft } from 'lucide-react';
+import { VERTICALS, INDUSTRY_OPTIONS, DEFAULT_INDUSTRY, type IndustrySlug } from '@/lib/verticals/config';
 
 const registerSchema = z.object({
   fullName: z.string().min(2, 'Обязательное поле'),
@@ -24,6 +25,8 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 export default function Register() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
+  const [industry, setIndustry] = useState<IndustrySlug>(DEFAULT_INDUSTRY);
+  const v = VERTICALS[industry];
 
   const { register, handleSubmit, formState: { errors } } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema)
@@ -51,7 +54,8 @@ export default function Register() {
         .from('clinics')
         .insert({
           name: data.clinicName,
-          owner_id: authData.user.id
+          owner_id: authData.user.id,
+          industry: industry,
         })
         .select()
         .single();
@@ -92,6 +96,21 @@ export default function Register() {
         <h2 className="text-2xl font-bold text-center mb-8 text-foreground">Регистрация клиники</h2>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1.5 text-[#1E293B]">Сфера бизнеса</label>
+            <div className="grid grid-cols-2 gap-2">
+              {INDUSTRY_OPTIONS.map(slug => (
+                <button key={slug} type="button"
+                  onClick={() => { setIndustry(slug); }}
+                  className={}
+                >
+                  <div className="text-lg mb-0.5">{VERTICALS[slug].icon}</div>
+                  <div className="text-xs font-semibold text-[#1E293B]">{VERTICALS[slug].name}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div>
             <input 
               type="text" 
