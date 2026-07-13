@@ -16,7 +16,7 @@ export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
-        style={{ background: '#EEF4F8' }}
+        style={{ background: 'var(--ng-bg)' }}
       >
         <div style={{ fontSize: 12, letterSpacing: '0.14em', color: '#8EA0B7', fontFamily: "'Inter', sans-serif" }}>
           ЗАГРУЗКА...
@@ -33,13 +33,13 @@ export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
     <div
       className="ng-shell min-h-[100dvh] flex flex-col font-sans"
       style={{
-        background: '#F6F8FC',
-        color: '#0F172A',
+        background: 'transparent',
+        color: 'var(--ng-text)',
         paddingTop: isImpersonation ? 40 : 0,
       }}
     >
       <Topbar />
-      <main className="ng-content ng-admin-skin flex-1 overflow-y-auto" style={{ padding: '24px clamp(24px, 3vw, 44px) 44px' }}>
+      <main className="ng-content ng-admin-skin flex-1 overflow-y-auto" style={{ padding: '24px clamp(20px, 3vw, 40px) 40px' }}>
         <DepartmentHero />
         {children}
       </main>

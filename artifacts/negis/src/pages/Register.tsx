@@ -102,10 +102,16 @@ export default function Register() {
               {INDUSTRY_OPTIONS.map(slug => (
                 <button key={slug} type="button"
                   onClick={() => { setIndustry(slug); }}
-                  className={}
+                  className={`rounded-2xl border px-3 py-3 text-left transition-all ${
+                    industry === slug
+                      ? 'border-[#101A35]/20 bg-[#101A35] text-white shadow-lg'
+                      : 'border-white/70 bg-white/45 hover:bg-white/65'
+                  }`}
                 >
                   <div className="text-lg mb-0.5">{VERTICALS[slug].icon}</div>
-                  <div className="text-xs font-semibold text-[#1E293B]">{VERTICALS[slug].name}</div>
+                  <div className={`text-xs font-semibold ${industry === slug ? 'text-white' : 'text-[#1E293B]'}`}>
+                    {VERTICALS[slug].name}
+                  </div>
                 </button>
               ))}
             </div>
