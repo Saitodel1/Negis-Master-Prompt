@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 
 type OAuthState = { clinicId: string; userId: string; codeVerifier: string; expiresAt: number }
 type Channel = { channel_id?: string; transport?: string; status?: string; state?: string; phone?: string; name?: string }
+type ExternalFetchResponse = { ok: boolean; json(): Promise<unknown> }
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -66,7 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .maybeSingle()
   if (!membership) return redirect(res, req, 'oauth-forbidden')
 
-  let tokenResponse: Awaited<ReturnType<typeof fetch>>
+  let tokenResponse: ExternalFetchResponse
   try {
     tokenResponse = await fetch('https://tech.wazzup24.com/v2/oauth/token', {
       method: 'POST',
@@ -79,7 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         authorize_code_data: { code, redirect_uri: redirectUri, client_id: clientId, code_verifier: state.codeVerifier },
       }),
       signal: AbortSignal.timeout(15_000),
-    })
+    }) as unknown as ExternalFetchResponse
   } catch {
     return redirect(res, req, 'oauth-unavailable')
   }
@@ -93,7 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const channelResponse = await fetch('https://tech.wazzup24.com/v2/channels', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
       signal: AbortSignal.timeout(15_000),
-    })
+    }) as unknown as ExternalFetchResponse
     const payload = await channelResponse.json().catch(() => ({})) as { data?: Channel[] }
     channels = Array.isArray(payload.data) ? payload.data : []
   } catch {
