@@ -8,6 +8,7 @@ type OAuthState = {
   codeVerifier: string
   expiresAt: number
 }
+type AuthUserResponse = { ok: boolean; json(): Promise<unknown> }
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -45,9 +46,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const accessToken = bearerToken(req)
   if (!accessToken) return res.status(401).json({ error: 'Authorization is required' })
 
-  const { data: userData, error: userError } = await admin.auth.getUser(accessToken)
-  const user = userData.user
-  if (userError || !user) return res.status(401).json({ error: 'Session is invalid' })
+  let userResponse: AuthUserResponse
+  try {
+    userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+      signal: AbortSignal.timeout(10_000),
+    }) as unknown as AuthUserResponse
+  } catch {
+    return res.status(503).json({ error: 'Authentication service is unavailable' })
+  }
+  const user = await userResponse.json().catch(() => null) as { id?: string } | null
+  if (!userResponse.ok || !user?.id) return res.status(401).json({ error: 'Session is invalid' })
 
   const { data: membership } = await admin
     .from('user_roles')
