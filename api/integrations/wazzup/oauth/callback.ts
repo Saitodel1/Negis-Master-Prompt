@@ -66,7 +66,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .maybeSingle()
   if (!membership) return redirect(res, req, 'oauth-forbidden')
 
-  let tokenResponse: Response
+  let tokenResponse: Awaited<ReturnType<typeof fetch>>
   try {
     tokenResponse = await fetch('https://tech.wazzup24.com/v2/oauth/token', {
       method: 'POST',
