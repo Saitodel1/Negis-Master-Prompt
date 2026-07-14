@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'wouter';
 import { MessageCircle, Plus, Send, Users, UserPlus, Search, X } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { supabase } from '@/lib/supabase';
@@ -32,6 +33,8 @@ interface ChatMessage {
   senderName: string;
   text: string;
   createdAt: string;
+  messageType?: 'text' | 'task';
+  metadata?: Record<string, string | null>;
 }
 
 const conversationsKey = (clinicId: string | null) => `negis_chat_conversations_${clinicId ?? 'default'}`;
@@ -47,6 +50,7 @@ function readJson<T>(key: string, fallback: T): T {
 
 export default function Chat() {
   const { clinicId, user } = useAuth();
+  const [, setLocation] = useLocation();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [customRoleMap, setCustomRoleMap] = useState<Record<string, string>>({});
   const [userRoleMap, setUserRoleMap] = useState<Record<string, string>>({});
@@ -83,6 +87,7 @@ export default function Chat() {
   const loadAgents = async () => {
     if (!clinicId) return;
     setLoading(true);
+    try {
     const primary = await supabase
       .from('agents')
       .select('id, name, user_id, role_id, avatar_url, avatar_icon, avatar_color')
@@ -109,7 +114,9 @@ export default function Chat() {
     setCustomRoleMap(maps.customRoleMap);
     setUserRoleMap(maps.userRoleMap);
     await loadChatRows(rows);
-    setLoading(false);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loadLocalChat = () => {
@@ -138,7 +145,7 @@ export default function Chat() {
         ? supabase.from('chat_members').select('conversation_id, agent_id').in('conversation_id', conversationIds)
         : Promise.resolve({ data: [] }),
       conversationIds.length
-        ? supabase.from('chat_messages').select('id, conversation_id, sender_agent_id, sender_user_id, body, created_at').in('conversation_id', conversationIds).order('created_at')
+        ? supabase.from('chat_messages').select('id, conversation_id, sender_agent_id, sender_user_id, body, message_type, metadata, created_at').in('conversation_id', conversationIds).order('created_at')
         : Promise.resolve({ data: [] }),
     ]);
 
@@ -165,6 +172,8 @@ export default function Chat() {
         senderAgentId: row.sender_agent_id,
         senderName: sender ? agentLabel(sender) : 'Сотрудник',
         text: row.body,
+        messageType: row.message_type || 'text',
+        metadata: row.metadata || {},
         createdAt: row.created_at,
       };
     });
@@ -332,7 +341,7 @@ export default function Chat() {
           sender_user_id: user?.id ?? null,
           body: text,
         })
-        .select('id, conversation_id, sender_agent_id, sender_user_id, body, created_at')
+        .select('id, conversation_id, sender_agent_id, sender_user_id, body, message_type, metadata, created_at')
         .single()
         .then(({ data, error }) => {
           if (error) {
@@ -346,6 +355,8 @@ export default function Chat() {
             senderAgentId: data.sender_agent_id,
             senderName: myAgent ? agentLabel(myAgent) : meName,
             text: data.body,
+            messageType: data.message_type || 'text',
+            metadata: data.metadata || {},
             createdAt: data.created_at,
           }]);
         });
@@ -470,7 +481,17 @@ export default function Chat() {
                         {!mine && <Avatar agent={agents.find(agent => agent.id === message.senderAgentId)} fallback={message.senderName} />}
                         <div className={`max-w-[72%] rounded-2xl px-4 py-3 shadow-sm ${mine ? 'bg-[#1E325C] text-white' : 'bg-white border border-[#E3EAF2] text-[#0B1220]'}`}>
                           <div className={`text-[11px] font-semibold mb-1 ${mine ? 'text-white/70' : 'text-[#8EA0B7]'}`}>{message.senderName}</div>
-                          <div className="text-sm whitespace-pre-wrap">{message.text}</div>
+                          {message.messageType === 'task' ? (
+                            <button
+                              type="button"
+                              onClick={() => message.metadata?.task_id && setLocation(`/tasks?task=${message.metadata.task_id}`)}
+                              className={`mt-1 w-full rounded-xl border px-3 py-3 text-left ${mine ? 'border-white/25 bg-white/10' : 'border-[#DCE6F5] bg-[#F7F9FE]'}`}
+                            >
+                              <span className="block text-sm font-bold">{message.metadata?.title || message.text}</span>
+                              {message.metadata?.due_at && <span className={`mt-1 block text-xs ${mine ? 'text-white/70' : 'text-[#6C7D98]'}`}>Срок: {new Date(message.metadata.due_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>}
+                              {message.metadata?.priority && <span className={`mt-2 inline-block text-xs font-semibold ${mine ? 'text-white/80' : 'text-[#3157DE]'}`}>Открыть задачу</span>}
+                            </button>
+                          ) : <div className="text-sm whitespace-pre-wrap">{message.text}</div>}
                           <div className={`text-[10px] mt-2 ${mine ? 'text-white/55' : 'text-[#CBD5E1]'}`}>
                             {new Date(message.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                           </div>

@@ -21,6 +21,7 @@ interface AuthContextType {
   session: Session | null;
   user: User | null;
   clinicId: string | null;
+  country: 'KZ' | 'KG' | null;
   userRole: UserRole | null;
   rolePermissions: RolePermissions;
   isLoading: boolean;
@@ -46,6 +47,7 @@ const ALL_PERMISSIONS: RolePermissions = {
   reports: true,
   ads: true,
   settings: true,
+  automation: true,
 };
 
 const SYSTEM_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
@@ -87,6 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session,                 setSession]                 = useState<Session | null>(null);
   const [user,                    setUser]                    = useState<User | null>(null);
   const [clinicId,                setClinicId]                = useState<string | null>(null);
+  const [country,                 setCountry]                 = useState<'KZ' | 'KG' | null>(null);
   const [userRole,                setUserRole]                = useState<UserRole | null>(null);
   const [rolePermissions,         setRolePermissions]         = useState<RolePermissions>({});
   const [isLoading,               setIsLoading]               = useState(true);
@@ -173,6 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         fetchUserRole(sess.user.id);
       } else {
         setClinicId(null);
+        setCountry(null);
         setUserRole(null);
         setRolePermissions({});
         setIsLoading(false);
@@ -336,6 +340,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
       if (data) {
         setClinicId(data.clinic_id);
+        const { data: clinic } = await supabase
+          .from('clinics')
+          .select('country')
+          .eq('id', data.clinic_id)
+          .maybeSingle();
+        setCountry(clinic?.country === 'KG' ? 'KG' : clinic?.country === 'KZ' ? 'KZ' : null);
         const role = data.role as UserRole;
         setUserRole(role);
         await fetchRolePermissions(userId, data.clinic_id, role);
@@ -356,6 +366,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsImpersonation(false);
       setImpersonationClinicName(null);
       setClinicId(null);
+      setCountry(null);
       setUserRole(null);
       setRolePermissions({});
       /* Also terminate the Supabase session created for RLS */
@@ -370,7 +381,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      session, user, clinicId, userRole, isLoading,
+      session, user, clinicId, country, userRole, isLoading,
       rolePermissions,
       isImpersonation, impersonationClinicName,
       signOut,

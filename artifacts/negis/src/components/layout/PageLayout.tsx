@@ -1,8 +1,7 @@
 import React from 'react';
 import { Topbar } from './Topbar';
-import { DepartmentHero } from './DepartmentHero';
 import { useAuth } from '@/contexts/AuthContext';
-import { Redirect } from 'wouter';
+import { Redirect, useLocation } from 'wouter';
 
 interface PageLayoutProps {
   children: React.ReactNode;
@@ -11,6 +10,8 @@ interface PageLayoutProps {
 
 export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
   const { session, isLoading, isImpersonation } = useAuth();
+  const [location] = useLocation();
+  const routeName = location.split('?')[0].replace(/^\//, '') || 'dashboard';
 
   if (isLoading) {
     return (
@@ -39,8 +40,7 @@ export function PageLayout({ children, requireAuth = true }: PageLayoutProps) {
       }}
     >
       <Topbar />
-      <main className="ng-content ng-admin-skin flex-1 overflow-y-auto" style={{ padding: '24px clamp(20px, 3vw, 40px) 40px' }}>
-        <DepartmentHero />
+      <main className={`ng-content ng-admin-skin ng-route-${routeName} flex-1 overflow-y-auto`} style={{ padding: '24px clamp(20px, 3vw, 40px) 40px' }}>
         {children}
       </main>
     </div>

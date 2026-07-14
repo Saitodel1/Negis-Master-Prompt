@@ -1,4 +1,4 @@
-export type IndustrySlug = 'clinic' | 'beauty';
+export type IndustrySlug = 'clinic' | 'beauty' | 'fitness' | 'education' | 'custom';
 
 export interface VerticalDef {
   slug: IndustrySlug; name: string; icon: string;
@@ -45,6 +45,57 @@ export const VERTICALS: Record<IndustrySlug, VerticalDef> = {
       booking: ['Новый', 'Перезвонить', 'Записан', 'Недозвон', 'Отмена'],
     },
   },
+  fitness: {
+    slug: 'fitness', name: 'Фитнес / wellness', icon: 'F',
+    companyLabel: 'Бизнес', leadLabel: 'Клиент', leadLabelPlural: 'Клиенты',
+    agentLabel: 'Тренер', agentLabelPlural: 'Тренеры', bookingLabel: 'Занятие',
+    serviceLabel: 'Услуга', serviceLabelPlural: 'Услуги',
+    pipelineSales: 'Продажи', pipelineBooking: 'Расписание',
+    leadTabs: [
+      { id: 'overview', label: 'Обзор' }, { id: 'timeline', label: 'История' },
+      { id: 'bookings', label: 'Занятия' }, { id: 'need', label: 'Потребности' },
+      { id: 'procedures', label: 'Абонементы' }, { id: 'finance', label: 'Финансы' },
+      { id: 'whatsapp', label: 'WhatsApp' }, { id: 'tasks', label: 'Задачи' },
+    ],
+    leadStatuses: {
+      sales: ['Новый', 'Пробная тренировка', 'Купил абонемент', 'Активный', 'Продление', 'Ушел'],
+      booking: ['Новый', 'Записан', 'Пришел', 'Не пришел', 'Отмена'],
+    },
+  },
+  education: {
+    slug: 'education', name: 'Курсы / обучение', icon: 'E',
+    companyLabel: 'Бизнес', leadLabel: 'Ученик', leadLabelPlural: 'Ученики',
+    agentLabel: 'Менеджер', agentLabelPlural: 'Менеджеры', bookingLabel: 'Занятие',
+    serviceLabel: 'Программа', serviceLabelPlural: 'Программы',
+    pipelineSales: 'Продажи', pipelineBooking: 'Расписание',
+    leadTabs: [
+      { id: 'overview', label: 'Обзор' }, { id: 'timeline', label: 'История' },
+      { id: 'bookings', label: 'Занятия' }, { id: 'need', label: 'Потребности' },
+      { id: 'procedures', label: 'Программы' }, { id: 'finance', label: 'Финансы' },
+      { id: 'whatsapp', label: 'WhatsApp' }, { id: 'tasks', label: 'Задачи' },
+    ],
+    leadStatuses: {
+      sales: ['Новый', 'Консультация', 'Пробный урок', 'Оплатил курс', 'Учится', 'Продление', 'Потерян'],
+      booking: ['Новый', 'Записан', 'Посетил', 'Не пришел', 'Отмена'],
+    },
+  },
+  custom: {
+    slug: 'custom', name: 'Другое', icon: 'N',
+    companyLabel: 'Бизнес', leadLabel: 'Клиент', leadLabelPlural: 'Клиенты',
+    agentLabel: 'Сотрудник', agentLabelPlural: 'Сотрудники', bookingLabel: 'Встреча',
+    serviceLabel: 'Услуга', serviceLabelPlural: 'Услуги',
+    pipelineSales: 'Продажи', pipelineBooking: 'Записи',
+    leadTabs: [
+      { id: 'overview', label: 'Обзор' }, { id: 'timeline', label: 'История' },
+      { id: 'bookings', label: 'Записи' }, { id: 'need', label: 'Потребности' },
+      { id: 'procedures', label: 'Услуги' }, { id: 'finance', label: 'Финансы' },
+      { id: 'whatsapp', label: 'WhatsApp' }, { id: 'tasks', label: 'Задачи' },
+    ],
+    leadStatuses: {
+      sales: ['Новый', 'В работе', 'Записан', 'Оплатил', 'Повторный контакт', 'Потерян'],
+      booking: ['Новый', 'Записан', 'Пришел', 'Не пришел', 'Отмена'],
+    },
+  },
 };
 
 export function getVertical(slug: IndustrySlug | string | null): VerticalDef {
@@ -52,5 +103,5 @@ export function getVertical(slug: IndustrySlug | string | null): VerticalDef {
   return VERTICALS.clinic;
 }
 
-export const INDUSTRY_OPTIONS: IndustrySlug[] = ['clinic', 'beauty'];
+export const INDUSTRY_OPTIONS: IndustrySlug[] = ['clinic', 'beauty', 'fitness', 'education', 'custom'];
 export const DEFAULT_INDUSTRY: IndustrySlug = 'clinic';

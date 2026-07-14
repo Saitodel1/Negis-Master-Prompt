@@ -17,6 +17,8 @@ import {
   Store,
   Smile,
   Upload,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -88,6 +90,7 @@ export function TopNav() {
   const [location] = useLocation();
   const { signOut, user, userRole, rolePermissions, clinicId } = useAuth();
   const [showProfile, setShowProfile] = useState(false);
+  const [isRailExpanded, setIsRailExpanded] = useState(false);
   const [profilePanelPosition, setProfilePanelPosition] = useState({ left: 24, top: 128 });
   const [fullName, setFullName] = useState(user?.user_metadata?.full_name ?? '');
   const [newPassword, setNewPassword] = useState('');
@@ -272,7 +275,7 @@ export function TopNav() {
 
   return (
     <>
-      <aside className="control-rail">
+      <aside className={`control-rail ${isRailExpanded ? 'is-expanded' : ''}`}>
         <div className="control-brand" aria-label="Negis">
           <div className="control-brand-mark">N</div>
           <div>
@@ -294,6 +297,17 @@ export function TopNav() {
             );
           })}
         </nav>
+
+        <button
+          type="button"
+          className="control-rail-toggle"
+          onClick={() => setIsRailExpanded(value => !value)}
+          aria-label={isRailExpanded ? 'Свернуть меню' : 'Развернуть меню'}
+          title={isRailExpanded ? 'Свернуть меню' : 'Развернуть меню'}
+        >
+          {isRailExpanded ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+          <span>{isRailExpanded ? 'Свернуть меню' : 'Развернуть меню'}</span>
+        </button>
 
         <button
           type="button"

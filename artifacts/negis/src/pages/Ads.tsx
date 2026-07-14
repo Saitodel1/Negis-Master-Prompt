@@ -365,15 +365,16 @@ function CampaignDetailModal({ campaign, clinicId, onClose }: {
   const loadCrm = async () => {
     setLoadingCrm(true);
     const platformSource = campaign.platform === 'facebook' ? 'Facebook' : 'TikTok';
-    const [{ data: leads }, { data: bookings }] = await Promise.all([
+    const [{ data: leads, error: leadsError }, { data: bookings, error: bookingsError }] = await Promise.all([
       supabase.from('leads').select('id, name, phone, status, created_at, source')
         .eq('clinic_id', clinicId).ilike('source', `%${platformSource}%`)
         .gte('created_at', dateFrom + 'T00:00:00').lte('created_at', dateTo + 'T23:59:59')
         .order('created_at', { ascending: false }).limit(50),
       supabase.from('bookings').select('id')
         .eq('clinic_id', clinicId)
-        .gte('booking_time', dateFrom + 'T00:00:00').lte('booking_time', dateTo + 'T23:59:59'),
+        .gte('date', dateFrom).lte('date', dateTo),
     ]);
+    if (leadsError || bookingsError) toast.error(leadsError?.message || bookingsError?.message || 'Не удалось загрузить данные CRM');
     setCrmLeads((leads ?? []) as CrmLead[]);
     const totalBookings = (bookings ?? []).length;
     setFunnelBooked(campaign.booked || Math.round(totalBookings * 0.3));
@@ -551,8 +552,8 @@ function ReportsTab({ clinicId, usdToKzt, onGoToSettings }: { clinicId: string; 
     const { data: bookingsByPlatform } = await supabase.from('bookings')
       .select('id, source')
       .eq('clinic_id', clinicId)
-      .gte('booking_time', `${start}T00:00:00`)
-      .lte('booking_time', `${end}T23:59:59`);
+      .gte('date', start)
+      .lte('date', end);
     const fbBookings = (bookingsByPlatform ?? []).filter(b => (b.source || '').toLowerCase().includes('facebook')).length;
     const ttBookings = (bookingsByPlatform ?? []).filter(b => (b.source || '').toLowerCase().includes('tiktok')).length;
 
@@ -644,7 +645,7 @@ function ReportsTab({ clinicId, usdToKzt, onGoToSettings }: { clinicId: string; 
       .select('*').eq('ad_account_id', accountId)
       .eq('date_start', start).eq('date_end', end)
       .gte('fetched_at', new Date(Date.now() - 3600_000).toISOString())
-      .single();
+      .maybeSingle();
     return data;
   };
 
@@ -1378,6 +1379,9 @@ function WebhookSection({ clinicId }: { clinicId: string }) {
         <p className="text-xs text-[#64748B] mt-1">
           Самый простой способ получать лиды из рекламы — без Developer Portal и API-ключей.
           Скопируйте URL ниже и вставьте в настройки вашей рекламной платформы.
+        </p>
+        <p className="text-xs text-[#64748B] mt-1">
+          В запросе обязательно передавайте HTTP-заголовок <code>x-negis-webhook-secret</code> со значением секрета ниже.
         </p>
       </div>
 

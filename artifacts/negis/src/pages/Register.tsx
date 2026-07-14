@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { trackEvent } from '@/lib/fbpixel';
 import { ArrowLeft } from 'lucide-react';
 import { VERTICALS, INDUSTRY_OPTIONS, DEFAULT_INDUSTRY, type IndustrySlug } from '@/lib/verticals/config';
+import { apiUrl } from '@/lib/api';
 
 const registerSchema = z.object({
   fullName: z.string().min(2, 'Обязательное поле'),
@@ -35,43 +36,29 @@ export default function Register() {
   const onSubmit = async (data: RegisterFormValues) => {
     setIsLoading(true);
     try {
-      // 1. SignUp
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const businessTypeByIndustry: Record<IndustrySlug, string> = {
+        clinic: 'private_clinic', beauty: 'beauty_salon', fitness: 'fitness_wellness', education: 'education_courses', custom: 'other',
+      };
+      const response = await fetch(apiUrl('/api/auth/register'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ownerName: data.fullName,
+          clinicName: data.clinicName,
+          email: data.email,
+          password: data.password,
+          businessType: businessTypeByIndustry[industry],
+          country: 'KZ',
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Не удалось создать пространство');
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,
-        options: {
-          data: {
-            full_name: data.fullName,
-          }
-        }
       });
-
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Не удалось создать пользователя');
-
-      // 2. Insert Clinic
-      const { data: clinicData, error: clinicError } = await supabase
-        .from('clinics')
-        .insert({
-          name: data.clinicName,
-          owner_id: authData.user.id,
-          industry: industry,
-        })
-        .select()
-        .single();
-
-      if (clinicError) throw clinicError;
-
-      // 3. Insert user_roles
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .insert({
-          user_id: authData.user.id,
-          clinic_id: clinicData.id,
-          role: 'owner'
-        });
-
-      if (roleError) throw roleError;
+      if (signInError) throw signInError;
 
       toast.success('Клиника успешно зарегистрирована!');
       trackEvent('CompleteRegistration');

@@ -1,29 +1,26 @@
-import { useMemo, useState, type ComponentType, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
 import {
   Bot,
   CheckCircle2,
-  Copy,
   CreditCard,
-  Database,
-  ExternalLink,
   Headphones,
   Info,
-  KeyRound,
   MessageCircle,
   PhoneCall,
   Search,
-  Settings,
   ShieldCheck,
   Sparkles,
   Star,
   Store,
-  Webhook,
   X,
 } from 'lucide-react';
 
 type CategoryKey = 'negis' | 'messengers' | 'bots' | 'telephony' | 'ai' | 'payments' | 'sms' | 'reputation';
-type Status = 'recommended' | 'available' | 'request' | 'soon' | 'connected';
+type Status = 'recommended' | 'available' | 'request' | 'soon' | 'pending' | 'connected';
 type LogoMeta = { domain?: string; text: string; bg: string };
 
 interface MarketplaceItem {
@@ -36,15 +33,6 @@ interface MarketplaceItem {
   summary: string;
   details: string;
   priority?: boolean;
-}
-
-interface ChatbotDraft {
-  provider: string;
-  model: string;
-  verifyToken: string;
-  systemPrompt: string;
-  testPhone: string;
-  testMessage: string;
 }
 
 const CATEGORIES: { key: CategoryKey | 'all'; label: string; icon: ComponentType<{ size?: number }> }[] = [
@@ -64,6 +52,7 @@ const STATUS_LABEL: Record<Status, string> = {
   available: 'Доступно',
   request: 'По заявке',
   soon: 'Скоро',
+  pending: 'Настраивается',
   connected: 'Подключено',
 };
 
@@ -72,27 +61,11 @@ const STATUS_CLASS: Record<Status, string> = {
   available: 'border-[#BFDBFE] bg-[#EFF6FF] text-[#3B82F6]',
   request: 'border-[#FDE68A] bg-[#FFFBEB] text-[#B45309]',
   soon: 'border-[#E2E8F0] bg-[#F1F5F9] text-[#64748B]',
+  pending: 'border-[#F8D390] bg-[#FFF7E6] text-[#875400]',
   connected: 'border-[#BBF7D0] bg-[#F0FDF4] text-[#16A34A]',
 };
 
-const DEFAULT_WAZZUP_PARTNER_URL = 'https://wazzup24.ru/?utm_p=5sFySX';
-const WAZZUP_PARTNER_URL =
-  (import.meta.env.VITE_WAZZUP_PARTNER_URL as string | undefined)?.trim()
-  || DEFAULT_WAZZUP_PARTNER_URL;
-
-function connectUrlFor(item: MarketplaceItem) {
-  if (item.id === 'wazzup') return WAZZUP_PARTNER_URL;
-  return '';
-}
-
-function openConnectUrl(item: MarketplaceItem, fallback: () => void) {
-  const url = connectUrlFor(item);
-  if (!url) {
-    fallback();
-    return;
-  }
-  window.open(url, '_blank', 'noopener,noreferrer');
-}
+const NEGIS_MODULES = new Set(['negis-app', 'negis-loyalty', 'negis-chatbot', 'negis-ai']);
 
 const LOGOS: Record<string, LogoMeta> = {
   'negis-app': { text: 'N', bg: 'linear-gradient(145deg, #4F7BFF, #3B82F6)' },
@@ -485,28 +458,103 @@ const ITEMS: MarketplaceItem[] = [
 ];
 
 export default function Marketplace() {
+  const { clinicId, country, user } = useAuth();
   const [activeCategory, setActiveCategory] = useState<CategoryKey | 'all'>('all');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<MarketplaceItem | null>(null);
-  const [chatbotDraft, setChatbotDraft] = useState<ChatbotDraft>(() => {
-    try {
-      const saved = localStorage.getItem('negis_chatbot_market_draft');
-      if (saved) return JSON.parse(saved) as ChatbotDraft;
-    } catch {
-      // ignore malformed local draft
-    }
-    return {
-      provider: 'deepseek',
-      model: 'deepseek-chat',
-      verifyToken: 'negis_verify_2026',
-      systemPrompt: 'Ты ассистент клиники. Отвечай кратко, уточняй услугу, имя, телефон и удобное время записи. Не ставь диагнозы.',
-      testPhone: '',
-      testMessage: 'Здравствуйте, хочу записаться на консультацию',
-    };
-  });
+  const [integrationStatuses, setIntegrationStatuses] = useState<Record<string, Status>>({});
 
-  const saveChatbotDraft = () => {
-    localStorage.setItem('negis_chatbot_market_draft', JSON.stringify(chatbotDraft));
+  useEffect(() => {
+    if (!clinicId) return;
+
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('clinic_integrations')
+        .select('integration_id,status,verified_at')
+        .eq('clinic_id', clinicId);
+
+      if (error) return;
+      const next: Record<string, Status> = {};
+      for (const row of data ?? []) {
+        if (row.integration_id === 'wazzup' && (row.status !== 'connected' || !row.verified_at)) {
+          next[row.integration_id] = 'pending';
+        } else if (row.status === 'connected' || row.status === 'pending') {
+          next[row.integration_id] = row.status;
+        }
+      }
+      setIntegrationStatuses(next);
+    };
+
+    void load();
+  }, [clinicId]);
+
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get('wazzup');
+    if (!result) return;
+    const messages: Record<string, string> = {
+      connected: 'Wazzup подключён. Каналы доступны в CRM.',
+      'channel-required': 'Авторизация завершена. Добавьте активный канал в Wazzup и повторите проверку.',
+      'oauth-cancelled': 'Подключение Wazzup отменено.',
+      'oauth-forbidden': 'Подключать Wazzup может только владелец или руководитель.',
+    };
+    const message = messages[result] || 'Не удалось завершить подключение Wazzup.';
+    if (result === 'connected') toast.success(message);
+    else toast.error(message);
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }, []);
+
+  const withConnection = (item: MarketplaceItem): MarketplaceItem => {
+    const status = integrationStatuses[item.id];
+    return status ? { ...item, status } : item;
+  };
+
+  const requestNegisModule = async (item: MarketplaceItem) => {
+    if (!clinicId || !user?.id) {
+      toast.error('Не удалось определить рабочее пространство.');
+      return;
+    }
+    const { error } = await supabase
+      .from('integration_requests')
+      .insert({ clinic_id: clinicId, integration_id: item.id, requested_by: user.id });
+    if (error && error.code !== '23505') {
+      toast.error('Не удалось отправить запрос на модуль Negis.');
+      return;
+    }
+    setIntegrationStatuses(current => ({ ...current, [item.id]: 'pending' }));
+    toast.success('Запрос принят. Модуль Negis будет активирован после проверки тарифа.');
+  };
+
+  const startConnection = async (item: MarketplaceItem) => {
+    if (item.status === 'soon') {
+      toast.info('Интеграция ещё готовится. Не будем рисовать кнопку, которая ничего не делает.');
+      return;
+    }
+    if (item.status === 'connected' || item.status === 'pending') return;
+    if (NEGIS_MODULES.has(item.id)) {
+      await requestNegisModule(item);
+      return;
+    }
+    if (item.id !== 'wazzup') {
+      toast.info('Для этого поставщика ещё не добавлен безопасный мастер подключения. Статус не будет подделан.');
+      return;
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      toast.error('Войдите в систему заново, чтобы подключить Wazzup.');
+      return;
+    }
+    try {
+      const response = await fetch('/api/integrations/wazzup/oauth/start', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.authorizeUrl) throw new Error(payload.error || 'OAuth недоступен');
+      window.location.assign(payload.authorizeUrl);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Не удалось начать подключение Wazzup.');
+    }
   };
 
   const filtered = useMemo(() => {
@@ -514,11 +562,12 @@ export default function Marketplace() {
     return ITEMS.filter(item => {
       const categoryMatch = activeCategory === 'all' || item.category === activeCategory;
       const searchText = [item.name, item.summary, item.details, ...item.tags, ...item.region].join(' ').toLowerCase();
-      return categoryMatch && (!normalized || searchText.includes(normalized));
-    });
-  }, [activeCategory, query]);
+      const regionMatch = !country || item.region.includes(country);
+      return categoryMatch && regionMatch && (!normalized || searchText.includes(normalized));
+    }).map(withConnection);
+  }, [activeCategory, country, integrationStatuses, query]);
 
-  const allPriorityItems = ITEMS.filter(item => item.priority);
+  const allPriorityItems = ITEMS.filter(item => item.priority).map(withConnection);
   const priorityItems = activeCategory === 'all'
     ? allPriorityItems
     : filtered.filter(item => item.priority);
@@ -534,9 +583,9 @@ export default function Marketplace() {
                 <Store size={14} />
                 Маркетплейс интеграций
               </div>
-              <h1 className="mt-4 text-3xl font-black tracking-tight text-[#0B1220]">Инструменты для клиник KZ и KG</h1>
+              <h1 className="mt-4 text-3xl font-black tracking-tight text-[#0B1220]">Инструменты для бизнеса KZ и KG</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-[#64748B]">
-                Здесь клиника выбирает внешние сервисы, которые усиливают Negis: WhatsApp, телефония,
+                Здесь организация выбирает внешние сервисы, которые усиливают Negis: WhatsApp, телефония,
                 платежи, AI, SMS и отзывы. Основной процесс остается внутри CRM.
               </p>
             </div>
@@ -585,7 +634,7 @@ export default function Marketplace() {
         <section>
           <div className="rounded-[24px] border border-[#DDE7F0] bg-white/70 p-5 shadow-[8px_12px_28px_rgba(116,135,154,0.10)]">
             <h2 className="text-lg font-black text-[#0B1220]">Приоритет подключения</h2>
-            <p className="mt-1 text-sm text-[#64748B]">То, что даст клинике быстрый эффект без противоречия основному продукту.</p>
+            <p className="mt-1 text-sm text-[#64748B]">То, что даст бизнесу быстрый эффект без противоречия основному продукту.</p>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
               {visiblePriorityItems.slice(0, 8).map(item => (
                 <button
@@ -607,13 +656,6 @@ export default function Marketplace() {
           </div>
         </section>
 
-        <NegisChatbotSection
-          draft={chatbotDraft}
-          onChange={setChatbotDraft}
-          onSave={saveChatbotDraft}
-          onOpenDetails={() => setSelected(ITEMS.find(item => item.id === 'negis-chatbot') ?? null)}
-        />
-
         <section>
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -628,14 +670,14 @@ export default function Marketplace() {
                 key={item.id}
                 item={item}
                 onOpen={() => setSelected(item)}
-                onConnect={() => openConnectUrl(item, () => setSelected(item))}
+                onConnect={() => void startConnection(item)}
               />
             ))}
           </div>
         </section>
       </div>
 
-      {selected && <IntegrationModal item={selected} onClose={() => setSelected(null)} />}
+      {selected && <IntegrationModal item={selected} onClose={() => setSelected(null)} onConnect={() => void startConnection(selected)} />}
     </PageLayout>
   );
 }
@@ -649,182 +691,9 @@ function Metric({ value, label }: { value: number; label: string }) {
   );
 }
 
-function NegisChatbotSection({
-  draft,
-  onChange,
-  onSave,
-  onOpenDetails,
-}: {
-  draft: ChatbotDraft;
-  onChange: Dispatch<SetStateAction<ChatbotDraft>>;
-  onSave: () => void;
-  onOpenDetails: () => void;
-}) {
-  const webhookUrl = 'https://crm.negis.online/api/webhook';
-  const update = (patch: Partial<ChatbotDraft>) => onChange(prev => ({ ...prev, ...patch }));
-  const copyWebhook = () => navigator.clipboard?.writeText(webhookUrl);
-
-  return (
-    <section className="rounded-[28px] border border-[#DDE7F0] bg-white p-6 shadow-[0_18px_38px_rgba(71,85,105,0.055)]">
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-        <div className="max-w-3xl">
-          <div className="inline-flex items-center gap-2 rounded-full bg-[#EEF4FF] px-3 py-1 text-xs font-black text-[#4F7BFF]">
-            <Bot size={14} />
-            Собственный модуль Negis
-          </div>
-          <h2 className="mt-4 text-2xl font-black tracking-tight text-[#0B1220]">Negis Чатбот</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#64748B]">
-            WhatsApp-бот для клиники: принимает сообщения через Meta Cloud API, отвечает через AI,
-            сохраняет историю и готовит данные для карточки клиента в CRM.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3 text-center">
-          <InfoBox label="Webhook" value="Готовится" />
-          <InfoBox label="AI" value={draft.provider} />
-          <InfoBox label="Канал" value="WhatsApp" />
-        </div>
-      </div>
-
-      <div className="mt-6 grid grid-cols-1 gap-5 2xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="rounded-[22px] border border-[#E7ECF3] bg-[#F8FAFC] p-5">
-          <div className="flex items-center gap-2 text-sm font-black text-[#0B1220]">
-            <Settings size={17} className="text-[#4F7BFF]" />
-            Настройки бота
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <label className="space-y-1.5">
-              <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#71839B]">AI провайдер</span>
-              <select
-                value={draft.provider}
-                onChange={e => update({
-                  provider: e.target.value,
-                  model: e.target.value === 'deepseek' ? 'deepseek-chat' : e.target.value === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-sonnet-latest',
-                })}
-                className="h-11 w-full rounded-2xl border border-[#DDE7F0] bg-white px-4 text-sm font-semibold text-[#0B1220] outline-none focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
-              >
-                <option value="deepseek">DeepSeek</option>
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Claude</option>
-              </select>
-            </label>
-
-            <label className="space-y-1.5">
-              <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#71839B]">Модель</span>
-              <input
-                value={draft.model}
-                onChange={e => update({ model: e.target.value })}
-                className="h-11 w-full rounded-2xl border border-[#DDE7F0] bg-white px-4 text-sm font-semibold text-[#0B1220] outline-none focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
-              />
-            </label>
-
-            <label className="space-y-1.5">
-              <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#71839B]">Verify token</span>
-              <input
-                value={draft.verifyToken}
-                onChange={e => update({ verifyToken: e.target.value })}
-                className="h-11 w-full rounded-2xl border border-[#DDE7F0] bg-white px-4 text-sm font-semibold text-[#0B1220] outline-none focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
-              />
-            </label>
-
-            <label className="space-y-1.5">
-              <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#71839B]">Тестовый номер</span>
-              <input
-                value={draft.testPhone}
-                onChange={e => update({ testPhone: e.target.value })}
-                placeholder="77785019133"
-                className="h-11 w-full rounded-2xl border border-[#DDE7F0] bg-white px-4 text-sm font-semibold text-[#0B1220] outline-none focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
-              />
-            </label>
-          </div>
-
-          <label className="mt-4 block space-y-1.5">
-            <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#71839B]">Системный промпт</span>
-            <textarea
-              value={draft.systemPrompt}
-              onChange={e => update({ systemPrompt: e.target.value })}
-              className="min-h-28 w-full resize-y rounded-2xl border border-[#DDE7F0] bg-white px-4 py-3 text-sm font-medium leading-6 text-[#0B1220] outline-none focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
-            />
-          </label>
-
-          <label className="mt-4 block space-y-1.5">
-            <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#71839B]">Тестовое сообщение</span>
-            <input
-              value={draft.testMessage}
-              onChange={e => update({ testMessage: e.target.value })}
-              className="h-11 w-full rounded-2xl border border-[#DDE7F0] bg-white px-4 text-sm font-semibold text-[#0B1220] outline-none focus:border-[#4F7BFF] focus:ring-4 focus:ring-[#4F7BFF]/10"
-            />
-          </label>
-
-          <div className="mt-5 flex flex-wrap gap-3">
-            <button type="button" className="crm-create-btn" onClick={onSave}>
-              Сохранить черновик
-            </button>
-            <button type="button" className="neu-btn" onClick={onOpenDetails}>
-              <Info size={14} />
-              Подробнее
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="rounded-[22px] border border-[#E7ECF3] bg-white p-5">
-            <div className="flex items-center gap-2 text-sm font-black text-[#0B1220]">
-              <Webhook size={17} className="text-[#4F7BFF]" />
-              Webhook Meta
-            </div>
-            <div className="mt-3 flex items-center gap-2 rounded-2xl border border-[#DDE7F0] bg-[#F8FAFC] px-4 py-3">
-              <code className="min-w-0 flex-1 truncate text-xs font-bold text-[#475569]">{webhookUrl}</code>
-              <button type="button" className="neu-icon-btn h-8 w-8" onClick={copyWebhook} title="Скопировать">
-                <Copy size={14} />
-              </button>
-            </div>
-            <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-[#64748B]">
-              <StepLine icon={KeyRound} text={`VERIFY_TOKEN = ${draft.verifyToken || 'negis_verify_2026'}`} />
-              <StepLine icon={MessageCircle} text="Подписка Meta: messages" />
-              <StepLine icon={Database} text="Таблицы: bot_settings, bot_messages" />
-            </div>
-          </div>
-
-          <div className="rounded-[22px] border border-[#E7ECF3] bg-white p-5">
-            <div className="text-sm font-black text-[#0B1220]">Статус внедрения</div>
-            <div className="mt-4 space-y-3">
-              <StatusRow done label="Раздел в Маркете" />
-              <StatusRow done label="Черновик настроек" />
-              <StatusRow label="api/webhook.js на Vercel" />
-              <StatusRow label="SQL таблицы Supabase" />
-              <StatusRow label="ENV переменные Vercel" />
-              <StatusRow label="Проверка Meta Webhook" />
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function StepLine({ icon: Icon, text }: { icon: ComponentType<{ size?: number; className?: string }>; text: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-xl bg-[#F8FAFC] px-3 py-2">
-      <Icon size={15} className="shrink-0 text-[#4F7BFF]" />
-      <span className="min-w-0 truncate">{text}</span>
-    </div>
-  );
-}
-
-function StatusRow({ done, label }: { done?: boolean; label: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-sm font-semibold text-[#475569]">{label}</span>
-      <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${done ? 'bg-[#F0FDF4] text-[#16A34A]' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
-        {done ? 'Готово' : 'Нужно'}
-      </span>
-    </div>
-  );
-}
-
 function IntegrationCard({ item, onOpen, onConnect }: { item: MarketplaceItem; onOpen: () => void; onConnect: () => void }) {
+  const canConnect = item.id === 'wazzup' || NEGIS_MODULES.has(item.id);
+  const inactive = item.status === 'soon' || item.status === 'connected' || item.status === 'pending' || !canConnect;
   return (
     <article className="rounded-[24px] border border-[#DDE7F0] bg-white/78 p-5 shadow-[8px_12px_28px_rgba(116,135,154,0.10)] transition hover:-translate-y-0.5 hover:shadow-[10px_18px_34px_rgba(116,135,154,0.16)]">
       <div className="flex items-start justify-between gap-3">
@@ -864,13 +733,13 @@ function IntegrationCard({ item, onOpen, onConnect }: { item: MarketplaceItem; o
         <button
           type="button"
           className={`rounded-xl px-4 py-2.5 text-sm font-bold ${
-            item.status === 'soon'
+            inactive
               ? 'bg-[#F1F5F9] text-[#94A3B8]'
               : 'bg-[#4F7BFF] text-white shadow-lg shadow-[#4F7BFF]/15'
           }`}
-          onClick={item.status === 'soon' ? onOpen : onConnect}
+          onClick={inactive ? onOpen : onConnect}
         >
-          {item.status === 'soon' ? 'Скоро' : item.status === 'request' ? 'Заявка' : 'Подключить'}
+          {connectionButtonLabel(item, canConnect)}
         </button>
       </div>
     </article>
@@ -912,8 +781,9 @@ function BrandLogo({ item }: { item: MarketplaceItem }) {
   );
 }
 
-function IntegrationModal({ item, onClose }: { item: MarketplaceItem; onClose: () => void }) {
-  const connectUrl = connectUrlFor(item);
+function IntegrationModal({ item, onClose, onConnect }: { item: MarketplaceItem; onClose: () => void; onConnect: () => void }) {
+  const canConnect = item.id === 'wazzup' || NEGIS_MODULES.has(item.id);
+  const inactive = item.status === 'soon' || item.status === 'connected' || item.status === 'pending' || !canConnect;
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/25 p-4 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-[#DDE7F0] bg-white shadow-2xl">
@@ -941,7 +811,7 @@ function IntegrationModal({ item, onClose }: { item: MarketplaceItem; onClose: (
 
         <div className="space-y-5 p-6">
           <div className="rounded-2xl border border-[#E7ECF3] bg-[#F8FAFC] p-4">
-            <div className="text-sm font-bold text-[#0B1220]">Что дает клинике</div>
+            <div className="text-sm font-bold text-[#0B1220]">Что дает организации</div>
             <p className="mt-2 text-sm leading-6 text-[#64748B]">{item.details}</p>
           </div>
 
@@ -958,8 +828,8 @@ function IntegrationModal({ item, onClose }: { item: MarketplaceItem; onClose: (
                 <div className="text-sm font-bold text-[#0B1220]">Рекомендация</div>
                 <div className="mt-1 text-sm leading-6 text-[#64748B]">
                   {item.category === 'negis'
-                    ? 'Показывать как часть экосистемы Negis: это усиливает ценность CRM и удерживает клиента внутри продукта.'
-                    : 'Подключать после базовой настройки CRM: клиенты, записи, задачи, финансы и история касаний должны уже работать в Negis.'}
+                    ? 'Подключается как модуль Negis: после активации он становится частью рабочего пространства.'
+                    : 'Внешний сервис подключает владелец организации. Ключи и токены сохраняются только на сервере Negis.'}
                 </div>
               </div>
             </div>
@@ -970,10 +840,9 @@ function IntegrationModal({ item, onClose }: { item: MarketplaceItem; onClose: (
             <button
               type="button"
               className="neu-btn-primary flex items-center gap-2 px-5"
-              onClick={() => openConnectUrl(item, onClose)}
+              onClick={inactive ? onClose : onConnect}
             >
-              {connectUrl && item.id === 'wazzup' && <ExternalLink size={15} />}
-              {item.status === 'soon' ? 'Запросить приоритет' : item.status === 'request' ? 'Оставить заявку' : 'Подключить'}
+              {connectionButtonLabel(item, canConnect)}
             </button>
           </div>
         </div>
@@ -985,9 +854,17 @@ function IntegrationModal({ item, onClose }: { item: MarketplaceItem; onClose: (
 function connectionLabel(status: Status) {
   if (status === 'available') return 'Можно начать';
   if (status === 'request') return 'Через заявку';
+  if (status === 'pending') return 'Настраивается';
   if (status === 'connected') return 'Активно';
   if (status === 'recommended') return 'Рекомендуем';
   return 'В очереди';
+}
+
+function connectionButtonLabel(item: MarketplaceItem, canConnect: boolean) {
+  if (item.status === 'connected') return 'Подключено';
+  if (item.status === 'pending') return 'Настраивается';
+  if (item.status === 'soon' || !canConnect) return 'Скоро';
+  return 'Подключить';
 }
 
 function InfoBox({ label, value }: { label: string; value: string }) {

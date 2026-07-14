@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 
 type ChatRole = 'user' | 'assistant'
@@ -7,32 +8,33 @@ type ChatMessage = { role: ChatRole; content: string }
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN
 const PHONE_ID = process.env.WHATSAPP_PHONE_ID
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-const SUPABASE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_KEY ||
-  process.env.VITE_SUPABASE_ANON_KEY
+const META_APP_SECRET = process.env.META_APP_SECRET
+const SUPABASE_URL = process.env.SUPABASE_URL
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 const supabase = SUPABASE_URL && SUPABASE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null
 
-async function readBody(req: VercelRequest): Promise<Record<string, any>> {
-  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
-    return req.body
-  }
+export const config = {
+  api: { bodyParser: false },
+}
 
-  if (typeof req.body === 'string' || Buffer.isBuffer(req.body)) {
-    const value = req.body.toString()
-    return value ? JSON.parse(value) : {}
-  }
-
+async function readRawBody(req: VercelRequest) {
   let raw = ''
   for await (const chunk of req as any) {
     raw += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk)
+    if (raw.length > 1_000_000) throw new Error('Payload too large')
   }
+  return raw
+}
 
-  return raw ? JSON.parse(raw) : {}
+function validMetaSignature(raw: string, signature: string | string[] | undefined) {
+  if (!META_APP_SECRET || typeof signature !== 'string') return false
+  const expected = `sha256=${createHmac('sha256', META_APP_SECRET).update(raw).digest('hex')}`
+  const received = Buffer.from(signature)
+  const expectedBuffer = Buffer.from(expected)
+  return received.length === expectedBuffer.length && timingSafeEqual(received, expectedBuffer)
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -54,11 +56,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
+  if (!META_APP_SECRET) {
+    console.error('META_APP_SECRET is required to verify WhatsApp webhooks')
+    return res.status(503).json({ error: 'Webhook verification is not configured' })
+  }
+
+  let rawBody: string
   let body: Record<string, any>
   try {
-    body = await readBody(req)
+    rawBody = await readRawBody(req)
+    body = rawBody ? JSON.parse(rawBody) : {}
   } catch {
     return res.status(400).json({ error: 'Invalid JSON body' })
+  }
+
+  if (!validMetaSignature(rawBody, req.headers['x-hub-signature-256'])) {
+    return res.status(401).json({ error: 'Invalid webhook signature' })
   }
 
   if (body.object !== 'whatsapp') {

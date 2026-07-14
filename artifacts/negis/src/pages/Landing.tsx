@@ -16,6 +16,8 @@ const loginSchema = z.object({
 const registerSchema = z.object({
   ownerName: z.string().min(1, 'Введите имя'),
   clinicName: z.string().min(1, 'Введите название'),
+  country: z.enum(['KZ', 'KG']),
+  businessType: z.string().min(1),
   email: z.string().email('Неверный формат email'),
   password: z.string().min(8, 'Минимум 8 символов'),
   confirmPassword: z.string().min(1, 'Подтвердите пароль'),
@@ -67,7 +69,10 @@ export default function Landing() {
   }, [authLoading, session, clinicId, userRole]);
 
   const loginForm       = useForm<LoginValues>      ({ resolver: zodResolver(loginSchema) });
-  const registerForm    = useForm<RegisterValues>   ({ resolver: zodResolver(registerSchema) });
+  const registerForm    = useForm<RegisterValues>   ({
+    resolver: zodResolver(registerSchema),
+    defaultValues: { country: 'KZ', businessType: 'private_clinic' },
+  });
   const resetForm       = useForm<ResetValues>      ({ resolver: zodResolver(resetSchema) });
   const newPasswordForm = useForm<NewPasswordValues>({ resolver: zodResolver(newPasswordSchema) });
 
@@ -128,6 +133,8 @@ export default function Landing() {
         body: JSON.stringify({
           ownerName: data.ownerName,
           clinicName: data.clinicName,
+          country: data.country,
+          businessType: data.businessType,
           email: data.email,
           password: data.password,
         }),
@@ -476,6 +483,28 @@ export default function Landing() {
             {/* ── Register ── */}
             {modalState === 'register' && (
               <form onSubmit={registerForm.handleSubmit(handleRegister)} style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: '#64748B' }}>Страна</label>
+                  <select style={IS} data-testid="select-country" {...registerForm.register('country')}>
+                    <option value="KZ">Казахстан</option>
+                    <option value="KG">Кыргызстан</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, color: '#64748B' }}>Тип бизнеса</label>
+                  <select style={IS} data-testid="select-business-type" {...registerForm.register('businessType')}>
+                    <option value="private_clinic">Частная клиника</option>
+                    <option value="dentistry">Стоматология</option>
+                    <option value="medcenter">Медцентр</option>
+                    <option value="cosmetology">Косметология</option>
+                    <option value="beauty_salon">Салон красоты</option>
+                    <option value="barbershop">Барбершоп</option>
+                    <option value="spa_massage">SPA / массаж</option>
+                    <option value="fitness_wellness">Фитнес / wellness</option>
+                    <option value="education_courses">Курсы / обучение</option>
+                    <option value="other">Другое</option>
+                  </select>
+                </div>
                 {(
                   [
                     { name: 'ownerName',        placeholder: 'Ваше имя',                type: 'text'     },

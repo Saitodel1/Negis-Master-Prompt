@@ -733,6 +733,13 @@ export default function Booking() {
   /* ══════════════════════════════════════════════════════════ */
   return (
     <PageLayout>
+      <div className="department-page-heading">
+        <div>
+          <p>Расписание</p>
+          <h1>Запись</h1>
+          <span>Календарь, свободные слоты и лиды на запись.</span>
+        </div>
+      </div>
       {/* ── Tab switcher ───────────────────────────────────── */}
       <div style={{
         display: 'flex', gap: 4, marginBottom: 20,

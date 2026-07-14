@@ -1,12 +1,15 @@
 import { Router } from "express";
 import { supabaseAdmin } from "../lib/supabase-admin.js";
+import { requireAuth, requireClinicManager, type AuthenticatedRequest } from "../middleware/authorization.js";
 
 const router = Router();
+router.use(requireAuth);
 
 /* ── List employees for a clinic ── */
-router.get("/admin/employees", async (req, res) => {
+router.get("/admin/employees", async (req: AuthenticatedRequest, res) => {
   const { clinic_id } = req.query as { clinic_id?: string };
   if (!clinic_id) { res.status(400).json({ error: "clinic_id required" }); return; }
+  if (!await requireClinicManager(req, res, clinic_id)) return;
 
   const { data: agents, error } = await supabaseAdmin
     .from("agents")
@@ -37,7 +40,7 @@ router.get("/admin/employees", async (req, res) => {
 });
 
 /* ── Create employee ── */
-router.post("/admin/employees", async (req, res) => {
+router.post("/admin/employees", async (req: AuthenticatedRequest, res) => {
   const { clinic_id, name, email, password, role, hourly_rate, weekly_target, role_id } = req.body as {
     clinic_id: string;
     name: string;
@@ -53,6 +56,7 @@ router.post("/admin/employees", async (req, res) => {
     res.status(400).json({ error: "clinic_id, name, email, password, role are required" });
     return;
   }
+  if (!await requireClinicManager(req, res, clinic_id)) return;
 
   const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
     email,
@@ -94,7 +98,7 @@ router.post("/admin/employees", async (req, res) => {
 });
 
 /* ── Update employee (name, role, hourly_rate, weekly_target) ── */
-router.patch("/admin/employees/:id", async (req, res) => {
+router.patch("/admin/employees/:id", async (req: AuthenticatedRequest, res) => {
   const { id } = req.params;
   const { name, role, hourly_rate, weekly_target, clinic_id, role_id } = req.body as {
     name?: string;
@@ -104,6 +108,15 @@ router.patch("/admin/employees/:id", async (req, res) => {
     clinic_id: string;
     role_id?: string | null;
   };
+
+  const { data: existingAgent, error: existingAgentError } = await supabaseAdmin
+    .from("agents")
+    .select("clinic_id, user_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (existingAgentError || !existingAgent) { res.status(404).json({ error: "Employee not found" }); return; }
+  if (!await requireClinicManager(req, res, existingAgent.clinic_id)) return;
+  if (clinic_id && clinic_id !== existingAgent.clinic_id) { res.status(403).json({ error: "Forbidden" }); return; }
 
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name;
@@ -117,11 +130,9 @@ router.patch("/admin/employees/:id", async (req, res) => {
   }
 
   if (role && clinic_id) {
-    const { data: agent } = await supabaseAdmin
-      .from("agents").select("user_id").eq("id", id).single();
-    if (agent?.user_id) {
+    if (existingAgent.user_id) {
       await supabaseAdmin.from("user_roles")
-        .upsert({ user_id: agent.user_id, clinic_id, role }, { onConflict: "user_id,clinic_id" });
+        .upsert({ user_id: existingAgent.user_id, clinic_id: existingAgent.clinic_id, role }, { onConflict: "user_id,clinic_id" });
     }
   }
 
@@ -129,11 +140,13 @@ router.patch("/admin/employees/:id", async (req, res) => {
 });
 
 /* ── Delete employee ── */
-router.delete("/admin/employees/:id", async (req, res) => {
+router.delete("/admin/employees/:id", async (req: AuthenticatedRequest, res) => {
   const { id } = req.params;
 
   const { data: agent } = await supabaseAdmin
-    .from("agents").select("user_id").eq("id", id).single();
+    .from("agents").select("user_id, clinic_id").eq("id", id).maybeSingle();
+  if (!agent) { res.status(404).json({ error: "Employee not found" }); return; }
+  if (!await requireClinicManager(req, res, agent.clinic_id)) return;
 
   const { error } = await supabaseAdmin.from("agents").delete().eq("id", id);
   if (error) { res.status(500).json({ error: error.message }); return; }

@@ -9,6 +9,11 @@ import { TopNav } from './TopNav';
 
 interface Notif {
   id: string;
+  kind: 'booking' | 'task' | 'automation';
+  taskId?: string;
+  leadId?: string;
+  title?: string;
+  body?: string;
   clientName: string;
   agentName: string;
   date: string;
@@ -17,21 +22,40 @@ interface Notif {
   read: boolean;
 }
 
-function playBeep() {
+let notificationAudioContext: AudioContext | null = null;
+
+function getNotificationAudioContext() {
+  if (typeof window === 'undefined') return null;
+  notificationAudioContext ??= new AudioContext();
+  return notificationAudioContext;
+}
+
+function unlockNotificationSound() {
+  const ctx = getNotificationAudioContext();
+  if (ctx?.state === 'suspended') void ctx.resume();
+}
+
+function playNotificationSound() {
   try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
+    const ctx = getNotificationAudioContext();
+    if (!ctx || ctx.state !== 'running') return;
+
     const gain = ctx.createGain();
-    osc.connect(gain);
     gain.connect(ctx.destination);
-    osc.frequency.value = 520;
-    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.15);
-    osc.onended = () => ctx.close();
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.16, ctx.currentTime + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.42);
+
+    [784, 1046].forEach((frequency, index) => {
+      const oscillator = ctx.createOscillator();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequency, ctx.currentTime + index * 0.11);
+      oscillator.connect(gain);
+      oscillator.start(ctx.currentTime + index * 0.11);
+      oscillator.stop(ctx.currentTime + 0.25 + index * 0.11);
+    });
   } catch {
-    // AudioContext not available
+    // The browser can deny audio until the user interacts with the app.
   }
 }
 
@@ -51,13 +75,14 @@ function writeStoredIds(key: string, ids: Set<string>) {
 }
 
 export function Topbar() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { clinicId, user, userRole } = useAuth();
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
   const [clock, setClock] = useState(() => new Date());
   const [profileAgent, setProfileAgent] = useState<AgentDisplayInfo | null>(null);
   const agentsRef = useRef<Record<string, string>>({});
+  const myAgentIdRef = useRef<string | null>(null);
   const readIdsRef = useRef<Set<string>>(new Set());
   const deletedIdsRef = useRef<Set<string>>(new Set());
 
@@ -67,6 +92,20 @@ export function Topbar() {
   const avatarBg = profileAgent?.avatar_color || user?.user_metadata?.avatar_color || '#17233A';
   const displayName = user?.user_metadata?.full_name || profileAgent?.name || user?.email || 'Профиль';
   const initials = agentInitials(profileAgent, displayName);
+  const isDashboard = location.split('?')[0] === '/dashboard';
+  const dashboardDate = clock.toLocaleDateString('ru-RU', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+
+  useEffect(() => {
+    const unlock = () => unlockNotificationSound();
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
 
   useEffect(() => {
     const id = window.setInterval(() => setClock(new Date()), 30000);
@@ -92,6 +131,7 @@ export function Topbar() {
 
   const buildNotif = useCallback((r: any): Notif => ({
     id: r.id,
+    kind: 'booking',
     clientName: r.patient_name ?? r.name ?? r.client_name ?? 'Клиент',
     agentName: r.agent_id ? (agentsRef.current[r.agent_id] ?? '—') : '—',
     date: r.date,
@@ -100,17 +140,58 @@ export function Topbar() {
     read: readIdsRef.current.has(r.id),
   }), []);
 
+  const buildTaskNotif = useCallback((r: any): Notif => ({
+    id: r.id,
+    kind: 'task',
+    taskId: r.task_id,
+    title: r.title || 'Задача',
+    body: r.body || '',
+    clientName: r.title || 'Задача',
+    agentName: '—',
+    date: r.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+    time: r.created_at ? new Date(r.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '—',
+    createdAt: r.created_at,
+    read: Boolean(r.is_read) || readIdsRef.current.has(r.id),
+  }), []);
+
+  const buildAutomationNotif = useCallback((r: any): Notif => ({
+    id: r.id,
+    kind: 'automation',
+    taskId: r.task_id || undefined,
+    leadId: r.lead_id || undefined,
+    title: r.title || 'Автоматизация',
+    body: r.body || '',
+    clientName: r.title || 'Автоматизация',
+    agentName: '—',
+    date: r.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+    time: r.created_at ? new Date(r.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '—',
+    createdAt: r.created_at,
+    read: Boolean(r.is_read) || readIdsRef.current.has(r.id),
+  }), []);
+
   useEffect(() => {
     if (!clinicId) return;
     readIdsRef.current = readStoredIds(readKey(clinicId));
     deletedIdsRef.current = readStoredIds(deletedKey(clinicId));
 
     const load = async () => {
-      const [{ data: agentsData }, { data: bookings }] = await Promise.all([
+      const [{ data: agentsData }, { data: bookings }, { data: taskRows }, { data: automationRows }] = await Promise.all([
         supabase.from('agents').select('id, name, user_id, role_id').eq('clinic_id', clinicId),
         supabase
           .from('bookings')
           .select('id, patient_name, agent_id, date, time, created_at')
+          .eq('clinic_id', clinicId)
+          .order('created_at', { ascending: false })
+          .limit(15),
+        supabase
+          .from('task_notifications')
+          .select('id, recipient_agent_id, task_id, title, body, is_read, created_at')
+          .eq('clinic_id', clinicId)
+          .order('created_at', { ascending: false })
+          .limit(15),
+        supabase
+          .from('automation_notifications')
+          .select('id, recipient_agent_id, kind, title, body, lead_id, task_id, is_read, created_at')
           .eq('clinic_id', clinicId)
           .order('created_at', { ascending: false })
           .limit(15),
@@ -119,9 +200,18 @@ export function Topbar() {
       const agentRows = (agentsData ?? []) as AgentDisplayInfo[];
       const maps = await loadAgentRoleMaps(supabase, clinicId, agentRows);
       agentsRef.current = Object.fromEntries(agentRows.map(a => [a.id, agentDisplayName(a, maps.customRoleMap, maps.userRoleMap)]));
-      setNotifs((bookings ?? [])
+      const myAgentId = agentRows.find(agent => agent.user_id === user?.id)?.id;
+      myAgentIdRef.current = myAgentId ?? null;
+      const bookingNotifs = (bookings ?? [])
         .filter(row => !deletedIdsRef.current.has(row.id))
-        .map(buildNotif));
+        .map(buildNotif);
+      const taskNotifs = (taskRows ?? [])
+        .filter(row => row.recipient_agent_id === myAgentId && !deletedIdsRef.current.has(row.id))
+        .map(buildTaskNotif);
+      const automationNotifs = (automationRows ?? [])
+        .filter(row => !deletedIdsRef.current.has(row.id))
+        .map(buildAutomationNotif);
+      setNotifs([...automationNotifs, ...taskNotifs, ...bookingNotifs].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30));
     };
 
     load();
@@ -136,15 +226,45 @@ export function Topbar() {
           if (deletedIdsRef.current.has(row.id)) return;
           const notif = buildNotif(row);
           setNotifs(prev => [notif, ...prev.filter(n => n.id !== notif.id).slice(0, 14)]);
-          playBeep();
+          playNotificationSound();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'task_notifications', filter: `clinic_id=eq.${clinicId}` },
+        (payload) => {
+          const row = payload.new as any;
+          if (deletedIdsRef.current.has(row.id)) return;
+          if (row.recipient_agent_id !== myAgentIdRef.current) return;
+          const notif = buildTaskNotif(row);
+          setNotifs(prev => [notif, ...prev.filter(n => n.id !== notif.id).slice(0, 29)]);
+          playNotificationSound();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'automation_notifications', filter: `clinic_id=eq.${clinicId}` },
+        (payload) => {
+          const row = payload.new as any;
+          if (deletedIdsRef.current.has(row.id)) return;
+          const notif = buildAutomationNotif(row);
+          setNotifs(prev => [notif, ...prev.filter(n => n.id !== notif.id).slice(0, 29)]);
+          playNotificationSound();
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [clinicId, buildNotif]);
+  }, [clinicId, user?.id, buildNotif, buildTaskNotif, buildAutomationNotif]);
 
   const markRead = (id: string) => {
+    const notification = notifs.find(item => item.id === id);
+    if (notification?.kind === 'task') {
+      void supabase.from('task_notifications').update({ is_read: true }).eq('id', id);
+    }
+    if (notification?.kind === 'automation') {
+      void supabase.from('automation_notifications').update({ is_read: true }).eq('id', id);
+    }
     readIdsRef.current.add(id);
     writeStoredIds(readKey(clinicId), readIdsRef.current);
     setNotifs(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
@@ -158,6 +278,21 @@ export function Topbar() {
 
   const openEvent = (n: Notif) => {
     markRead(n.id);
+    if ((n.kind === 'task' || n.kind === 'automation') && n.taskId) {
+      setOpen(false);
+      setLocation(`/tasks?task=${n.taskId}`);
+      return;
+    }
+    if (n.kind === 'automation') {
+      setOpen(false);
+      if (n.leadId) {
+        sessionStorage.setItem('negis_focus_lead', n.leadId);
+        setLocation('/sales');
+      } else {
+        setLocation('/dashboard');
+      }
+      return;
+    }
     sessionStorage.setItem('negis_focus_booking', JSON.stringify({ id: n.id, date: n.date }));
     setOpen(false);
     setLocation('/reception');
@@ -167,7 +302,7 @@ export function Topbar() {
     <>
       <TopNav />
       <header
-        className="ng-topbar grid shrink-0 sticky top-0 z-30 items-center gap-4 px-7"
+        className={`ng-topbar ${isDashboard ? 'dashboard-topbar' : ''} grid shrink-0 sticky top-0 z-30 items-center gap-4 px-7`}
         style={{
           gridTemplateColumns: 'minmax(420px, 1fr) minmax(440px, auto)',
           height: 88,
@@ -178,13 +313,20 @@ export function Topbar() {
           boxShadow: '0 12px 30px rgba(68, 93, 105, 0.08)',
         }}
       >
-      <div className="topbar-search">
-        <Search size={18} />
-        <input placeholder="Поиск по клиентам, тегам, задачам..." />
-      </div>
+      {isDashboard ? (
+        <div className="dashboard-topbar-welcome">
+          <h1>Продуктивного дня, {displayName}</h1>
+          <p><CalendarDays size={13} />{dashboardDate}</p>
+        </div>
+      ) : (
+        <div className="topbar-search">
+          <Search size={18} />
+          <input placeholder="Поиск по клиентам, тегам, задачам..." />
+        </div>
+      )}
 
       <div className="flex items-center justify-end gap-4">
-        <span
+        {!isDashboard && <span
           style={{
             fontSize: 12,
             color: '#607089',
@@ -202,14 +344,21 @@ export function Topbar() {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
           </span>
           Online
-        </span>
+        </span>}
 
-        <span
+        {!isDashboard && <span
           className="hidden sm:inline-flex items-center gap-2 text-xs font-bold text-[#607089]"
           style={{ letterSpacing: '0.04em' }}
         >
           {clock.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-        </span>
+        </span>}
+
+        {isDashboard && (
+          <button type="button" className="dashboard-branch" onClick={() => setLocation('/admin')}>
+            <span>Основной филиал</span>
+            <ChevronDown size={14} />
+          </button>
+        )}
 
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
@@ -320,7 +469,7 @@ export function Topbar() {
           </PopoverContent>
         </Popover>
 
-        <button
+        {!isDashboard && <button
           type="button"
           className="neu-icon-btn"
           style={{ width: 34, height: 34, borderRadius: 11 }}
@@ -328,13 +477,14 @@ export function Topbar() {
           onClick={() => setLocation('/booking')}
         >
           <CalendarDays size={15} strokeWidth={1.8} />
-        </button>
+        </button>}
 
+        {!isDashboard && <>
         <button
           type="button"
           className="topbar-add-btn"
           title="Добавить"
-          onClick={() => setLocation('/sales')}
+          onClick={() => setLocation('/tasks?create=1')}
         >
           <Plus size={18} />
         </button>
@@ -347,11 +497,11 @@ export function Topbar() {
           onClick={() => window.location.reload()}
         >
           <RefreshCw size={15} strokeWidth={1.8} />
-        </button>
+        </button></>}
 
         <button
           type="button"
-          className="topbar-profile"
+          className={`topbar-profile ${isDashboard ? 'dashboard-profile-trigger' : ''}`}
           onClick={event => {
             const rect = event.currentTarget.getBoundingClientRect();
             window.dispatchEvent(new CustomEvent('negis:open-profile', {
@@ -368,11 +518,13 @@ export function Topbar() {
               initials
             )}
           </span>
-          <span className="topbar-profile-text">
-            <strong>{displayName}</strong>
-            <small>{userRole === 'owner' ? 'Руководитель' : userRole || 'Сотрудник'}</small>
-          </span>
-          <ChevronDown size={16} />
+          {!isDashboard && <>
+            <span className="topbar-profile-text">
+              <strong>{displayName}</strong>
+              <small>{userRole === 'owner' ? 'Руководитель' : userRole || 'Сотрудник'}</small>
+            </span>
+            <ChevronDown size={16} />
+          </>}
         </button>
       </div>
       </header>

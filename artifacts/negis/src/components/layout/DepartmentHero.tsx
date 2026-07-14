@@ -44,7 +44,8 @@ export function DepartmentHero() {
   const cleanLocation = location.split('?')[0];
   const copy = HERO_COPY[cleanLocation];
 
-  if (!copy) return null;
+  // The dashboard owns its compact welcome header; other departments keep the shared hero.
+  if (!copy || cleanLocation === '/dashboard') return null;
 
   return (
     <section className="department-hero" aria-label={copy.title}>

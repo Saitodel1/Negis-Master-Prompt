@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { FormEvent, useState, useEffect, useRef } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { Plus, Trash2, Edit2, Settings, Check, Download, Upload, ExternalLink } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -6,6 +6,7 @@ import Papa from 'papaparse';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiUrl } from '@/lib/api';
+import { authHeaders } from '@/lib/request-auth';
 import { toast } from 'sonner';
 
 /* ─── Types ──────────────────────────────────────────────── */
@@ -74,6 +75,107 @@ function ConfirmDialog({ msg, onConfirm, onCancel }: { msg: string; onConfirm: (
   );
 }
 
+/* ─── Departments ─────────────────────────────────────────── */
+interface DepartmentRow {
+  id: string;
+  name: string;
+  manager_id: string | null;
+  color: string;
+  is_active: boolean;
+}
+
+function DepartmentsTab({ clinicId }: { clinicId: string | null }) {
+  const [rows, setRows] = useState<DepartmentRow[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [members, setMembers] = useState<Record<string, string[]>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [managerId, setManagerId] = useState('');
+  const [color, setColor] = useState('#4F7BFF');
+  const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
+  const [active, setActive] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    if (!clinicId) return;
+    const [departmentsRes, agentsRes, membersRes] = await Promise.all([
+      supabase.from('departments').select('id, name, manager_id, color, is_active').eq('clinic_id', clinicId).order('name'),
+      supabase.from('agents').select('id, name').eq('clinic_id', clinicId).order('name'),
+      supabase.from('department_members').select('department_id, agent_id'),
+    ]);
+    if (departmentsRes.error) {
+      toast.error(departmentsRes.error.message);
+      return;
+    }
+    setRows((departmentsRes.data ?? []) as DepartmentRow[]);
+    setAgents((agentsRes.data ?? []) as Agent[]);
+    const next: Record<string, string[]> = {};
+    (membersRes.data ?? []).forEach(row => { (next[row.department_id] ||= []).push(row.agent_id); });
+    setMembers(next);
+  };
+
+  useEffect(() => { void load(); }, [clinicId]);
+
+  const reset = () => {
+    setEditingId(null); setName(''); setManagerId(''); setColor('#4F7BFF'); setSelectedAgents([]); setActive(true);
+  };
+
+  const openEdit = (department: DepartmentRow) => {
+    setEditingId(department.id); setName(department.name); setManagerId(department.manager_id || '');
+    setColor(department.color || '#4F7BFF'); setSelectedAgents(members[department.id] ?? []); setActive(department.is_active);
+  };
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!clinicId || !name.trim()) {
+      toast.error('Укажите название отдела');
+      return;
+    }
+    setSaving(true);
+    try {
+      const values = { clinic_id: clinicId, name: name.trim(), manager_id: managerId || null, color, is_active: active };
+      const result = editingId
+        ? await supabase.from('departments').update(values).eq('id', editingId).select('id').single()
+        : await supabase.from('departments').insert(values).select('id').single();
+      if (result.error || !result.data) throw result.error || new Error('Отдел не сохранён');
+      const departmentId = result.data.id;
+      const { error: removeError } = await supabase.from('department_members').delete().eq('department_id', departmentId);
+      if (removeError) throw removeError;
+      if (selectedAgents.length) {
+        const { error: memberError } = await supabase.from('department_members').insert(selectedAgents.map((agent_id, index) => ({ department_id: departmentId, agent_id, is_primary: index === 0 })));
+        if (memberError) throw memberError;
+      }
+      toast.success(editingId ? 'Отдел обновлён' : 'Отдел создан');
+      reset(); await load();
+    } catch (error: any) {
+      toast.error(error.message || 'Не удалось сохранить отдел');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (department: DepartmentRow) => {
+    if (!window.confirm(`Удалить отдел «${department.name}»?`)) return;
+    const { error } = await supabase.from('departments').delete().eq('id', department.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    if (editingId === department.id) reset();
+    await load();
+  };
+
+  return <div className="p-7 space-y-7">
+    <div className="flex items-center justify-between gap-4"><div><h3 className="text-lg font-bold text-[#10264B]">Отделы</h3><p className="mt-1 text-sm text-[#71829D]">Руководители и сотрудники, которым можно ставить задачи.</p></div><button type="button" onClick={reset} className="neu-btn"><Plus size={15} />Новый отдел</button></div>
+    <form onSubmit={save} className="rounded-2xl border border-[#E6ECF4] bg-[#F8FAFD] p-5">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4"><label className="text-sm font-semibold text-[#405571]">Название<input className="neu-input mt-1.5" value={name} onChange={event => setName(event.target.value)} placeholder="Например: Продажи" /></label><label className="text-sm font-semibold text-[#405571]">Руководитель<select className="neu-input mt-1.5" value={managerId} onChange={event => setManagerId(event.target.value)}><option value="">Не назначен</option>{agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label><label className="text-sm font-semibold text-[#405571]">Цвет<input type="color" className="mt-2 block h-10 w-full rounded-lg border border-[#DDE6F0] bg-white p-1" value={color} onChange={event => setColor(event.target.value)} /></label><label className="flex items-end gap-2 pb-2 text-sm font-semibold text-[#405571]"><input type="checkbox" checked={active} onChange={event => setActive(event.target.checked)} />Отдел активен</label></div>
+      <div className="mt-5"><p className="mb-2 text-sm font-semibold text-[#405571]">Сотрудники отдела</p><div className="grid grid-cols-2 gap-2 rounded-xl border border-[#E1E8F1] bg-white p-3 md:grid-cols-3">{agents.map(agent => <label key={agent.id} className="flex items-center gap-2 text-sm text-[#52657F]"><input type="checkbox" checked={selectedAgents.includes(agent.id)} onChange={event => setSelectedAgents(previous => event.target.checked ? [...previous, agent.id] : previous.filter(id => id !== agent.id))} />{agent.name}</label>)}</div></div>
+      <div className="mt-5 flex gap-3"><button disabled={saving} className="neu-btn-primary">{saving ? 'Сохранение…' : editingId ? 'Сохранить изменения' : 'Создать отдел'}</button>{editingId && <button type="button" onClick={reset} className="neu-btn">Отмена</button>}</div>
+    </form>
+    <div className="space-y-2">{rows.map(row => <div key={row.id} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#E6ECF4] bg-white p-4"><div className="flex items-center gap-3"><span className="h-3 w-3 rounded-full" style={{ background: row.color }} /><div><p className="font-semibold text-[#10264B]">{row.name}</p><p className="mt-0.5 text-xs text-[#71829D]">Руководитель: {agents.find(agent => agent.id === row.manager_id)?.name || 'не назначен'} · Сотрудников: {(members[row.id] ?? []).length}</p></div></div><div className="flex items-center gap-2"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${row.is_active ? 'bg-[#ECFDF3] text-[#15803D]' : 'bg-[#FEECEC] text-[#B91C1C]'}`}>{row.is_active ? 'Активен' : 'Неактивен'}</span><button onClick={() => openEdit(row)} className="neu-btn text-xs"><Edit2 size={13} />Изменить</button><button onClick={() => void remove(row)} className="neu-btn text-xs text-[#DC2626]"><Trash2 size={13} /></button></div></div>)}{rows.length === 0 && <p className="py-10 text-center text-sm text-[#94A3B8]">Отделов пока нет.</p>}</div>
+  </div>;
+}
+
 /* ─── Main Component ─────────────────────────────────────── */
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('agents');
@@ -86,6 +188,7 @@ export default function Admin() {
     { id: 'statuses', label: 'Статусы' },
     { id: 'branches', label: 'Филиалы' },
     { id: 'shifts', label: 'Смены' },
+    { id: 'departments', label: 'Отделы' },
     { id: 'whatsapp', label: 'WhatsApp' },
     { id: 'negis-app', label: 'Negis App / Лояльность' },
     { id: 'export', label: 'Импорт / Экспорт' },
@@ -121,6 +224,7 @@ export default function Admin() {
           {activeTab === 'statuses' && <StatusesTab clinicId={clinicId} />}
           {activeTab === 'branches' && <BranchesTab clinicId={clinicId} />}
           {activeTab === 'shifts' && <ShiftsTab clinicId={clinicId} />}
+          {activeTab === 'departments' && <DepartmentsTab clinicId={clinicId} />}
           {activeTab === 'whatsapp' && <WhatsAppTab clinicId={clinicId} />}
           {activeTab === 'negis-app' && <NegisAppSettingsTab clinicId={clinicId} />}
           {activeTab === 'export' && <ExportTab clinicId={clinicId} />}
@@ -180,7 +284,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
     if (!clinicId) return;
     setLoading(true);
     try {
-      const res = await fetch(apiUrl(`/api/admin/employees?clinic_id=${clinicId}`));
+      const res = await fetch(apiUrl(`/api/admin/employees?clinic_id=${clinicId}`), { headers: await authHeaders() });
       const data = await res.json();
       if (res.ok) setEmployees(data);
       else toast.error(data.error || 'Ошибка загрузки');
@@ -216,7 +320,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
       if (editing) {
         const res = await fetch(apiUrl(`/api/admin/employees/${editing.id}`), {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
           body: JSON.stringify({
             clinic_id: clinicId, name, role,
             role_id: roleId || null,
@@ -230,7 +334,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
       } else {
         const res = await fetch(apiUrl('/api/admin/employees'), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
           body: JSON.stringify({
             clinic_id: clinicId, name, email, password, role,
             role_id: roleId || null,
@@ -249,7 +353,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
 
   const confirmDelete = async () => {
     if (!deletingId) return;
-    const res = await fetch(apiUrl(`/api/admin/employees/${deletingId}`), { method: 'DELETE' });
+    const res = await fetch(apiUrl(`/api/admin/employees/${deletingId}`), { method: 'DELETE', headers: await authHeaders() });
     const data = await res.json();
     if (!res.ok) { toast.error(data.error || 'Ошибка удаления'); }
     else { toast.success('Сотрудник удалён'); loadEmployees(); }

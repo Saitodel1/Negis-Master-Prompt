@@ -246,6 +246,15 @@ export default function Sales() {
   useEffect(() => { if (clinicId && !loading) loadLeads(); }, [sortBy, myAgentId, userRole, user?.id]);
 
   useEffect(() => {
+    const leadId = sessionStorage.getItem('negis_focus_lead');
+    if (!leadId || leads.length === 0) return;
+    const lead = leads.find(item => item.id === leadId);
+    if (!lead) return;
+    sessionStorage.removeItem('negis_focus_lead');
+    setSelectedLead({ ...lead, assigned_to: safeAgentId(lead.assigned_to) });
+  }, [leads]);
+
+  useEffect(() => {
     if (selectedLead) {
       setLeadDetailTab('overview');
       setQuickNote('');
@@ -744,6 +753,14 @@ export default function Sales() {
   return (
     <PageLayout>
       <div className="space-y-5 h-full flex flex-col">
+
+        <div className="department-page-heading">
+          <div>
+            <p>Клиентская база</p>
+            <h1>Клиенты</h1>
+            <span>История обращений, задачи, финансы и записи в одном рабочем пространстве.</span>
+          </div>
+        </div>
 
         <div className="crm-workspace">
           <div className="crm-main">
