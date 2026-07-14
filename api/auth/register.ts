@@ -6,6 +6,7 @@ type Industry = 'clinic' | 'beauty' | 'fitness' | 'education' | 'custom'
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const supabase = supabaseUrl && serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
+type AuthApiResponse = { ok: boolean; json(): Promise<unknown> }
 
 const industryByBusinessType: Record<string, Industry> = {
   private_clinic: 'clinic', dentistry: 'clinic', medcenter: 'clinic',
@@ -29,6 +30,34 @@ function slugify(value: string) {
   return `${base || 'business'}-${Math.random().toString(36).slice(2, 7)}`
 }
 
+async function createAuthUser(email: string, password: string, ownerName: string) {
+  const response = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: {
+      apikey: serviceRoleKey!,
+      Authorization: `Bearer ${serviceRoleKey!}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { full_name: ownerName } }),
+    signal: AbortSignal.timeout(15_000),
+  }) as unknown as AuthApiResponse
+  const payload = await response.json().catch(() => null) as { id?: string; message?: string; msg?: string } | null
+  if (!response.ok || !payload?.id) throw new Error(payload?.message || payload?.msg || 'Failed to create user')
+  return payload.id
+}
+
+async function deleteAuthUser(userId: string) {
+  await fetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+    headers: { apikey: serviceRoleKey!, Authorization: `Bearer ${serviceRoleKey!}` },
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => undefined)
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Registration failed'
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   if (!supabase) return res.status(503).json({ error: 'Registration is not configured on the server' })
@@ -48,14 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let userId: string | null = null
   let clinicId: string | null = null
   try {
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { full_name: ownerName },
-    })
-    if (authError || !authData.user?.id) return res.status(400).json({ error: authError?.message || 'Failed to create user' })
-    userId = authData.user.id
+    userId = await createAuthUser(email, password, ownerName)
 
     const { data: clinic, error: clinicError } = await supabase
       .from('clinics')
@@ -80,13 +102,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (statusesError) throw statusesError
 
     return res.status(201).json({ ok: true, userId, clinicId })
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (clinicId) {
       await supabase.from('lead_statuses').delete().eq('clinic_id', clinicId)
       await supabase.from('user_roles').delete().eq('clinic_id', clinicId)
       await supabase.from('clinics').delete().eq('id', clinicId)
     }
-    if (userId) await supabase.auth.admin.deleteUser(userId)
-    return res.status(500).json({ error: error?.message || 'Registration failed' })
+    if (userId) await deleteAuthUser(userId)
+    return res.status(500).json({ error: errorMessage(error) })
   }
 }
