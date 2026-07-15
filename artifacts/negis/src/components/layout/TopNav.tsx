@@ -17,7 +17,6 @@ import {
   Store,
   Smile,
   Upload,
-  FileBarChart,
   Workflow,
   ChevronLeft,
   ChevronRight,
@@ -37,7 +36,6 @@ const MODULE_ICONS: Partial<Record<WorkspaceModuleKey, typeof BarChart2>> = {
   chat: MessageCircle,
   marketplace: Store,
   ads: Megaphone,
-  reports: FileBarChart,
   automations: Workflow,
   admin: Settings,
   documents: ClipboardList,
@@ -45,7 +43,7 @@ const MODULE_ICONS: Partial<Record<WorkspaceModuleKey, typeof BarChart2>> = {
 
 const NAV_ORDER: WorkspaceModuleKey[] = [
   'dashboard', 'booking', 'reception', 'crm', 'tasks', 'chat',
-  'marketplace', 'ads', 'reports', 'automations', 'admin',
+  'marketplace', 'ads', 'automations', 'admin',
 ];
 
 const NAV = NAV_ORDER.flatMap(key => {

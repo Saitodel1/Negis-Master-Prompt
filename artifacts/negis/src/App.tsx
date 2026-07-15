@@ -21,7 +21,6 @@ import Agent from "@/pages/Agent";
 import Admin from "@/pages/Admin";
 import Ads from "@/pages/Ads";
 import AdsCallback from "@/pages/AdsCallback";
-import Reports from "@/pages/Reports";
 import Automations from "@/pages/Automations";
 import Privacy from "@/pages/Privacy";
 import Terms from "@/pages/Terms";
@@ -151,7 +150,6 @@ function Router() {
       <Route path="/agent" component={Agent} />
       <Route path="/admin" component={() => <ProtectedPage component={Admin} permission="admin" moduleKey="admin" />} />
       <Route path="/ads" component={() => <ProtectedPage component={Ads} permission="ads" moduleKey="ads" />} />
-      <Route path="/reports" component={() => <ProtectedPage component={Reports} permission="reports" moduleKey="reports" />} />
       <Route path="/automations" component={() => <ProtectedPage component={Automations} permission="automation" moduleKey="automations" />} />
       <Route path="/ads/callback" component={AdsCallback} />
       <Route path="/privacy" component={Privacy} />

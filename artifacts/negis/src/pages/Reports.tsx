@@ -8,7 +8,6 @@ import {
   RefreshCw,
   TrendingUp,
 } from 'lucide-react';
-import { PageLayout } from '@/components/layout/PageLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -175,7 +174,7 @@ function hasAnyData(summary: ReportSummary | null): boolean {
     || summary.by_stage.length > 0;
 }
 
-export default function Reports() {
+export default function ReportsOverview() {
   const { clinicId, country } = useAuth();
   const currency = country === 'KG' ? 'KGS' : 'KZT';
   const [dateFrom, setDateFrom] = useState(defaultDateFrom);
@@ -219,8 +218,7 @@ export default function Reports() {
   const empty = useMemo(() => !loading && !error && summary !== null && !hasAnyData(summary), [error, loading, summary]);
 
   return (
-    <PageLayout>
-      <div className="mx-auto max-w-[1500px] space-y-6">
+      <section className="space-y-6 rounded-[22px] border border-[#E4EBF4] bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,.04)] sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-[#0B1220]">Отчеты</h1>
@@ -277,8 +275,7 @@ export default function Reports() {
             <BreakdownTable title="По этапам" rows={summary?.by_stage ?? []} emptyText="Нет данных по этапам." currency={currency} />
           </div>
         )}
-      </div>
-    </PageLayout>
+      </section>
   );
 }
 

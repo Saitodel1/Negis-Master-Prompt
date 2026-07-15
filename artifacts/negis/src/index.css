@@ -2247,3 +2247,8 @@ textarea {
   opacity: 1 !important;
   transform: none !important;
 }
+
+/* Automations is a client workspace, not a technical monitoring console. */
+.ng-route-automations {
+  background: #ffffff !important;
+}

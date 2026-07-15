@@ -5,6 +5,7 @@ import { useGetDashboardMetrics } from '@workspace/api-client-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { agentDisplayName, loadAgentRoleMaps } from '@/lib/agentDisplay';
+import ReportsOverview from '@/pages/Reports';
 
 const SLOT_HOURS = [10, 11, 12, 13, 14, 15, 16, 17];
 const MAX_PER_SLOT = 3;
@@ -31,8 +32,10 @@ interface CoreSummary {
 }
 
 export default function Dashboard() {
-  const { clinicId, country, hasModule } = useAuth();
+  const { clinicId, country, hasModule, rolePermissions, userRole } = useAuth();
   const hasBooking = hasModule('booking');
+  const hasReports = hasModule('reports')
+    && (userRole === 'owner' || userRole === 'manager' || Boolean(rolePermissions.reports));
   const { data: metrics, isLoading } = useGetDashboardMetrics();
   const [agents, setAgents] = useState<AgentRace[]>([]);
   const [slots, setSlots] = useState<SlotLoad[]>(
@@ -260,6 +263,8 @@ export default function Dashboard() {
             )}
           </div>
         </div>}
+
+        {hasReports && <ReportsOverview />}
 
       </div>
     </PageLayout>

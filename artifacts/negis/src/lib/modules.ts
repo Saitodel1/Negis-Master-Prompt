@@ -44,7 +44,7 @@ export const WORKSPACE_MODULES: WorkspaceModuleDefinition[] = [
   { key: 'reception', label: 'Ресепшн', description: 'Приём и отметка прихода клиентов', href: '/reception', permission: 'reception', core: false, selectable: true },
   { key: 'chat', label: 'Чат', description: 'Рабочие чаты и системные карточки', href: '/chat', permission: 'chat', core: false, selectable: true },
   { key: 'ads', label: 'Реклама', description: 'Рекламные кабинеты, лиды и конверсия', href: '/ads', permission: 'ads', core: false, selectable: true },
-  { key: 'reports', label: 'Отчёты', description: 'Продажи, сотрудники, источники и оплаты', href: '/reports', permission: 'reports', core: false, selectable: true },
+  { key: 'reports', label: 'Отчёты на главной', description: 'Продажи, сотрудники, источники и оплаты в дашборде', href: null, permission: 'reports', core: false, selectable: true },
   { key: 'automations', label: 'Автоматизации', description: 'Триггеры, условия и действия', href: '/automations', permission: 'automation', core: false, selectable: true },
   { key: 'documents', label: 'Документы', description: 'Документы и связанные процессы', href: null, permission: 'documents', core: false, selectable: false },
   { key: 'negis_app', label: 'Negis App', description: 'Клиентское приложение Negis', href: null, permission: 'negis_app', core: false, selectable: false },

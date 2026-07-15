@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
+import { FormEvent, useEffect, useState, type ReactNode } from 'react';
 import {
-  Activity, Gauge, Pencil, Plus, RefreshCw, Save, Trash2, X,
+  Gauge, Pencil, Plus, Save, Trash2, X,
 } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { supabase } from '@/lib/supabase';
@@ -52,15 +52,6 @@ interface AutomationRule {
   updated_at?: string;
 }
 
-interface AutomationRun {
-  id: string;
-  rule_id: string | null;
-  status: string;
-  created_at: string;
-  completed_at: string | null;
-  error_message: string | null;
-}
-
 const TRIGGERS = [
   { value: 'lead.created', label: 'Лид создан' },
   { value: 'contact.created', label: 'Контакт создан' },
@@ -104,26 +95,6 @@ const OPERATOR_LABELS: Record<string, string> = {
 const DEFAULT_CONDITION: ConditionRow = { field: '', operator: 'equals', value: '' };
 const DEFAULT_ACTION: ActionRow = { type: 'notify_user', config: {} };
 
-const statusStyle: Record<string, string> = {
-  succeeded: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  running: 'bg-blue-50 text-blue-700 border-blue-200',
-  queued: 'bg-slate-50 text-slate-600 border-slate-200',
-  skipped: 'bg-amber-50 text-amber-700 border-amber-200',
-  failed: 'bg-rose-50 text-rose-700 border-rose-200',
-  error: 'bg-rose-50 text-rose-700 border-rose-200',
-};
-
-function labelForStatus(status: string) {
-  return ({
-    queued: 'В очереди',
-    running: 'В работе',
-    succeeded: 'Сработало',
-    skipped: 'Пропущено',
-    failed: 'Ошибка',
-    error: 'Ошибка',
-  } as Record<string, string>)[status] || status;
-}
-
 function triggerLabel(value: string) {
   return TRIGGERS.find(item => item.value === value)?.label || value;
 }
@@ -138,11 +109,6 @@ function fieldLabel(value: string) {
 
 function operatorLabel(value: string) {
   return OPERATOR_LABELS[value] || value;
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 function normalizeConditions(value: AutomationRule['conditions'] | null | undefined): ConditionRow[] {
@@ -206,7 +172,6 @@ export default function Automations() {
   const { clinicId, userRole } = useAuth();
   const canManage = userRole === 'owner' || userRole === 'manager';
   const [rules, setRules] = useState<AutomationRule[]>([]);
-  const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<AutomationRule | null>(null);
@@ -217,30 +182,23 @@ export default function Automations() {
     setLoading(true);
     setError(null);
 
-    const [rulesRes, runsRes] = await Promise.all([
-      supabase.from('automation_rules').select('*').eq('clinic_id', clinicId).order('created_at', { ascending: false }),
-      supabase
-        .from('automation_runs')
-        .select('id, rule_id, status, created_at, completed_at, error_message')
-        .eq('clinic_id', clinicId)
-        .order('created_at', { ascending: false })
-        .limit(12),
-    ]);
+    const rulesRes = await supabase
+      .from('automation_rules')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .order('created_at', { ascending: false });
 
-    if (rulesRes.error || runsRes.error) {
-      const message = rulesRes.error?.message || runsRes.error?.message || 'Не удалось загрузить автоматизации';
+    if (rulesRes.error) {
+      const message = rulesRes.error.message || 'Не удалось загрузить автоматизации';
       setError(message);
       toast.error(message);
     }
 
     setRules((rulesRes.data || []) as AutomationRule[]);
-    setRuns((runsRes.data || []) as AutomationRun[]);
     setLoading(false);
   };
 
   useEffect(() => { void load(); }, [clinicId]);
-
-  const runRuleNames = useMemo(() => new Map(rules.map(rule => [rule.id, rule.name])), [rules]);
 
   const toggleRule = async (rule: AutomationRule): Promise<void> => {
     if (!clinicId || !canManage) return;
@@ -280,9 +238,9 @@ export default function Automations() {
   return (
     <PageLayout>
       <div className="mx-auto max-w-[1500px] space-y-6">
-        <section className="rounded-[26px] bg-[linear-gradient(90deg,#182A4B_0%,#1E2F58_45%,#2A3175_100%)] px-9 py-7 shadow-[0_10px_40px_rgba(15,23,42,.08)]">
-          <h1 className="text-4xl font-bold tracking-[-0.04em] text-white">Автоматизации</h1>
-          <p className="mt-3 text-[17px] leading-7 text-white/80">
+        <section className="rounded-[22px] border border-[#E4EBF4] bg-white px-6 py-5 shadow-[0_8px_24px_rgba(15,23,42,.04)]">
+          <h1 className="text-3xl font-semibold text-[#10264B]">Автоматизации</h1>
+          <p className="mt-2 text-sm leading-6 text-[#71829D]">
             Собирайте правила из триггеров, условий и действий. Рабочий конструктор без серверной кухни.
           </p>
         </section>
@@ -293,7 +251,7 @@ export default function Automations() {
           </section>
         )}
 
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
+        <section>
           <div className="rounded-[22px] border border-[#E4EBF4] bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,.04)]">
             <div className="mb-5 flex items-center justify-between gap-3">
               <div>
@@ -330,34 +288,6 @@ export default function Automations() {
             </div>
           </div>
 
-          <Panel
-            title="История срабатываний"
-            icon={Activity}
-            action={<button onClick={() => void load()} className="inline-flex items-center gap-1 text-sm font-semibold text-[#3157DE]"><RefreshCw size={14} />Обновить</button>}
-          >
-            {loading ? (
-              <Empty label="Загрузка истории..." />
-            ) : runs.length ? (
-              <div className="space-y-3">
-                {runs.map(run => (
-                  <div key={run.id} className="rounded-xl border border-[#EDF1F7] p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-[#243B63]">{run.rule_id ? runRuleNames.get(run.rule_id) || 'Удаленное правило' : 'Системное правило'}</p>
-                        <p className="mt-1 text-xs text-[#8A9AB2]">
-                          {formatDate(run.completed_at || run.created_at)}
-                        </p>
-                      </div>
-                      <StatusPill status={run.status} />
-                    </div>
-                    {run.error_message && <p className="mt-2 text-xs leading-5 text-rose-600">Нужно проверить правило.</p>}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <Empty label="История появится после первого срабатывания правила." />
-            )}
-          </Panel>
         </section>
       </div>
 
@@ -651,22 +581,6 @@ function EditorSection({ title, action, children }: { title: string; action: Rea
       <div className="space-y-3">{children}</div>
     </section>
   );
-}
-
-function Panel({ title, icon: Icon, action, children }: { title: string; icon: ComponentType<{ size?: number; className?: string }>; action?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="rounded-[22px] border border-[#E4EBF4] bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,.04)]">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2"><Icon size={18} className="text-[#3157DE]" /><h2 className="font-semibold text-[#10264B]">{title}</h2></div>
-        {action}
-      </div>
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
-
-function StatusPill({ status }: { status: string }) {
-  return <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusStyle[status] || 'border-slate-200 bg-slate-50 text-slate-600'}`}>{labelForStatus(status)}</span>;
 }
 
 function Empty({ label }: { label: string }) {
