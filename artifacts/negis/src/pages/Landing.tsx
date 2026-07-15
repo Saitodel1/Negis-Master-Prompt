@@ -71,7 +71,7 @@ export default function Landing() {
   const loginForm       = useForm<LoginValues>      ({ resolver: zodResolver(loginSchema) });
   const registerForm    = useForm<RegisterValues>   ({
     resolver: zodResolver(registerSchema),
-    defaultValues: { country: 'KZ', businessType: 'private_clinic' },
+    defaultValues: { country: 'KZ', businessType: 'other' },
   });
   const resetForm       = useForm<ResetValues>      ({ resolver: zodResolver(resetSchema) });
   const newPasswordForm = useForm<NewPasswordValues>({ resolver: zodResolver(newPasswordSchema) });
@@ -508,7 +508,7 @@ export default function Landing() {
                 {(
                   [
                     { name: 'ownerName',        placeholder: 'Ваше имя',                type: 'text'     },
-                    { name: 'clinicName',        placeholder: 'Название клиники',        type: 'text'     },
+                    { name: 'clinicName',        placeholder: 'Название бизнеса',        type: 'text'     },
                     { name: 'email',             placeholder: 'Email',                   type: 'email'    },
                     { name: 'password',          placeholder: 'Пароль (мин. 8 символов)', type: 'password' },
                     { name: 'confirmPassword',   placeholder: 'Подтвердите пароль',      type: 'password' },

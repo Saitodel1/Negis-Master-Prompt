@@ -23,18 +23,27 @@ interface SlotLoad {
   booked: number;
 }
 
+interface CoreSummary {
+  contacts: number;
+  openDeals: number;
+  openTasks: number;
+  paidAmount: number;
+}
+
 export default function Dashboard() {
-  const { clinicId } = useAuth();
+  const { clinicId, country, hasModule } = useAuth();
+  const hasBooking = hasModule('booking');
   const { data: metrics, isLoading } = useGetDashboardMetrics();
   const [agents, setAgents] = useState<AgentRace[]>([]);
   const [slots, setSlots] = useState<SlotLoad[]>(
     SLOT_HOURS.map(h => ({ time: `${String(h).padStart(2, '0')}:00`, booked: 0 }))
   );
   const [loadingData, setLoadingData] = useState(true);
+  const [coreSummary, setCoreSummary] = useState<CoreSummary>({ contacts: 0, openDeals: 0, openTasks: 0, paidAmount: 0 });
 
   useEffect(() => {
     if (clinicId) loadDashboardData();
-  }, [clinicId]);
+  }, [clinicId, hasBooking]);
 
   const loadDashboardData = async () => {
     if (!clinicId) return;
@@ -44,6 +53,26 @@ export default function Dashboard() {
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
     const weekStartStr = weekStart.toISOString().split('T')[0];
+
+    const [contactsResult, dealsResult, tasksResult, paymentsResult] = await Promise.all([
+      supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId),
+      supabase.from('deals').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId).eq('status', 'open'),
+      supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId).neq('status', 'done'),
+      supabase.from('payments').select('amount').eq('clinic_id', clinicId).eq('status', 'paid').gte('created_at', today),
+    ]);
+    setCoreSummary({
+      contacts: contactsResult.count ?? 0,
+      openDeals: dealsResult.count ?? 0,
+      openTasks: tasksResult.count ?? 0,
+      paidAmount: (paymentsResult.data ?? []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+    });
+
+    if (!hasBooking) {
+      setAgents([]);
+      setSlots(SLOT_HOURS.map(hour => ({ time: `${String(hour).padStart(2, '0')}:00`, booked: 0 })));
+      setLoadingData(false);
+      return;
+    }
 
     const [{ data: agentsData }, { data: todayBookings }, { data: weekBookings }] = await Promise.all([
       supabase.from('agents').select('id, name, user_id, role_id, weekly_target').eq('clinic_id', clinicId).order('name'),
@@ -105,6 +134,7 @@ export default function Dashboard() {
   const revenueToday = metrics?.revenueToday ?? 0;
   const visitedToday = metrics?.visitedToday ?? 0;
   const maxSlotLoad = Math.max(...slots.map(slot => slot.booked), 1);
+  const currency = country === 'KG' ? 'сом' : '₸';
 
   return (
     <PageLayout>
@@ -116,22 +146,27 @@ export default function Dashboard() {
                 <p>Операционный центр</p>
                 <h2>Требует внимания</h2>
               </div>
-              <span>{isLoading ? '...' : bookingsToday + agents.length}</span>
+              <span>{isLoading ? '...' : coreSummary.openTasks + (hasBooking ? bookingsToday : coreSummary.openDeals)}</span>
             </div>
             <div className="dashboard-attention-list">
-              <div className="dashboard-attention-card">
+              {hasBooking && <div className="dashboard-attention-card">
                 <div className="dashboard-attention-icon"><CalendarClock size={19} /></div>
                 <div><strong>Записи на сегодня</strong><small>{isLoading ? 'Загрузка данных' : `${bookingsToday} записей в расписании`}</small></div>
                 <ArrowUpRight size={18} />
-              </div>
-              <div className="dashboard-attention-card">
+              </div>}
+              {hasBooking && <div className="dashboard-attention-card">
                 <div className="dashboard-attention-icon"><TrendingUp size={19} /></div>
                 <div><strong>Загрузка дня</strong><small>{isLoading ? 'Загрузка данных' : `${loadPercent}% от доступных слотов`}</small></div>
                 <ArrowUpRight size={18} />
-              </div>
+              </div>}
+              {!hasBooking && <div className="dashboard-attention-card">
+                <div className="dashboard-attention-icon"><TrendingUp size={19} /></div>
+                <div><strong>Активные сделки</strong><small>{coreSummary.openDeals} сделок требуют работы</small></div>
+                <ArrowUpRight size={18} />
+              </div>}
               <div className="dashboard-attention-card is-alert">
                 <div className="dashboard-attention-icon"><CircleAlert size={19} /></div>
-                <div><strong>Контроль задач</strong><small>{agents.length ? `${agents.length} сотрудников в работе` : 'Назначьте ответственных сотрудникам'}</small></div>
+                <div><strong>Контроль задач</strong><small>{coreSummary.openTasks ? `${coreSummary.openTasks} задач не завершено` : 'Просроченных и активных задач нет'}</small></div>
                 <ArrowUpRight size={18} />
               </div>
             </div>
@@ -139,26 +174,32 @@ export default function Dashboard() {
 
           <section className="dashboard-kpi-grid">
             <article className="dashboard-kpi-card">
-              <div className="dashboard-kpi-title"><span><Calendar size={18} /></span><p>Записи на сегодня</p></div>
-              <div className="dashboard-kpi-value">{isLoading ? '...' : bookingsToday}</div>
-              <div className="dashboard-kpi-foot"><span>Запланировано</span><strong>{SLOT_HOURS.length * MAX_PER_SLOT} мест</strong></div>
+              <div className="dashboard-kpi-title"><span>{hasBooking ? <Calendar size={18} /> : <Users size={18} />}</span><p>{hasBooking ? 'Записи на сегодня' : 'Контакты'}</p></div>
+              <div className="dashboard-kpi-value">{isLoading ? '...' : hasBooking ? bookingsToday : coreSummary.contacts}</div>
+              <div className="dashboard-kpi-foot"><span>{hasBooking ? 'Запланировано' : 'В CRM'}</span><strong>{hasBooking ? `${SLOT_HOURS.length * MAX_PER_SLOT} мест` : `${coreSummary.openDeals} активных сделок`}</strong></div>
             </article>
             <article className="dashboard-kpi-card">
               <div className="dashboard-kpi-title"><span><DollarSign size={18} /></span><p>Выручка сегодня</p></div>
-              <div className="dashboard-kpi-value">{isLoading ? '...' : `${revenueToday.toLocaleString('ru-RU')} ₸`}</div>
-              <div className="dashboard-kpi-foot"><span>Пришло клиентов</span><strong>{visitedToday}</strong></div>
+              <div className="dashboard-kpi-value">{isLoading ? '...' : `${(hasBooking ? revenueToday : coreSummary.paidAmount).toLocaleString('ru-RU')} ${currency}`}</div>
+              <div className="dashboard-kpi-foot"><span>{hasBooking ? 'Пришло клиентов' : 'Получено оплат'}</span><strong>{hasBooking ? visitedToday : 'сегодня'}</strong></div>
             </article>
             <article className="dashboard-chart-card">
-              <div className="dashboard-chart-header"><div><h3>Нагрузка по часам</h3><p>Текущий день</p></div><strong>{loadPercent}%</strong></div>
-              <div className="dashboard-bars" aria-label="Загрузка по часам">
-                {slots.map(slot => <span key={slot.time} style={{ height: `${Math.max(12, (slot.booked / maxSlotLoad) * 100)}%` }} title={`${slot.time}: ${slot.booked} записей`} />)}
-              </div>
-              <div className="dashboard-chart-labels"><span>{slots[0]?.time}</span><span>{slots[slots.length - 1]?.time}</span></div>
+              <div className="dashboard-chart-header"><div><h3>{hasBooking ? 'Нагрузка по часам' : 'Рабочая сводка'}</h3><p>Текущий день</p></div><strong>{hasBooking ? `${loadPercent}%` : `${coreSummary.openDeals}`}</strong></div>
+              {hasBooking ? <>
+                <div className="dashboard-bars" aria-label="Загрузка по часам">
+                  {slots.map(slot => <span key={slot.time} style={{ height: `${Math.max(12, (slot.booked / maxSlotLoad) * 100)}%` }} title={`${slot.time}: ${slot.booked} записей`} />)}
+                </div>
+                <div className="dashboard-chart-labels"><span>{slots[0]?.time}</span><span>{slots[slots.length - 1]?.time}</span></div>
+              </> : <div className="grid grid-cols-3 gap-4 pt-8 text-center">
+                <div><strong className="block text-2xl">{coreSummary.contacts}</strong><span className="text-xs text-[#64748B]">контактов</span></div>
+                <div><strong className="block text-2xl">{coreSummary.openDeals}</strong><span className="text-xs text-[#64748B]">сделок</span></div>
+                <div><strong className="block text-2xl">{coreSummary.openTasks}</strong><span className="text-xs text-[#64748B]">задач</span></div>
+              </div>}
             </article>
           </section>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {hasBooking && <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* AGENT RACE */}
           <div className="dashboard-panel lg:col-span-2 flex flex-col">
             <div className="dashboard-panel-header"><div><p>Эффективность</p><h3>Гонка агентов</h3></div><span>{agents.length} сотрудников</span></div>
@@ -218,7 +259,7 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-        </div>
+        </div>}
 
       </div>
     </PageLayout>

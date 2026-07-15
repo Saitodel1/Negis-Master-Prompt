@@ -27,7 +27,7 @@ export default function Register() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [industry, setIndustry] = useState<IndustrySlug>(DEFAULT_INDUSTRY);
-  const v = VERTICALS[industry];
+  const [country, setCountry] = useState<'KZ' | 'KG'>('KZ');
 
   const { register, handleSubmit, formState: { errors } } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema)
@@ -48,7 +48,7 @@ export default function Register() {
           email: data.email,
           password: data.password,
           businessType: businessTypeByIndustry[industry],
-          country: 'KZ',
+          country,
         }),
       });
       const result = await response.json().catch(() => ({}));
@@ -60,7 +60,7 @@ export default function Register() {
       });
       if (signInError) throw signInError;
 
-      toast.success('Клиника успешно зарегистрирована!');
+      toast.success('Рабочее пространство создано');
       trackEvent('CompleteRegistration');
       setLocation('/onboarding');
       
@@ -80,34 +80,38 @@ export default function Register() {
           На главную
         </Link>
         
-        <h2 className="text-2xl font-bold text-center mb-8 text-foreground">Регистрация клиники</h2>
+        <h2 className="text-2xl font-bold text-center mb-8 text-foreground">Создать пространство</h2>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
+            <label className="block text-sm font-medium mb-1.5 text-[#1E293B]">Страна</label>
+            <select
+              className="neu-input bg-transparent"
+              value={country}
+              onChange={event => setCountry(event.target.value as 'KZ' | 'KG')}
+            >
+              <option value="KZ">Казахстан</option>
+              <option value="KG">Кыргызстан</option>
+            </select>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium mb-1.5 text-[#1E293B]">Сфера бизнеса</label>
-            <div className="grid grid-cols-2 gap-2">
+            <select
+              className="neu-input bg-transparent"
+              value={industry}
+              onChange={event => setIndustry(event.target.value as IndustrySlug)}
+            >
               {INDUSTRY_OPTIONS.map(slug => (
-                <button key={slug} type="button"
-                  onClick={() => { setIndustry(slug); }}
-                  className={`rounded-2xl border px-3 py-3 text-left transition-all ${
-                    industry === slug
-                      ? 'border-[#101A35]/20 bg-[#101A35] text-white shadow-lg'
-                      : 'border-white/70 bg-white/45 hover:bg-white/65'
-                  }`}
-                >
-                  <div className="text-lg mb-0.5">{VERTICALS[slug].icon}</div>
-                  <div className={`text-xs font-semibold ${industry === slug ? 'text-white' : 'text-[#1E293B]'}`}>
-                    {VERTICALS[slug].name}
-                  </div>
-                </button>
+                <option key={slug} value={slug}>{VERTICALS[slug].name}</option>
               ))}
-            </div>
+            </select>
           </div>
 
           <div>
             <input 
               type="text" 
-              placeholder="Имя владельца" 
+              placeholder="Ваше имя"
               className="neu-input" 
               {...register('fullName')}
             />
@@ -117,7 +121,7 @@ export default function Register() {
           <div>
             <input 
               type="text" 
-              placeholder="Название клиники" 
+              placeholder="Название бизнеса"
               className="neu-input" 
               {...register('clinicName')}
             />
@@ -159,7 +163,7 @@ export default function Register() {
             className="neu-btn-primary w-full justify-center mt-6"
             disabled={isLoading}
           >
-            {isLoading ? 'Регистрация...' : 'Зарегистрировать'}
+            {isLoading ? 'Создание...' : 'Создать пространство'}
           </button>
         </form>
       </div>

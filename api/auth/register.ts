@@ -67,8 +67,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const clinicName = String(body.clinicName || '').trim()
   const email = String(body.email || '').trim().toLowerCase()
   const password = String(body.password || '')
-  const businessType = String(body.businessType || 'private_clinic')
-  const industry = industryByBusinessType[businessType] || 'clinic'
+  const businessType = String(body.businessType || 'other')
+  const industry = industryByBusinessType[businessType] || 'custom'
   const country = body.country === 'KG' ? 'KG' : 'KZ'
 
   if (!ownerName || !clinicName || !email || !password) return res.status(400).json({ error: 'ownerName, clinicName, email and password are required' })

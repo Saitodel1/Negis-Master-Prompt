@@ -17,6 +17,8 @@ import {
   Store,
   Smile,
   Upload,
+  FileBarChart,
+  Workflow,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -24,18 +26,33 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { agentInitials, type AgentDisplayInfo } from '@/lib/agentDisplay';
+import { ROUTED_MODULES, type WorkspaceModuleKey } from '@/lib/modules';
 
-const NAV = [
-  { href: '/dashboard', icon: BarChart2, label: 'Главная', permission: 'dashboard' },
-  { href: '/booking', icon: CalendarDays, label: 'Запись', permission: 'booking' },
-  { href: '/reception', icon: Building2, label: 'Ресепшн', permission: 'reception' },
-  { href: '/sales', icon: Briefcase, label: 'Клиенты', permission: 'crm' },
-  { href: '/tasks', icon: ClipboardList, label: 'Задачи', permission: 'tasks' },
-  { href: '/chat', icon: MessageCircle, label: 'Чат', permission: 'chat' },
-  { href: '/marketplace', icon: Store, label: 'Маркет', permission: 'marketplace' },
-  { href: '/ads', icon: Megaphone, label: 'Реклама', permission: 'ads' },
-  { href: '/admin', icon: Settings, label: 'Админ', permission: 'admin' },
+const MODULE_ICONS: Partial<Record<WorkspaceModuleKey, typeof BarChart2>> = {
+  dashboard: BarChart2,
+  booking: CalendarDays,
+  reception: Building2,
+  crm: Briefcase,
+  tasks: ClipboardList,
+  chat: MessageCircle,
+  marketplace: Store,
+  ads: Megaphone,
+  reports: FileBarChart,
+  automations: Workflow,
+  admin: Settings,
+  documents: ClipboardList,
+};
+
+const NAV_ORDER: WorkspaceModuleKey[] = [
+  'dashboard', 'booking', 'reception', 'crm', 'tasks', 'chat',
+  'marketplace', 'ads', 'reports', 'automations', 'admin',
 ];
+
+const NAV = NAV_ORDER.flatMap(key => {
+  const module = ROUTED_MODULES.find(item => item.key === key);
+  const icon = MODULE_ICONS[key];
+  return module && icon ? [{ ...module, icon }] : [];
+});
 
 const MAX_AVATAR_SOURCE_BYTES = 8 * 1024 * 1024;
 const MAX_AVATAR_DATA_URL_BYTES = 120 * 1024;
@@ -88,7 +105,7 @@ async function compressAvatarFile(file: File) {
 
 export function TopNav() {
   const [location] = useLocation();
-  const { signOut, user, userRole, rolePermissions, clinicId } = useAuth();
+  const { signOut, user, userRole, rolePermissions, clinicId, hasModule } = useAuth();
   const [showProfile, setShowProfile] = useState(false);
   const [isRailExpanded, setIsRailExpanded] = useState(false);
   const [profilePanelPosition, setProfilePanelPosition] = useState({ left: 24, top: 128 });
@@ -100,7 +117,10 @@ export function TopNav() {
   const [avatarColor, setAvatarColor] = useState(user?.user_metadata?.avatar_color ?? '#EFF6FF');
   const [saving, setSaving] = useState(false);
 
-  const filtered = NAV.filter(item => userRole === 'owner' || userRole === 'manager' || rolePermissions[item.permission]);
+  const filtered = NAV.filter(item => (
+    hasModule(item.key)
+    && (userRole === 'owner' || userRole === 'manager' || rolePermissions[item.permission])
+  ));
   const initials = agentInitials(myAgent, user?.user_metadata?.full_name ?? user?.email ?? 'U');
   const avatarSrc = avatarUrl || myAgent?.avatar_url || user?.user_metadata?.avatar_url || '';
   const iconValue = avatarIcon || myAgent?.avatar_icon || user?.user_metadata?.avatar_icon || '';

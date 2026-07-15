@@ -4,6 +4,19 @@ import { logger } from "../lib/logger.js";
 
 const router = Router();
 
+const industryByBusinessType: Record<string, string> = {
+  private_clinic: "clinic",
+  dentistry: "clinic",
+  medcenter: "clinic",
+  cosmetology: "beauty",
+  beauty_salon: "beauty",
+  barbershop: "beauty",
+  spa_massage: "beauty",
+  fitness_wellness: "fitness",
+  education_courses: "education",
+  other: "custom",
+};
+
 function slugifyClinicName(name: string): string {
   const base = name
     .toLowerCase()
@@ -15,16 +28,22 @@ function slugifyClinicName(name: string): string {
     .slice(0, 40);
 
   const suffix = Math.random().toString(36).slice(2, 7);
-  return `${base || "clinic"}-${suffix}`;
+  return `${base || "workspace"}-${suffix}`;
 }
 
 router.post("/auth/register", async (req, res) => {
-  const { ownerName, clinicName, email, password } = req.body as {
+  const { ownerName, clinicName, email, password, country, businessType } = req.body as {
     ownerName?: string;
     clinicName?: string;
     email?: string;
     password?: string;
+    country?: "KZ" | "KG";
+    businessType?: string;
   };
+
+  const normalizedBusinessType = businessType || "other";
+  const industry = industryByBusinessType[normalizedBusinessType] || "custom";
+  const normalizedCountry = country === "KG" ? "KG" : "KZ";
 
   if (!ownerName || !clinicName || !email || !password) {
     res.status(400).json({ error: "ownerName, clinicName, email and password are required" });
@@ -61,6 +80,9 @@ router.post("/auth/register", async (req, res) => {
         name: clinicName,
         owner_id: userId,
         slug: slugifyClinicName(clinicName),
+        industry,
+        business_type: normalizedBusinessType,
+        country: normalizedCountry,
       })
       .select("id")
       .single();

@@ -4,6 +4,11 @@ import { supabase } from '@/lib/supabase';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { apiUrl } from '@/lib/api';
+import {
+  CORE_ACTIVE_MODULES,
+  type ModuleStatus,
+  type WorkspaceModuleKey,
+} from '@/lib/modules';
 
 /* ── Types ────────────────────────────────────────────────── */
 interface ImpersonationData {
@@ -22,11 +27,17 @@ interface AuthContextType {
   user: User | null;
   clinicId: string | null;
   country: 'KZ' | 'KG' | null;
+  industry: string | null;
+  businessType: string | null;
+  workspaceModules: Partial<Record<WorkspaceModuleKey, ModuleStatus>>;
+  onboardingCompleted: boolean;
   userRole: UserRole | null;
   rolePermissions: RolePermissions;
   isLoading: boolean;
   isImpersonation: boolean;
   impersonationClinicName: string | null;
+  hasModule: (moduleKey: WorkspaceModuleKey) => boolean;
+  refreshWorkspaceContext: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -48,6 +59,7 @@ const ALL_PERMISSIONS: RolePermissions = {
   ads: true,
   settings: true,
   automation: true,
+  documents: true,
 };
 
 const SYSTEM_ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
@@ -90,6 +102,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user,                    setUser]                    = useState<User | null>(null);
   const [clinicId,                setClinicId]                = useState<string | null>(null);
   const [country,                 setCountry]                 = useState<'KZ' | 'KG' | null>(null);
+  const [industry,                setIndustry]                = useState<string | null>(null);
+  const [businessType,            setBusinessType]            = useState<string | null>(null);
+  const [workspaceModules,        setWorkspaceModules]        = useState<Partial<Record<WorkspaceModuleKey, ModuleStatus>>>({});
+  const [onboardingCompleted,     setOnboardingCompleted]     = useState(false);
   const [userRole,                setUserRole]                = useState<UserRole | null>(null);
   const [rolePermissions,         setRolePermissions]         = useState<RolePermissions>({});
   const [isLoading,               setIsLoading]               = useState(true);
@@ -113,7 +129,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setImpersonationClinicName(d.clinic_name);
     setUserRole('owner');
     setRolePermissions(ALL_PERMISSIONS);
+    void fetchWorkspaceContext(d.clinic_id);
   };
+
+  const fetchWorkspaceContext = async (activeClinicId: string) => {
+    const [{ data: clinic, error: clinicError }, { data: moduleRows, error: modulesError }, { data: onboarding }] = await Promise.all([
+      supabase
+        .from('clinics')
+        .select('country, industry, business_type, onboarding_completed')
+        .eq('id', activeClinicId)
+        .maybeSingle(),
+      supabase
+        .from('clinic_modules')
+        .select('module_key, status')
+        .eq('clinic_id', activeClinicId),
+      supabase
+        .from('clinic_onboarding_state')
+        .select('completed_at')
+        .eq('clinic_id', activeClinicId)
+        .maybeSingle(),
+    ]);
+
+    if (!clinicError && clinic) {
+      setCountry(clinic.country === 'KG' ? 'KG' : clinic.country === 'KZ' ? 'KZ' : null);
+      setIndustry(typeof clinic.industry === 'string' ? clinic.industry : null);
+      setBusinessType(typeof clinic.business_type === 'string' ? clinic.business_type : null);
+      setOnboardingCompleted(Boolean(clinic.onboarding_completed || onboarding?.completed_at));
+    }
+
+    if (modulesError || !moduleRows?.length) {
+      // Fail closed: a tariff lookup error must not unlock paid modules.
+      setWorkspaceModules(CORE_ACTIVE_MODULES);
+      return;
+    }
+
+    setWorkspaceModules(moduleRows.reduce<Partial<Record<WorkspaceModuleKey, ModuleStatus>>>((result, row) => {
+      result[row.module_key as WorkspaceModuleKey] = row.status as ModuleStatus;
+      return result;
+    }, {}));
+  };
+
+  const refreshWorkspaceContext = async () => {
+    if (clinicId) await fetchWorkspaceContext(clinicId);
+  };
+
+  const hasModule = (moduleKey: WorkspaceModuleKey) => workspaceModules[moduleKey] === 'active';
 
   /* ── 1. Init ──────────────────────────────────────────── */
   const initAuth = async () => {
@@ -177,6 +237,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setClinicId(null);
         setCountry(null);
+        setIndustry(null);
+        setBusinessType(null);
+        setWorkspaceModules({});
+        setOnboardingCompleted(false);
         setUserRole(null);
         setRolePermissions({});
         setIsLoading(false);
@@ -340,12 +404,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
       if (data) {
         setClinicId(data.clinic_id);
-        const { data: clinic } = await supabase
-          .from('clinics')
-          .select('country')
-          .eq('id', data.clinic_id)
-          .maybeSingle();
-        setCountry(clinic?.country === 'KG' ? 'KG' : clinic?.country === 'KZ' ? 'KZ' : null);
+        await fetchWorkspaceContext(data.clinic_id);
         const role = data.role as UserRole;
         setUserRole(role);
         await fetchRolePermissions(userId, data.clinic_id, role);
@@ -367,6 +426,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setImpersonationClinicName(null);
       setClinicId(null);
       setCountry(null);
+      setIndustry(null);
+      setBusinessType(null);
+      setWorkspaceModules({});
+      setOnboardingCompleted(false);
       setUserRole(null);
       setRolePermissions({});
       /* Also terminate the Supabase session created for RLS */
@@ -381,9 +444,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      session, user, clinicId, country, userRole, isLoading,
+      session, user, clinicId, country, industry, businessType,
+      workspaceModules, onboardingCompleted, userRole, isLoading,
       rolePermissions,
       isImpersonation, impersonationClinicName,
+      hasModule, refreshWorkspaceContext,
       signOut,
     }}>
       {children}

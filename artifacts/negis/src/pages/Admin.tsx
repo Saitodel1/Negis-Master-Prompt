@@ -179,18 +179,36 @@ function DepartmentsTab({ clinicId }: { clinicId: string | null }) {
 /* ─── Main Component ─────────────────────────────────────── */
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('agents');
-  const { clinicId } = useAuth();
+  const [wazzupConnected, setWazzupConnected] = useState(false);
+  const { clinicId, hasModule } = useAuth();
+  const bookingEnabled = hasModule('booking');
+  const receptionEnabled = hasModule('reception');
+  const negisAppEnabled = hasModule('negis_app') || hasModule('loyalty');
+
+  useEffect(() => {
+    if (!clinicId) return;
+    void supabase
+      .from('clinic_integrations')
+      .select('id')
+      .eq('clinic_id', clinicId)
+      .eq('integration_id', 'wazzup')
+      .eq('status', 'connected')
+      .not('verified_at', 'is', null)
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => setWazzupConnected(Boolean(data)));
+  }, [clinicId]);
 
   const tabs = [
     { id: 'agents', label: 'Агенты' },
     { id: 'roles', label: 'Роли' },
-    { id: 'services', label: 'Услуги' },
+    ...(bookingEnabled ? [{ id: 'services', label: 'Услуги' }] : []),
     { id: 'statuses', label: 'Статусы' },
     { id: 'branches', label: 'Филиалы' },
-    { id: 'shifts', label: 'Смены' },
+    ...(bookingEnabled || receptionEnabled ? [{ id: 'shifts', label: 'Смены' }] : []),
     { id: 'departments', label: 'Отделы' },
-    { id: 'whatsapp', label: 'WhatsApp' },
-    { id: 'negis-app', label: 'Negis App / Лояльность' },
+    ...(wazzupConnected ? [{ id: 'whatsapp', label: 'WhatsApp' }] : []),
+    ...(negisAppEnabled ? [{ id: 'negis-app', label: 'Negis App / Лояльность' }] : []),
     { id: 'export', label: 'Импорт / Экспорт' },
     { id: 'settings', label: 'Настройки' },
   ];
@@ -311,7 +329,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
   };
 
   const save = async () => {
-    if (!clinicId) { toast.error('ID клиники не определён. Перезайдите в систему.'); return; }
+    if (!clinicId) { toast.error('Рабочее пространство не определено. Перезайдите в систему.'); return; }
     if (!name.trim()) { toast.error('Введите имя'); return; }
     if (!editing && !email.trim()) { toast.error('Введите email'); return; }
     if (!editing && password.length < 6) { toast.error('Пароль: минимум 6 символов'); return; }
@@ -372,7 +390,7 @@ function AgentsTab({ clinicId }: { clinicId: string | null }) {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-bold">Сотрудники клиники</h3>
+        <h3 className="text-lg font-bold">Сотрудники</h3>
         <button className="neu-btn-primary flex items-center gap-2" onClick={openCreate}>
           <Plus size={16} /> Добавить сотрудника
         </button>
@@ -777,7 +795,7 @@ function ServicesTab({ clinicId }: { clinicId: string | null }) {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-bold">Услуги клиники</h3>
+        <h3 className="text-lg font-bold">Услуги бизнеса</h3>
         <button className="neu-btn-primary flex items-center gap-2" onClick={openCreate} data-testid="button-add-service">
           <Plus size={16} /> Добавить услугу
         </button>
@@ -933,7 +951,7 @@ function NegisAppSettingsTab({ clinicId }: { clinicId: string | null }) {
       <div>
         <h3 className="text-lg font-bold">Negis App / Лояльность</h3>
         <p className="mt-1 text-sm text-[#64748B]">
-          Эти настройки управляют видимостью клиники в клиентском приложении, онлайн-записью и бонусной программой.
+          Эти настройки управляют видимостью бизнеса в клиентском приложении, онлайн-записью и бонусной программой.
         </p>
       </div>
 
@@ -944,7 +962,7 @@ function NegisAppSettingsTab({ clinicId }: { clinicId: string | null }) {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <ToggleCard title="Показывать клинику в приложении" checked={settings.app_enabled} onChange={v => update({ app_enabled: v })} />
+        <ToggleCard title="Показывать бизнес в приложении" checked={settings.app_enabled} onChange={v => update({ app_enabled: v })} />
         <ToggleCard title="Принимать онлайн-записи" checked={settings.app_booking_enabled} onChange={v => update({ app_booking_enabled: v })} />
         <ToggleCard title="Участвовать в бонусной программе" checked={settings.loyalty_enabled} onChange={v => update({ loyalty_enabled: v })} />
         <ToggleCard title="Принимать оплату бонусами" checked={settings.bonus_spend_enabled} onChange={v => update({ bonus_spend_enabled: v })} />
@@ -957,7 +975,7 @@ function NegisAppSettingsTab({ clinicId }: { clinicId: string | null }) {
       </div>
 
       <div className="rounded-xl border border-[#E7ECF3] bg-[#F8FAFC] p-4 text-sm text-[#64748B]">
-        Если онлайн-запись выключена, клиника может оставаться в каталоге приложения, но кнопка записи будет недоступна.
+        Если онлайн-запись выключена, бизнес может оставаться в каталоге приложения, но кнопка записи будет недоступна.
         Списание бонусов CRM выполняет только через backend API, баланс напрямую не меняется.
       </div>
 
@@ -1362,9 +1380,9 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
     <div className="space-y-10">
       {/* ── Clinic settings ── */}
       <div className="max-w-lg space-y-5">
-        <h3 className="text-lg font-bold">Настройки клиники</h3>
+        <h3 className="text-lg font-bold">Настройки бизнеса</h3>
         <div>
-          <label className="block text-sm font-medium text-[#64748B] mb-1">Название клиники</label>
+          <label className="block text-sm font-medium text-[#64748B] mb-1">Название бизнеса</label>
           <input className="neu-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} data-testid="input-clinic-name" />
         </div>
         <div className="flex gap-4">

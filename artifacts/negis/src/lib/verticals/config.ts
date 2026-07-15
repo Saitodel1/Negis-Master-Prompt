@@ -100,8 +100,8 @@ export const VERTICALS: Record<IndustrySlug, VerticalDef> = {
 
 export function getVertical(slug: IndustrySlug | string | null): VerticalDef {
   if (slug && slug in VERTICALS) return VERTICALS[slug as IndustrySlug];
-  return VERTICALS.clinic;
+  return VERTICALS.custom;
 }
 
 export const INDUSTRY_OPTIONS: IndustrySlug[] = ['clinic', 'beauty', 'fitness', 'education', 'custom'];
-export const DEFAULT_INDUSTRY: IndustrySlug = 'clinic';
+export const DEFAULT_INDUSTRY: IndustrySlug = 'custom';

@@ -66,6 +66,12 @@ const STATUS_CLASS: Record<Status, string> = {
 };
 
 const NEGIS_MODULES = new Set(['negis-app', 'negis-loyalty', 'negis-chatbot', 'negis-ai']);
+const NEGIS_MODULE_KEYS: Record<string, string> = {
+  'negis-app': 'negis_app',
+  'negis-loyalty': 'loyalty',
+  'negis-chatbot': 'negis_chatbot',
+  'negis-ai': 'ai_assistant',
+};
 
 const LOGOS: Record<string, LogoMeta> = {
   'negis-app': { text: 'N', bg: 'linear-gradient(145deg, #4F7BFF, #3B82F6)' },
@@ -112,8 +118,8 @@ const ITEMS: MarketplaceItem[] = [
     region: ['KZ', 'KG'],
     status: 'recommended',
     tags: ['Клиентское приложение', 'QR', 'Бонусы'],
-    summary: 'Клиентское приложение для записи, QR-прихода, бонусов, акций и возврата клиента в клинику.',
-    details: 'Основной модуль Negis для клиники: клиент записывается сам, приходит по QR, видит бонусы и акции, а администратор получает меньше ручной работы.',
+    summary: 'Клиентское приложение для записи, QR-прихода, бонусов, акций и возврата клиента в бизнес.',
+    details: 'Основной модуль Negis для бизнеса: клиент записывается сам, приходит по QR, видит бонусы и акции, а администратор получает меньше ручной работы.',
     priority: true,
   },
   {
@@ -167,7 +173,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'request',
     tags: ['WhatsApp', 'Telegram', 'Омниканал'],
     summary: 'Омниканальная платформа для WhatsApp, Telegram, Instagram и операторских чатов.',
-    details: 'Подходит клиникам с несколькими филиалами и большим потоком сообщений, когда нужна очередь операторов и контроль качества диалогов.',
+    details: 'Подходит организациям с несколькими филиалами и большим потоком сообщений, когда нужна очередь операторов и контроль качества диалогов.',
   },
   {
     id: 'sendpulse-whatsapp',
@@ -177,7 +183,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'request',
     tags: ['WhatsApp API', 'Рассылки'],
     summary: 'WhatsApp Business API и шаблонные сообщения для сервисных уведомлений.',
-    details: 'Можно использовать для подтверждений записи, напоминаний и реактивации, если клиника готова работать через официальные шаблоны WhatsApp.',
+    details: 'Можно использовать для подтверждений записи, напоминаний и реактивации, если бизнес готов работать через официальные шаблоны WhatsApp.',
   },
   {
     id: '360dialog',
@@ -187,7 +193,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'request',
     tags: ['WhatsApp API', 'BSP'],
     summary: 'Провайдер WhatsApp Business API для официального подключения номера.',
-    details: 'Нужен, когда клиника хочет стабильную официальную интеграцию WhatsApp без привязки к обычному телефону.',
+    details: 'Нужен, когда бизнесу требуется стабильная официальная интеграция WhatsApp без привязки к обычному телефону.',
   },
   {
     id: 'telegram-bot',
@@ -218,7 +224,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'request',
     tags: ['Боты', 'Рассылки'],
     summary: 'Боты и рассылки для мессенджеров с сегментацией аудитории.',
-    details: 'Подходит для прогрева базы и простых цепочек, если клинике нужны маркетинговые сценарии поверх основной CRM.',
+    details: 'Подходит для прогрева базы и простых цепочек, если бизнесу нужны маркетинговые сценарии поверх основной CRM.',
   },
   {
     id: 'zadarma',
@@ -228,7 +234,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'available',
     tags: ['IP-телефония', 'Запись звонков', 'АТС'],
     summary: 'Телефония, виртуальная АТС, записи звонков и карточка клиента при входящем звонке.',
-    details: 'Практичный вариант для клиник в Казахстане и Кыргызстане: можно фиксировать звонки, связывать их с клиентом и контролировать работу операторов.',
+    details: 'Практичный вариант для бизнеса в Казахстане и Кыргызстане: можно фиксировать звонки, связывать их с клиентом и контролировать работу операторов.',
     priority: true,
   },
   {
@@ -238,8 +244,8 @@ const ITEMS: MarketplaceItem[] = [
     region: ['KZ'],
     status: 'request',
     tags: ['Оператор', 'Номера', 'АТС'],
-    summary: 'Корпоративная телефония и номера Beeline для клиник в Казахстане.',
-    details: 'Полезно, если клиника уже использует номера Beeline и хочет сохранить текущую телефонную инфраструктуру.',
+    summary: 'Корпоративная телефония и номера Beeline для бизнеса в Казахстане.',
+    details: 'Полезно, если организация уже использует номера Beeline и хочет сохранить текущую телефонную инфраструктуру.',
   },
   {
     id: 'beeline-kg',
@@ -249,7 +255,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'request',
     tags: ['Оператор', 'ВАТС'],
     summary: 'Виртуальная АТС Beeline для бизнеса в Кыргызстане.',
-    details: 'Можно рассматривать для локальных номеров и маршрутизации звонков в клинике.',
+    details: 'Можно рассматривать для локальных номеров и маршрутизации звонков внутри организации.',
   },
   {
     id: 'binotel',
@@ -259,7 +265,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'request',
     tags: ['АТС', 'Коллтрекинг'],
     summary: 'Виртуальная АТС, аналитика звонков и контроль менеджеров.',
-    details: 'Подходит клиникам, которым важны записи разговоров, пропущенные звонки и базовая аналитика операторов.',
+    details: 'Подходит бизнесам, которым важны записи разговоров, пропущенные звонки и базовая аналитика операторов.',
   },
   {
     id: 'kazakhtelecom',
@@ -268,8 +274,8 @@ const ITEMS: MarketplaceItem[] = [
     region: ['KZ'],
     status: 'soon',
     tags: ['Локальная телефония', 'SIP'],
-    summary: 'Локальная телефония для клиник, которые работают на инфраструктуре Казахтелеком.',
-    details: 'Можно добавить как вариант для клиник, которые не хотят менять существующего провайдера связи.',
+    summary: 'Локальная телефония для бизнеса на инфраструктуре Казахтелеком.',
+    details: 'Можно добавить как вариант для организаций, которые не хотят менять существующего провайдера связи.',
   },
   {
     id: 'mango',
@@ -279,7 +285,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'soon',
     tags: ['АТС', 'Звонки'],
     summary: 'Виртуальная АТС и бизнес-телефония для контроля входящих обращений.',
-    details: 'Вариант для клиник, которым нужна развитая телефония, но подключение стоит делать после базовой настройки CRM.',
+    details: 'Вариант для бизнеса, которому нужна развитая телефония, но подключение стоит делать после базовой настройки CRM.',
   },
   {
     id: 'zvonobot',
@@ -300,7 +306,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'request',
     tags: ['AI-оператор', 'Чат-бот'],
     summary: 'AI-ассистенты для обработки входящих обращений и первичной квалификации.',
-    details: 'Подойдет для клиники с большим потоком однотипных вопросов, но сделки и пациентская история должны оставаться в Negis.',
+    details: 'Подойдет бизнесу с большим потоком однотипных вопросов, но сделки и история клиента должны оставаться в Negis.',
   },
   {
     id: 'openai',
@@ -331,7 +337,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'request',
     tags: ['QR', 'Оплаты'],
     summary: 'Оплата по QR для ресепшна и быстрых платежей после процедуры.',
-    details: 'Удобно для клиник, где клиент оплачивает на месте и важно быстро привязать оплату к продаже или курсу.',
+    details: 'Удобно для бизнеса, где клиент оплачивает на месте и важно быстро привязать оплату к продаже или курсу.',
   },
   {
     id: 'halyk-epay',
@@ -340,7 +346,7 @@ const ITEMS: MarketplaceItem[] = [
     region: ['KZ'],
     status: 'request',
     tags: ['Карты', 'Онлайн-оплата'],
-    summary: 'Онлайн-платежи банковскими картами для клиник в Казахстане.',
+    summary: 'Онлайн-платежи банковскими картами для бизнеса в Казахстане.',
     details: 'Подходит для предоплаты, онлайн-счетов и платежей по ссылке.',
   },
   {
@@ -361,7 +367,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'request',
     tags: ['Платежи', 'Онлайн'],
     summary: 'Платежные инструменты для приема онлайн-оплат.',
-    details: 'Хороший запасной вариант, если у клиники уже есть договор или привычный процесс через PayBox.',
+    details: 'Хороший запасной вариант, если у бизнеса уже есть договор или привычный процесс через PayBox.',
   },
   {
     id: 'mbank',
@@ -371,7 +377,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'request',
     tags: ['Оплаты', 'KG'],
     summary: 'Популярные платежи для клиентов в Кыргызстане.',
-    details: 'Важный вариант для кыргызстанских клиник: можно учитывать оплату, частичную оплату и задолженность в финансах клиента.',
+    details: 'Важный вариант для бизнеса в Кыргызстане: можно учитывать оплату, частичную оплату и задолженность в финансах клиента.',
     priority: true,
   },
   {
@@ -382,7 +388,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'request',
     tags: ['Кошелек', 'KG'],
     summary: 'Локальный платежный инструмент для Кыргызстана.',
-    details: 'Может быть полезен клиникам, где часть клиентов платит через локальные кошельки.',
+    details: 'Может быть полезен бизнесу, где часть клиентов платит через локальные кошельки.',
   },
   {
     id: 'o-money',
@@ -391,7 +397,7 @@ const ITEMS: MarketplaceItem[] = [
     region: ['KG'],
     status: 'request',
     tags: ['Кошелек', 'KG'],
-    summary: 'Платежи через O! Деньги для клиник в Кыргызстане.',
+    summary: 'Платежи через O! Деньги для бизнеса в Кыргызстане.',
     details: 'Добавляет привычный клиентам способ оплаты и помогает фиксировать платеж в CRM.',
   },
   {
@@ -422,7 +428,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'soon',
     tags: ['SMS', 'WhatsApp', 'Enterprise'],
     summary: 'Крупная омниканальная платформа для сообщений и уведомлений.',
-    details: 'Имеет смысл для сетевых клиник, где нужны SLA, массовые отправки и несколько каналов связи.',
+    details: 'Имеет смысл для сетевого бизнеса, где нужны SLA, массовые отправки и несколько каналов связи.',
   },
   {
     id: '2gis',
@@ -431,7 +437,7 @@ const ITEMS: MarketplaceItem[] = [
     region: ['KZ', 'KG'],
     status: 'request',
     tags: ['Отзывы', 'Карты', 'Рейтинг'],
-    summary: 'Отзывы и рейтинг клиники в 2GIS, важный канал доверия в Казахстане и Кыргызстане.',
+    summary: 'Отзывы и рейтинг бизнеса в 2GIS, важный канал доверия в Казахстане и Кыргызстане.',
     details: 'Можно использовать для контроля репутации: после успешного визита клиенту отправляется мягкая просьба оставить отзыв.',
     priority: true,
   },
@@ -443,7 +449,7 @@ const ITEMS: MarketplaceItem[] = [
     status: 'request',
     tags: ['Отзывы', 'Google'],
     summary: 'Отзывы в Google Business Profile для доверия и локального поиска.',
-    details: 'Полезно клиникам, которые получают клиентов из поиска и карт. Negis может подсказывать, кому отправить просьбу об отзыве.',
+    details: 'Полезно бизнесу, который получает клиентов из поиска и карт. Negis может подсказывать, кому отправить просьбу об отзыве.',
   },
   {
     id: 'yandex-maps',
@@ -452,8 +458,8 @@ const ITEMS: MarketplaceItem[] = [
     region: ['KZ', 'KG'],
     status: 'soon',
     tags: ['Отзывы', 'Карты'],
-    summary: 'Отзывы и карточка клиники в Яндекс Картах.',
-    details: 'Можно добавить как дополнительный канал репутации для клиник, где Яндекс Карты дают заметный поток клиентов.',
+    summary: 'Отзывы и карточка бизнеса в Яндекс Картах.',
+    details: 'Можно добавить как дополнительный канал репутации для бизнеса, где Яндекс Карты дают заметный поток клиентов.',
   },
 ];
 
@@ -468,10 +474,17 @@ export default function Marketplace() {
     if (!clinicId) return;
 
     const load = async () => {
-      const { data, error } = await supabase
-        .from('clinic_integrations')
-        .select('integration_id,status,verified_at')
-        .eq('clinic_id', clinicId);
+      const [{ data, error }, { data: moduleRows }] = await Promise.all([
+        supabase
+          .from('clinic_integrations')
+          .select('integration_id,status,verified_at')
+          .eq('clinic_id', clinicId),
+        supabase
+          .from('clinic_modules')
+          .select('module_key,status')
+          .eq('clinic_id', clinicId)
+          .in('module_key', Object.values(NEGIS_MODULE_KEYS)),
+      ]);
 
       if (error) return;
       const next: Record<string, Status> = {};
@@ -481,6 +494,11 @@ export default function Marketplace() {
         } else if (row.status === 'connected' || row.status === 'pending') {
           next[row.integration_id] = row.status;
         }
+      }
+      for (const [itemId, moduleKey] of Object.entries(NEGIS_MODULE_KEYS)) {
+        const module = moduleRows?.find(row => row.module_key === moduleKey);
+        if (module?.status === 'active') next[itemId] = 'connected';
+        if (module?.status === 'pending_payment' || module?.status === 'pending_setup') next[itemId] = 'pending';
       }
       setIntegrationStatuses(next);
     };
@@ -513,15 +531,21 @@ export default function Marketplace() {
       toast.error('Не удалось определить рабочее пространство.');
       return;
     }
-    const { error } = await supabase
-      .from('integration_requests')
-      .insert({ clinic_id: clinicId, integration_id: item.id, requested_by: user.id });
-    if (error && error.code !== '23505') {
+    const moduleKey = NEGIS_MODULE_KEYS[item.id];
+    if (!moduleKey) return;
+    const { data: requestedStatus, error } = await supabase.rpc('negis_request_workspace_module', {
+      target_clinic_id: clinicId,
+      target_module_key: moduleKey,
+    });
+    if (error) {
       toast.error('Не удалось отправить запрос на модуль Negis.');
       return;
     }
-    setIntegrationStatuses(current => ({ ...current, [item.id]: 'pending' }));
-    toast.success('Запрос принят. Модуль Negis будет активирован после проверки тарифа.');
+    const nextStatus: Status = requestedStatus === 'active' ? 'connected' : 'pending';
+    setIntegrationStatuses(current => ({ ...current, [item.id]: nextStatus }));
+    toast.success(nextStatus === 'connected'
+      ? 'Модуль уже активен.'
+      : 'Запрос принят. Модуль Negis будет активирован после проверки тарифа.');
   };
 
   const startConnection = async (item: MarketplaceItem) => {
