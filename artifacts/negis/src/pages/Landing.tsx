@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiUrl } from '@/lib/api';
+import { readRegistrationResponse, registrationNetworkError } from '@/lib/registration';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -127,9 +128,12 @@ export default function Landing() {
   const handleRegister = async (data: RegisterValues) => {
     setIsLoading(true); setError('');
     try {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 25_000);
       const registerRes = await fetch(apiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           ownerName: data.ownerName,
           clinicName: data.clinicName,
@@ -139,10 +143,11 @@ export default function Landing() {
           password: data.password,
         }),
       });
+      window.clearTimeout(timeout);
 
-      const registerJson = await registerRes.json();
+      const registerJson = await readRegistrationResponse(registerRes);
       if (!registerRes.ok) {
-        throw new Error(registerJson.error || 'Registration failed');
+        throw new Error(registerJson.error || 'Не удалось создать кабинет. Попробуйте ещё раз.');
       }
 
       const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -153,8 +158,8 @@ export default function Landing() {
       if (signInError) throw signInError;
 
       setLocation('/onboarding');
-    } catch (e: any) {
-      setError(e.message || 'Registration failed');
+    } catch (e: unknown) {
+      setError(registrationNetworkError(e));
     } finally { setIsLoading(false); }
   };
 

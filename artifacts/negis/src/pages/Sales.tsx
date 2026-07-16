@@ -22,6 +22,7 @@ import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { format, startOfDay } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { ClientDealsTab } from '@/components/crm/ClientDealsTab';
 
 /* ── Types ─────────────────────────────────────────────── */
 interface Lead {
@@ -163,7 +164,7 @@ export default function Sales() {
 
   /* ── Lead forms ── */
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [leadDetailTab, setLeadDetailTab] = useState<'overview' | 'timeline' | 'bookings' | 'need' | 'procedures' | 'finance' | 'whatsapp' | 'tasks'>('overview');
+  const [leadDetailTab, setLeadDetailTab] = useState<'overview' | 'deals' | 'timeline' | 'bookings' | 'need' | 'procedures' | 'finance' | 'whatsapp' | 'tasks'>('overview');
   const [leadBookings, setLeadBookings] = useState<BookingHistory[]>([]);
   const [leadBookingsLoading, setLeadBookingsLoading] = useState(false);
   const [quickNote, setQuickNote] = useState('');
@@ -1204,6 +1205,7 @@ export default function Sales() {
               <div className="border-b border-[#E7ECF3] px-6 py-4 flex gap-2 overflow-x-auto bg-white">
                 {([
                   ['overview', 'Обзор'],
+                  ['deals', 'Сделки'],
                   ['timeline', 'Лента'],
                   ['bookings', 'Записи'],
                   ['need', 'Потребность'],
@@ -1328,6 +1330,14 @@ export default function Sales() {
                           </div>
                         ))}
                       </div>
+                    )}
+
+                    {leadDetailTab === 'deals' && clinicId && (
+                      <ClientDealsTab
+                        clinicId={clinicId}
+                        lead={selectedLead}
+                        userRole={userRole}
+                      />
                     )}
 
                     {leadDetailTab === 'bookings' && (

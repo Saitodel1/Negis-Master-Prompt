@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { normalizeRegistrationError, sendWelcomeEmail, validateRegistration } from '../_lib/registration'
 
 type Industry = 'clinic' | 'beauty' | 'fitness' | 'education' | 'custom'
 
@@ -54,25 +55,21 @@ async function deleteAuthUser(userId: string) {
   }).catch(() => undefined)
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Registration failed'
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  if (!supabase) return res.status(503).json({ error: 'Registration is not configured on the server' })
+  if (req.method !== 'POST') return res.status(405).json({ code: 'METHOD_NOT_ALLOWED', error: 'Метод не поддерживается.' })
+  if (!supabase) return res.status(503).json({ code: 'REGISTRATION_NOT_CONFIGURED', error: 'Регистрация временно недоступна: сервер не настроен. Напишите в negissupport@negis.online.' })
 
   const body = typeof req.body === 'object' && req.body ? req.body : {}
   const ownerName = String(body.ownerName || '').trim()
   const clinicName = String(body.clinicName || '').trim()
   const email = String(body.email || '').trim().toLowerCase()
   const password = String(body.password || '')
-  const businessType = String(body.businessType || 'other')
+  const businessType = String(body.businessType || '')
   const industry = industryByBusinessType[businessType] || 'custom'
-  const country = body.country === 'KG' ? 'KG' : 'KZ'
+  const country = String(body.country || '')
 
-  if (!ownerName || !clinicName || !email || !password) return res.status(400).json({ error: 'ownerName, clinicName, email and password are required' })
-  if (!email.includes('@') || password.length < 8) return res.status(400).json({ error: 'Invalid email or password' })
+  const validationError = validateRegistration({ ownerName, clinicName, email, password, country, businessType })
+  if (validationError) return res.status(validationError.status).json({ code: validationError.code, error: validationError.message, field: validationError.field })
 
   let userId: string | null = null
   let clinicId: string | null = null
@@ -101,7 +98,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { error: statusesError } = await supabase.from('lead_statuses').insert(rows)
     if (statusesError) throw statusesError
 
-    return res.status(201).json({ ok: true, userId, clinicId })
+    let welcomeEmailSent = false
+    try {
+      welcomeEmailSent = (await sendWelcomeEmail({ ownerName, businessName: clinicName, email })).sent
+    } catch (emailError) {
+      console.error('Welcome email failed', { userId, clinicId, message: emailError instanceof Error ? emailError.message : String(emailError) })
+    }
+
+    return res.status(201).json({ ok: true, userId, clinicId, welcomeEmailSent })
   } catch (error: unknown) {
     if (clinicId) {
       await supabase.from('lead_statuses').delete().eq('clinic_id', clinicId)
@@ -109,6 +113,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await supabase.from('clinics').delete().eq('id', clinicId)
     }
     if (userId) await deleteAuthUser(userId)
-    return res.status(500).json({ error: errorMessage(error) })
+    const normalized = normalizeRegistrationError(error)
+    console.error('Registration failed', { code: normalized.code, message: error instanceof Error ? error.message : String(error) })
+    return res.status(normalized.status).json({ code: normalized.code, error: normalized.message, field: normalized.field })
   }
 }

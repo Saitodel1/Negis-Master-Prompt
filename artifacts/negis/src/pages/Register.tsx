@@ -9,6 +9,7 @@ import { trackEvent } from '@/lib/fbpixel';
 import { ArrowLeft } from 'lucide-react';
 import { VERTICALS, INDUSTRY_OPTIONS, DEFAULT_INDUSTRY, type IndustrySlug } from '@/lib/verticals/config';
 import { apiUrl } from '@/lib/api';
+import { readRegistrationResponse, registrationNetworkError } from '@/lib/registration';
 
 const registerSchema = z.object({
   fullName: z.string().min(2, 'Обязательное поле'),
@@ -28,6 +29,7 @@ export default function Register() {
   const [isLoading, setIsLoading] = useState(false);
   const [industry, setIndustry] = useState<IndustrySlug>(DEFAULT_INDUSTRY);
   const [country, setCountry] = useState<'KZ' | 'KG'>('KZ');
+  const [submitError, setSubmitError] = useState('');
 
   const { register, handleSubmit, formState: { errors } } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema)
@@ -35,13 +37,17 @@ export default function Register() {
 
   const onSubmit = async (data: RegisterFormValues) => {
     setIsLoading(true);
+    setSubmitError('');
     try {
       const businessTypeByIndustry: Record<IndustrySlug, string> = {
         clinic: 'private_clinic', beauty: 'beauty_salon', fitness: 'fitness_wellness', education: 'education_courses', custom: 'other',
       };
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 25_000);
       const response = await fetch(apiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           ownerName: data.fullName,
           clinicName: data.clinicName,
@@ -51,8 +57,9 @@ export default function Register() {
           country,
         }),
       });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || 'Не удалось создать пространство');
+      window.clearTimeout(timeout);
+      const result = await readRegistrationResponse(response);
+      if (!response.ok) throw new Error(result.error || 'Не удалось создать кабинет');
 
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: data.email,
@@ -60,13 +67,17 @@ export default function Register() {
       });
       if (signInError) throw signInError;
 
-      toast.success('Рабочее пространство создано');
+      toast.success(result.welcomeEmailSent === false
+        ? 'Кабинет создан. Письмо временно не отправлено.'
+        : 'Кабинет создан. Поздравительное письмо отправлено.');
       trackEvent('CompleteRegistration');
       setLocation('/onboarding');
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
-      toast.error(error.message || 'Ошибка регистрации');
+      const message = registrationNetworkError(error);
+      setSubmitError(message);
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -157,6 +168,12 @@ export default function Register() {
             />
             {errors.confirmPassword && <p className="text-destructive text-xs mt-1 px-2">{errors.confirmPassword.message}</p>}
           </div>
+
+          {submitError && (
+            <div role="alert" aria-live="polite" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {submitError}
+            </div>
+          )}
 
           <button 
             type="submit" 

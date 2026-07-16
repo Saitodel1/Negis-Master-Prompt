@@ -35,6 +35,7 @@ interface DealStageOption {
   code: string;
   name: string;
   probability: number;
+  deal_pipelines?: Array<{ name: string }> | null;
 }
 
 interface AutomationRule {
@@ -388,7 +389,7 @@ function RuleModal({ rule, clinicId, onClose, onSaved }: { rule: AutomationRule 
         .order('name'),
       supabase
         .from('deal_stages')
-        .select('code,name,probability')
+        .select('code,name,probability,deal_pipelines(name)')
         .eq('clinic_id', clinicId)
         .eq('is_active', true)
         .order('sort_order'),
@@ -538,7 +539,7 @@ function RuleModal({ rule, clinicId, onClose, onSaved }: { rule: AutomationRule 
                   >
                     <option value="">Выберите этап</option>
                     {dealStages.map(stage => (
-                      <option key={stage.code} value={stage.code}>{stage.name} · {stage.probability}%</option>
+                      <option key={stage.code} value={stage.code}>{stage.deal_pipelines?.[0]?.name ? `${stage.deal_pipelines[0].name} · ` : ''}{stage.name} · {stage.probability}%</option>
                     ))}
                   </select>
                 ) : (

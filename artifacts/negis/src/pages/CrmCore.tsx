@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 
 type TabKey = 'companies' | 'contacts' | 'deals' | 'products' | 'invoices' | 'payments';
-type RelationKey = TabKey | 'agents' | 'deal_stages';
+type RelationKey = TabKey | 'agents' | 'deal_pipelines' | 'deal_stages';
 type FieldKind = 'text' | 'email' | 'tel' | 'url' | 'textarea' | 'number' | 'date' | 'datetime' | 'select' | 'checkbox' | 'tags';
 type CrmValue = string | number | boolean | string[] | null;
 type CrmForm = Record<string, CrmValue>;
@@ -46,6 +46,7 @@ interface Agent {
 interface SelectOption {
   value: string;
   label: string;
+  pipelineId?: string;
   probability?: number;
   outcome?: 'open' | 'won' | 'lost';
 }
@@ -118,12 +119,13 @@ const tabConfigs: Record<TabKey, TabConfig> = {
     label: 'Сделки',
     table: 'deals',
     titleField: 'title',
-    columns: ['title', 'contact_id', 'company_id', 'owner_agent_id', 'stage_id', 'probability', 'status', 'amount', 'expected_close_date'],
+    columns: ['title', 'contact_id', 'company_id', 'owner_agent_id', 'pipeline_id', 'stage_id', 'probability', 'status', 'amount', 'expected_close_date'],
     fields: [
       { key: 'title', label: 'Название', required: true, placeholder: 'Продажа пакета услуг' },
       { key: 'contact_id', label: 'Контакт', kind: 'select', relation: 'contacts' },
       { key: 'company_id', label: 'Компания', kind: 'select', relation: 'companies' },
       { key: 'owner_agent_id', label: 'Ответственный', kind: 'select', relation: 'agents' },
+      { key: 'pipeline_id', label: 'Воронка', kind: 'select', relation: 'deal_pipelines', required: true },
       { key: 'stage_id', label: 'Этап', kind: 'select', relation: 'deal_stages', required: true },
       { key: 'probability', label: 'Вероятность, %', kind: 'number', readOnly: true },
       { key: 'status', label: 'Статус', kind: 'select', options: dealStatuses },
@@ -294,6 +296,7 @@ export default function CrmCore() {
     payments: [],
   });
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [dealPipelines, setDealPipelines] = useState<SelectOption[]>([]);
   const [dealStages, setDealStages] = useState<SelectOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -313,7 +316,7 @@ export default function CrmCore() {
     setLoading(true);
     setError(null);
     try {
-      const [companies, contacts, deals, products, invoices, payments, agentRows, stageRows] = await Promise.all([
+      const [companies, contacts, deals, products, invoices, payments, agentRows, pipelineRows, stageRows] = await Promise.all([
         supabase.from('companies').select('*').eq('clinic_id', clinicId).order('created_at', { ascending: false }),
         supabase.from('contacts').select('*').eq('clinic_id', clinicId).order('created_at', { ascending: false }),
         supabase.from('deals').select('*').eq('clinic_id', clinicId).order('created_at', { ascending: false }),
@@ -321,9 +324,10 @@ export default function CrmCore() {
         supabase.from('invoices').select('*').eq('clinic_id', clinicId).order('created_at', { ascending: false }),
         supabase.from('payments').select('*').eq('clinic_id', clinicId).order('created_at', { ascending: false }),
         supabase.from('agents').select('id, name, user_id').eq('clinic_id', clinicId).order('name'),
-        supabase.from('deal_stages').select('id, name, probability, outcome').eq('clinic_id', clinicId).eq('is_active', true).order('sort_order'),
+        supabase.from('deal_pipelines').select('id, name').eq('clinic_id', clinicId).eq('is_active', true).order('sort_order'),
+        supabase.from('deal_stages').select('id, pipeline_id, name, probability, outcome').eq('clinic_id', clinicId).eq('is_active', true).order('sort_order'),
       ]);
-      const failed = [companies, contacts, deals, products, invoices, payments, agentRows, stageRows].find(result => result.error);
+      const failed = [companies, contacts, deals, products, invoices, payments, agentRows, pipelineRows, stageRows].find(result => result.error);
       if (failed?.error) throw failed.error;
       setRows({
         companies: (companies.data ?? []) as CrmRow[],
@@ -334,9 +338,11 @@ export default function CrmCore() {
         payments: (payments.data ?? []) as CrmRow[],
       });
       setAgents((agentRows.data ?? []) as Agent[]);
+      setDealPipelines((pipelineRows.data ?? []).map(pipeline => ({ value: pipeline.id, label: pipeline.name })));
       setDealStages((stageRows.data ?? []).map(stage => ({
         value: stage.id,
         label: stage.name,
+        pipelineId: stage.pipeline_id,
         probability: stage.probability,
         outcome: stage.outcome as SelectOption['outcome'],
       })));
@@ -366,8 +372,9 @@ export default function CrmCore() {
     invoices: rows.invoices.map(row => ({ value: row.id, label: rowTitle('invoices', row) })),
     payments: rows.payments.map(row => ({ value: row.id, label: rowTitle('payments', row) })),
     agents: agents.map(agent => ({ value: agent.id, label: agent.name })),
+    deal_pipelines: dealPipelines,
     deal_stages: dealStages,
-  }), [agents, dealStages, rows]);
+  }), [agents, dealPipelines, dealStages, rows]);
 
   const lookupLabel = (field: FieldConfig | undefined, value: CrmValue | undefined) => {
     if (!field?.relation || !value) return formatValue(value);
@@ -386,10 +393,14 @@ export default function CrmCore() {
   const openCreate = () => {
     setEditing(null);
     const nextForm = emptyForm(config, defaultCurrency);
-    if (activeTab === 'deals' && dealStages[0]) {
-      nextForm.stage_id = dealStages[0].value;
-      nextForm.probability = dealStages[0].probability ?? 10;
-      nextForm.status = dealStages[0].outcome ?? 'open';
+    if (activeTab === 'deals' && dealPipelines[0]) {
+      const firstStage = dealStages.find(stage => stage.pipelineId === dealPipelines[0].value);
+      nextForm.pipeline_id = dealPipelines[0].value;
+      if (firstStage) {
+        nextForm.stage_id = firstStage.value;
+        nextForm.probability = firstStage.probability ?? 10;
+        nextForm.status = firstStage.outcome ?? 'open';
+      }
     }
     setForm(nextForm);
     setDrawerOpen(true);
@@ -561,8 +572,22 @@ export default function CrmCore() {
                 key={field.key}
                 field={field}
                 value={form[field.key]}
-                options={field.relation ? relatedOptions[field.relation] : field.options ?? []}
+                options={field.relation
+                  ? field.key === 'stage_id'
+                    ? relatedOptions.deal_stages.filter(stage => !form.pipeline_id || stage.pipelineId === form.pipeline_id)
+                    : relatedOptions[field.relation]
+                  : field.options ?? []}
                 onChange={value => setForm(previous => {
+                  if (activeTab === 'deals' && field.key === 'pipeline_id') {
+                    const firstStage = dealStages.find(stage => stage.pipelineId === value);
+                    return {
+                      ...previous,
+                      pipeline_id: value,
+                      stage_id: firstStage?.value ?? '',
+                      probability: firstStage?.probability ?? 10,
+                      status: firstStage?.outcome ?? 'open',
+                    };
+                  }
                   if (activeTab === 'deals' && field.key === 'stage_id') {
                     const selectedStage = dealStages.find(stage => stage.value === value);
                     return {
