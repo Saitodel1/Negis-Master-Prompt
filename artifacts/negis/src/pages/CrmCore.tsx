@@ -1,6 +1,7 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import { Check, Loader2, PencilLine, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { useLocation } from 'wouter';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -285,6 +286,7 @@ function validate(config: TabConfig, form: CrmForm) {
 
 export default function CrmCore() {
   const { clinicId, country } = useAuth();
+  const [, setLocation] = useLocation();
   const defaultCurrency = country === 'KG' ? 'KGS' : 'KZT';
   const [activeTab, setActiveTab] = useState<TabKey>('companies');
   const [rows, setRows] = useState<Record<TabKey, CrmRow[]>>({
@@ -412,6 +414,19 @@ export default function CrmCore() {
     setDrawerOpen(true);
   };
 
+  const openRow = (row: CrmRow) => {
+    if (activeTab === 'contacts') {
+      const legacyLeadId = String(row.legacy_lead_id ?? '').trim();
+      if (legacyLeadId) {
+        sessionStorage.setItem('negis_focus_lead', legacyLeadId);
+        setLocation('/clients');
+        return;
+      }
+    }
+
+    openEdit(row);
+  };
+
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (!clinicId) {
@@ -534,23 +549,34 @@ export default function CrmCore() {
                 </thead>
                 <tbody>
                   {filteredRows.map(row => (
-                    <tr key={row.id} className="border-b border-[#F0F3F8] hover:bg-[#FAFBFE]">
+                    <tr
+                      key={row.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openRow(row)}
+                      onKeyDown={event => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                        event.preventDefault();
+                        openRow(row);
+                      }}
+                      className="group cursor-pointer border-b border-[#F0F3F8] transition-colors hover:bg-[#FAFBFE] focus-visible:bg-[#F5F8FF] focus-visible:outline-none"
+                    >
                       {config.columns.map(column => {
                         const field = config.fields.find(item => item.key === column);
                         const moneyField = column === 'amount' || column === 'total' || column === 'unit_price';
                         const value = moneyField ? formatMoney(row[column], row.currency) : lookupLabel(field, row[column]);
                         return (
                           <td key={column} className="px-5 py-4 align-top text-sm text-[#52657F]">
-                            <span className={column === config.titleField ? 'font-semibold text-[#10264B]' : ''}>{value}</span>
+                            <span className={column === config.titleField ? 'font-semibold text-[#10264B] transition-colors group-hover:text-[#3157DE]' : ''}>{value}</span>
                           </td>
                         );
                       })}
                       <td className="px-5 py-4">
                         <div className="flex justify-end gap-2">
-                          <button type="button" onClick={() => openEdit(row)} className="neu-btn grid h-9 w-9 place-items-center" title="Редактировать">
+                          <button type="button" onClick={event => { event.stopPropagation(); openEdit(row); }} className="neu-btn grid h-9 w-9 place-items-center" title="Редактировать">
                             <PencilLine size={15} />
                           </button>
-                          <button type="button" onClick={() => void remove(row)} className="grid h-9 w-9 place-items-center rounded-xl border border-[#FECACA] bg-[#FFF5F5] text-[#DC2626]" title="Удалить">
+                          <button type="button" onClick={event => { event.stopPropagation(); void remove(row); }} className="grid h-9 w-9 place-items-center rounded-xl border border-[#FECACA] bg-[#FFF5F5] text-[#DC2626]" title="Удалить">
                             <Trash2 size={15} />
                           </button>
                         </div>
