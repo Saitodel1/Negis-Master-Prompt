@@ -36,6 +36,7 @@ Deno.serve(async req => {
 
     const savedMessages: string[] = [];
     const skippedMessages: Array<{ messageId?: string; reason: string }> = [];
+    const crmLinks: Array<{ messageId: string; contactId: string | null; dealId: string | null; duplicateMatched: boolean }> = [];
 
     if (Array.isArray(body?.messages)) {
       for (const message of body.messages) {
@@ -55,7 +56,7 @@ Deno.serve(async req => {
         }
 
         const contactName = message.contact?.name || message.contact?.phone || chatId;
-        const { data: contact } = await supabase
+        const { data: contact, error: contactError } = await supabase
           .from('wz_contacts')
           .upsert({
             clinic_id: clinicId,
@@ -65,10 +66,15 @@ Deno.serve(async req => {
             avatar_uri: message.contact?.avatarUri || null,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'clinic_id,chat_type,chat_id' })
-          .select('id')
+          .select('id, contact_id, deal_id')
           .single();
 
-        await supabase
+        if (contactError || !contact?.id) {
+          skippedMessages.push({ messageId, reason: contactError?.message || 'Wazzup contact was not saved' });
+          continue;
+        }
+
+        const { error: messageError } = await supabase
           .from('wz_messages')
           .upsert({
             clinic_id: clinicId,
@@ -91,6 +97,32 @@ Deno.serve(async req => {
             updated_at: new Date().toISOString(),
           }, { onConflict: 'message_id' });
 
+        if (messageError) {
+          skippedMessages.push({ messageId, reason: messageError.message });
+          continue;
+        }
+
+        if (!message.isEcho) {
+          const { data: crmLink, error: crmLinkError } = await supabase.rpc('negis_ingest_wazzup_contact', {
+            target_clinic_id: clinicId,
+            target_wz_contact_id: contact.id,
+            target_chat_type: chatType,
+            target_chat_id: chatId,
+            target_name: contactName,
+            target_phone: message.contact?.phone || null,
+          });
+          if (crmLinkError) {
+            skippedMessages.push({ messageId, reason: `CRM intake: ${crmLinkError.message}` });
+          } else {
+            crmLinks.push({
+              messageId,
+              contactId: crmLink?.contact_id || null,
+              dealId: crmLink?.deal_id || null,
+              duplicateMatched: Boolean(crmLink?.duplicate_matched),
+            });
+          }
+        }
+
         savedMessages.push(messageId);
       }
     }
@@ -100,7 +132,7 @@ Deno.serve(async req => {
       const channelId = String(contact.channelId || body.channelId || '');
       const clinicId = await clinicIdForChannel(supabase, channelId);
       if (clinicId) {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('wz_contacts')
           .upsert({
             clinic_id: clinicId,
@@ -110,9 +142,19 @@ Deno.serve(async req => {
             avatar_uri: contact.avatarUri || null,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'clinic_id,chat_type,chat_id' })
-          .select()
+          .select('id, clinic_id, chat_type, chat_id, name, avatar_uri, contact_id, deal_id')
           .single();
-        return jsonResponse({ ok: true, contact: data });
+        if (error || !data?.id) return jsonResponse({ error: error?.message || 'Wazzup contact was not saved' }, { status: 500 });
+        const { data: crmLink, error: crmLinkError } = await supabase.rpc('negis_ingest_wazzup_contact', {
+          target_clinic_id: clinicId,
+          target_wz_contact_id: data.id,
+          target_chat_type: data.chat_type,
+          target_chat_id: data.chat_id,
+          target_name: data.name,
+          target_phone: contact.phone || null,
+        });
+        if (crmLinkError) return jsonResponse({ error: crmLinkError.message }, { status: 500 });
+        return jsonResponse({ ok: true, contact: data, crm: crmLink });
       }
     }
 
@@ -136,7 +178,7 @@ Deno.serve(async req => {
       }
     }
 
-    return jsonResponse({ ok: true, savedMessages, skippedMessages });
+    return jsonResponse({ ok: true, savedMessages, skippedMessages, crmLinks });
   } catch (err) {
     return jsonResponse({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }

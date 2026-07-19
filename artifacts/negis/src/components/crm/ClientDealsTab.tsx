@@ -56,6 +56,18 @@ type LeadForDeal = {
   created_at: string;
 };
 
+export type ContactForDeal = {
+  id: string;
+  first_name: string;
+  last_name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  source?: string | null;
+  notes?: string | null;
+  owner_agent_id?: string | null;
+  created_at?: string | null;
+};
+
 type DraftStage = Omit<Stage, 'id' | 'code' | 'is_active'> & { id: string; code?: string };
 
 const inputClass = 'w-full rounded-xl border border-[#DDE5EF] bg-white px-3 py-2.5 text-sm text-[#10264B] outline-none focus:border-[#3157DE]';
@@ -83,9 +95,10 @@ function dealStatus(status: Deal['status']) {
   return ({ open: 'В работе', won: 'Успешно', lost: 'Проиграна', cancelled: 'Отменена' })[status];
 }
 
-export function ClientDealsTab({ clinicId, lead, userRole }: {
+export function ClientDealsTab({ clinicId, lead, contact, userRole }: {
   clinicId: string;
-  lead: LeadForDeal;
+  lead?: LeadForDeal;
+  contact?: ContactForDeal;
   userRole: string | null;
 }) {
   const canConfigure = userRole === 'owner' || userRole === 'manager';
@@ -104,6 +117,17 @@ export function ClientDealsTab({ clinicId, lead, userRole }: {
   const [pipelineName, setPipelineName] = useState('');
   const [draftStages, setDraftStages] = useState<DraftStage[]>([]);
 
+  const subjectId = contact?.id || lead?.id || '';
+  const subjectName = contact
+    ? [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim() || contact.phone || 'Контакт'
+    : lead?.full_name || lead?.phone || 'Клиент';
+  const subjectOwnerAgentId = contact?.owner_agent_id || lead?.assigned_to || null;
+  const subjectPhone = contact?.phone || lead?.phone || null;
+  const subjectEmail = contact?.email || lead?.email || null;
+  const subjectSource = contact?.source || lead?.source || null;
+  const subjectNotes = contact?.notes || lead?.comment || '';
+  const subjectCreatedAt = contact?.created_at || lead?.created_at || new Date().toISOString();
+
   const selectedDeal = deals.find(deal => deal.id === selectedDealId) ?? deals[0] ?? null;
   const selectedPipeline = pipelines.find(pipeline => pipeline.id === selectedDeal?.pipeline_id)
     ?? pipelines.find(pipeline => pipeline.id === newDeal.pipelineId)
@@ -115,6 +139,8 @@ export function ClientDealsTab({ clinicId, lead, userRole }: {
     .sort((a, b) => a.sort_order - b.sort_order), [selectedDeal?.pipeline_id, stages]);
 
   const ensureContact = async () => {
+    if (contact?.id) return contact.id;
+    if (!lead) throw new Error('Контакт для сделки не найден');
     const existing = await supabase.from('contacts').select('id')
       .eq('clinic_id', clinicId).eq('legacy_lead_id', lead.id).maybeSingle();
     if (existing.error) throw existing.error;
@@ -123,13 +149,13 @@ export function ClientDealsTab({ clinicId, lead, userRole }: {
     const created = await supabase.from('contacts').insert({
       clinic_id: clinicId,
       legacy_lead_id: lead.id,
-      owner_agent_id: lead.assigned_to,
-      first_name: lead.full_name?.trim() || lead.phone?.trim() || 'Без имени',
-      phone: lead.phone,
-      email: lead.email,
-      source: lead.source,
-      notes: lead.comment || '',
-      created_at: lead.created_at,
+      owner_agent_id: subjectOwnerAgentId,
+      first_name: subjectName,
+      phone: subjectPhone,
+      email: subjectEmail,
+      source: subjectSource,
+      notes: subjectNotes,
+      created_at: subjectCreatedAt,
     }).select('id').single();
     if (created.error) {
       const retried = await supabase.from('contacts').select('id')
@@ -165,7 +191,7 @@ export function ClientDealsTab({ clinicId, lead, userRole }: {
       setSelectedDealId(nextSelectedId);
       setNewDeal(previous => ({
         ...previous,
-        title: previous.title || `${lead.full_name || 'Клиент'} — сделка`,
+        title: previous.title || `${subjectName} — сделка`,
         pipelineId: previous.pipelineId || nextPipelines.find(item => item.is_default)?.id || nextPipelines[0]?.id || '',
       }));
       if (nextDeals.length) {
@@ -182,7 +208,7 @@ export function ClientDealsTab({ clinicId, lead, userRole }: {
     }
   };
 
-  useEffect(() => { void load(); }, [clinicId, lead.id]);
+  useEffect(() => { if (subjectId) void load(); }, [clinicId, subjectId]);
 
   const createDeal = async () => {
     if (!contactId || !newDeal.pipelineId || !newDeal.title.trim()) {
@@ -200,7 +226,7 @@ export function ClientDealsTab({ clinicId, lead, userRole }: {
     const result = await supabase.from('deals').insert({
       clinic_id: clinicId,
       contact_id: contactId,
-      owner_agent_id: lead.assigned_to,
+      owner_agent_id: subjectOwnerAgentId,
       title: newDeal.title.trim(),
       pipeline_id: pipeline.id,
       stage_id: firstStage.id,
@@ -209,7 +235,7 @@ export function ClientDealsTab({ clinicId, lead, userRole }: {
       probability: firstStage.probability,
       amount: Number(newDeal.amount) || 0,
       currency: pipeline.currency,
-      source: lead.source,
+      source: subjectSource,
       expected_close_date: newDeal.expectedCloseDate || null,
     }).select('id').single();
     setSaving(false);

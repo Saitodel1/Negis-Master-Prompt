@@ -1,8 +1,8 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import { Check, Loader2, PencilLine, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { useLocation } from 'wouter';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { ClientDealsTab } from '@/components/crm/ClientDealsTab';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 
@@ -285,8 +285,7 @@ function validate(config: TabConfig, form: CrmForm) {
 }
 
 export default function CrmCore() {
-  const { clinicId, country } = useAuth();
-  const [, setLocation] = useLocation();
+  const { clinicId, country, userRole } = useAuth();
   const defaultCurrency = country === 'KG' ? 'KGS' : 'KZT';
   const [activeTab, setActiveTab] = useState<TabKey>('companies');
   const [rows, setRows] = useState<Record<TabKey, CrmRow[]>>({
@@ -412,19 +411,6 @@ export default function CrmCore() {
     setEditing(row);
     setForm(formFromRow(config, row));
     setDrawerOpen(true);
-  };
-
-  const openRow = (row: CrmRow) => {
-    if (activeTab === 'contacts') {
-      const legacyLeadId = String(row.legacy_lead_id ?? '').trim();
-      if (legacyLeadId) {
-        sessionStorage.setItem('negis_focus_lead', legacyLeadId);
-        setLocation('/clients');
-        return;
-      }
-    }
-
-    openEdit(row);
   };
 
   const save = async (event: FormEvent) => {
@@ -553,11 +539,11 @@ export default function CrmCore() {
                       key={row.id}
                       role="button"
                       tabIndex={0}
-                      onClick={() => openRow(row)}
+                      onClick={() => openEdit(row)}
                       onKeyDown={event => {
                         if (event.key !== 'Enter' && event.key !== ' ') return;
                         event.preventDefault();
-                        openRow(row);
+                        openEdit(row);
                       }}
                       className="group cursor-pointer border-b border-[#F0F3F8] transition-colors hover:bg-[#FAFBFE] focus-visible:bg-[#F5F8FF] focus-visible:outline-none"
                     >
@@ -592,51 +578,73 @@ export default function CrmCore() {
 
       {drawerOpen && (
         <Drawer title={editing ? `Редактировать: ${rowTitle(activeTab, editing)}` : `Создать: ${config.label}`} onClose={() => setDrawerOpen(false)}>
-          <form onSubmit={save} className="space-y-4">
-            {config.fields.map(field => (
-              <FieldEditor
-                key={field.key}
-                field={field}
-                value={form[field.key]}
-                options={field.relation
-                  ? field.key === 'stage_id'
-                    ? relatedOptions.deal_stages.filter(stage => !form.pipeline_id || stage.pipelineId === form.pipeline_id)
-                    : relatedOptions[field.relation]
-                  : field.options ?? []}
-                onChange={value => setForm(previous => {
-                  if (activeTab === 'deals' && field.key === 'pipeline_id') {
-                    const firstStage = dealStages.find(stage => stage.pipelineId === value);
-                    return {
-                      ...previous,
-                      pipeline_id: value,
-                      stage_id: firstStage?.value ?? '',
-                      probability: firstStage?.probability ?? 10,
-                      status: firstStage?.outcome ?? 'open',
-                    };
-                  }
-                  if (activeTab === 'deals' && field.key === 'stage_id') {
-                    const selectedStage = dealStages.find(stage => stage.value === value);
-                    return {
-                      ...previous,
-                      stage_id: value,
-                      probability: selectedStage?.probability ?? previous.probability,
-                      status: selectedStage?.outcome ?? previous.status,
-                    };
-                  }
-                  return { ...previous, [field.key]: value };
-                })}
-              />
-            ))}
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <button type="button" onClick={() => setDrawerOpen(false)} className="neu-btn justify-center py-3 text-sm font-semibold">
-                Отмена
-              </button>
-              <button disabled={saving} className="neu-btn-primary justify-center py-3 text-sm font-semibold">
-                {saving ? <Loader2 size={17} className="animate-spin" /> : <Check size={17} />}
-                Сохранить
-              </button>
-            </div>
-          </form>
+          <div className="space-y-7">
+            <form onSubmit={save} className="space-y-4">
+              {config.fields.map(field => (
+                <FieldEditor
+                  key={field.key}
+                  field={field}
+                  value={form[field.key]}
+                  options={field.relation
+                    ? field.key === 'stage_id'
+                      ? relatedOptions.deal_stages.filter(stage => !form.pipeline_id || stage.pipelineId === form.pipeline_id)
+                      : relatedOptions[field.relation]
+                    : field.options ?? []}
+                  onChange={value => setForm(previous => {
+                    if (activeTab === 'deals' && field.key === 'pipeline_id') {
+                      const firstStage = dealStages.find(stage => stage.pipelineId === value);
+                      return {
+                        ...previous,
+                        pipeline_id: value,
+                        stage_id: firstStage?.value ?? '',
+                        probability: firstStage?.probability ?? 10,
+                        status: firstStage?.outcome ?? 'open',
+                      };
+                    }
+                    if (activeTab === 'deals' && field.key === 'stage_id') {
+                      const selectedStage = dealStages.find(stage => stage.value === value);
+                      return {
+                        ...previous,
+                        stage_id: value,
+                        probability: selectedStage?.probability ?? previous.probability,
+                        status: selectedStage?.outcome ?? previous.status,
+                      };
+                    }
+                    return { ...previous, [field.key]: value };
+                  })}
+                />
+              ))}
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button type="button" onClick={() => setDrawerOpen(false)} className="neu-btn justify-center py-3 text-sm font-semibold">
+                  Отмена
+                </button>
+                <button disabled={saving} className="neu-btn-primary justify-center py-3 text-sm font-semibold">
+                  {saving ? <Loader2 size={17} className="animate-spin" /> : <Check size={17} />}
+                  Сохранить
+                </button>
+              </div>
+            </form>
+
+            {activeTab === 'contacts' && editing && clinicId && (
+              <div className="border-t border-[#E5EAF2] pt-7">
+                <ClientDealsTab
+                  clinicId={clinicId}
+                  userRole={userRole}
+                  contact={{
+                    id: editing.id,
+                    first_name: asString(editing.first_name),
+                    last_name: asString(editing.last_name) || null,
+                    phone: asString(editing.phone) || null,
+                    email: asString(editing.email) || null,
+                    source: asString(editing.source) || null,
+                    notes: asString(editing.notes) || null,
+                    owner_agent_id: asString(editing.owner_agent_id) || null,
+                    created_at: asString(editing.created_at) || null,
+                  }}
+                />
+              </div>
+            )}
+          </div>
         </Drawer>
       )}
     </PageLayout>
