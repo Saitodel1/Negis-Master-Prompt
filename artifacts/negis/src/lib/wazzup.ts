@@ -7,8 +7,27 @@ export function normalizeWazzupChatId(value: string | null | undefined) {
 
 async function invokeWazzupFunction<T>(name: string, body: Record<string, any>): Promise<T> {
   const { data, error } = await supabase.functions.invoke<T>(name, { body });
-  if (error) throw new Error(formatWazzupError(error.message));
+  if (error) throw new Error(formatWazzupError(await readFunctionError(error)));
   return data as T;
+}
+
+async function readFunctionError(error: any) {
+  const response = error?.context;
+  if (response instanceof Response) {
+    try {
+      const payload = await response.clone().json();
+      if (typeof payload?.error === 'string') return payload.error;
+      if (typeof payload?.message === 'string') return payload.message;
+    } catch {
+      try {
+        const text = await response.clone().text();
+        if (text) return text;
+      } catch {
+        // Fall through to the SDK error below.
+      }
+    }
+  }
+  return error?.message || 'Не удалось выполнить запрос Wazzup';
 }
 
 function formatWazzupError(message: string) {

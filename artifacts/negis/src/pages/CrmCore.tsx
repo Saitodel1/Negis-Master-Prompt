@@ -64,6 +64,14 @@ interface SelectOption {
   outcome?: 'open' | 'won' | 'lost';
 }
 
+function splitIntoChunks<T>(items: T[], size = 50) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
 const currencyOptions = ['KZT', 'KGS', 'USD'].map(value => ({ value, label: value }));
 const dealStatuses = [
   { value: 'open', label: 'Открыта' },
@@ -592,23 +600,30 @@ export default function CrmCore() {
     if (!clinicId || selectedContactIds.size === 0) return;
     setContactBulkLoading(true);
     const ids = Array.from(selectedContactIds);
-    const { data, error: updateError } = await supabase
-      .from('contacts')
-      .update({ ...patch, updated_at: new Date().toISOString() })
-      .eq('clinic_id', clinicId)
-      .in('id', ids)
-      .select('*');
-    setContactBulkLoading(false);
-    if (updateError) {
-      toast.error(updateError.message);
+    const updatedRows: CrmRow[] = [];
+    try {
+      for (const chunk of splitIntoChunks(ids)) {
+        const { data, error: updateError } = await supabase
+          .from('contacts')
+          .update({ ...patch, updated_at: new Date().toISOString() })
+          .eq('clinic_id', clinicId)
+          .in('id', chunk)
+          .select('*');
+        if (updateError) throw updateError;
+        updatedRows.push(...((data ?? []) as CrmRow[]));
+      }
+    } catch (cause: unknown) {
+      toast.error(cause instanceof Error ? cause.message : 'Не удалось обновить выбранные контакты');
       return;
+    } finally {
+      setContactBulkLoading(false);
     }
-    const updated = new Map(((data ?? []) as CrmRow[]).map(row => [row.id, row]));
+    const updated = new Map(updatedRows.map(row => [row.id, row]));
     setRows(previous => ({
       ...previous,
       contacts: previous.contacts.map(row => updated.get(row.id) ?? row),
     }));
-    toast.success(`Обновлено контактов: ${ids.length}`);
+    toast.success(`Обновлено контактов: ${updatedRows.length}`);
     clearContactSelection();
   };
 
@@ -616,21 +631,37 @@ export default function CrmCore() {
     if (!clinicId || selectedContactIds.size === 0) return;
     setContactBulkLoading(true);
     const ids = Array.from(selectedContactIds);
-    const { error: deleteError } = await supabase
-      .from('contacts')
-      .delete()
-      .eq('clinic_id', clinicId)
-      .in('id', ids);
-    setContactBulkLoading(false);
-    if (deleteError) {
-      toast.error(deleteError.message);
+    const deletedIds = new Set<string>();
+    try {
+      for (const chunk of splitIntoChunks(ids)) {
+        const { data, error: deleteError } = await supabase
+          .from('contacts')
+          .delete()
+          .eq('clinic_id', clinicId)
+          .in('id', chunk)
+          .select('id');
+        if (deleteError) throw deleteError;
+        for (const row of data ?? []) deletedIds.add(row.id);
+      }
+    } catch (cause: unknown) {
+      if (deletedIds.size > 0) {
+        setRows(previous => ({
+          ...previous,
+          contacts: previous.contacts.filter(row => !deletedIds.has(row.id)),
+        }));
+        setSelectedContactIds(previous => new Set(Array.from(previous).filter(id => !deletedIds.has(id))));
+      }
+      const message = cause instanceof Error ? cause.message : 'Не удалось удалить выбранные контакты';
+      toast.error(deletedIds.size > 0 ? `Удалено ${deletedIds.size}. Остальные не удалены: ${message}` : message);
       return;
+    } finally {
+      setContactBulkLoading(false);
     }
     setRows(previous => ({
       ...previous,
-      contacts: previous.contacts.filter(row => !selectedContactIds.has(row.id)),
+      contacts: previous.contacts.filter(row => !deletedIds.has(row.id)),
     }));
-    toast.success(`Удалено контактов: ${ids.length}`);
+    toast.success(`Удалено контактов: ${deletedIds.size}`);
     clearContactSelection();
   };
 
