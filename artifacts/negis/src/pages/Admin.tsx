@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiUrl } from '@/lib/api';
 import { authHeaders } from '@/lib/request-auth';
+import { SELECTABLE_MODULES, type ModuleStatus, type WorkspaceModuleKey } from '@/lib/modules';
 import { toast } from 'sonner';
 
 /* ─── Types ──────────────────────────────────────────────── */
@@ -1350,21 +1351,36 @@ interface AdAccountRow {
 }
 
 function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
+  const { userRole, refreshWorkspaceContext } = useAuth();
   const [form, setForm] = useState({ name: '', work_start: '10:00', work_end: '18:00', slot_limit: 3, whatsapp_number: '', telegram_chat_id: '' });
+  const [moduleStatuses, setModuleStatuses] = useState<Partial<Record<WorkspaceModuleKey, ModuleStatus>>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [changingModule, setChangingModule] = useState<WorkspaceModuleKey | null>(null);
+  const canManageModules = userRole === 'owner' || userRole === 'manager';
 
   useEffect(() => {
     if (!clinicId) return;
-    supabase.from('clinics')
-      .select('name, work_start, work_end, slot_limit, whatsapp_number, telegram_chat_id')
-      .eq('id', clinicId).single()
-      .then(({ data }) => {
-        if (data) {
-          setForm({ name: data.name || '', work_start: data.work_start || '10:00', work_end: data.work_end || '18:00', slot_limit: data.slot_limit || 3, whatsapp_number: data.whatsapp_number || '', telegram_chat_id: data.telegram_chat_id || '' });
-        }
-        setLoading(false);
-      });
+    void Promise.all([
+      supabase.from('clinics')
+        .select('name, work_start, work_end, slot_limit, whatsapp_number, telegram_chat_id')
+        .eq('id', clinicId).single(),
+      supabase.from('clinic_modules')
+        .select('module_key, status')
+        .eq('clinic_id', clinicId),
+    ]).then(([clinicResult, modulesResult]) => {
+      if (clinicResult.error) toast.error(clinicResult.error.message);
+      if (clinicResult.data) {
+        const data = clinicResult.data;
+        setForm({ name: data.name || '', work_start: data.work_start || '10:00', work_end: data.work_end || '18:00', slot_limit: data.slot_limit || 3, whatsapp_number: data.whatsapp_number || '', telegram_chat_id: data.telegram_chat_id || '' });
+      }
+      if (modulesResult.error) toast.error(modulesResult.error.message);
+      setModuleStatuses((modulesResult.data ?? []).reduce<Partial<Record<WorkspaceModuleKey, ModuleStatus>>>((result, row) => {
+        result[row.module_key as WorkspaceModuleKey] = row.status as ModuleStatus;
+        return result;
+      }, {}));
+      setLoading(false);
+    });
   }, [clinicId]);
 
   const save = async () => {
@@ -1372,6 +1388,26 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
     const { error } = await supabase.from('clinics').update(form).eq('id', clinicId);
     if (error) toast.error(error.message); else toast.success('Настройки сохранены');
     setSaving(false);
+  };
+
+  const setModuleEnabled = async (moduleKey: WorkspaceModuleKey, enabled: boolean) => {
+    if (!clinicId || !canManageModules) return;
+    setChangingModule(moduleKey);
+    const { data, error } = await supabase.rpc('negis_set_workspace_module_enabled', {
+      target_clinic_id: clinicId,
+      target_module_key: moduleKey,
+      target_enabled: enabled,
+    });
+    if (error) {
+      toast.error(error.message || 'Не удалось изменить раздел');
+      setChangingModule(null);
+      return;
+    }
+    const nextStatus = (data === 'active' ? 'active' : 'disabled') as ModuleStatus;
+    setModuleStatuses(current => ({ ...current, [moduleKey]: nextStatus }));
+    await refreshWorkspaceContext();
+    toast.success(enabled ? 'Раздел добавлен' : 'Раздел отключён');
+    setChangingModule(null);
   };
 
   if (loading) return <p className="text-center text-[#64748B] py-12">Загрузка...</p>;
@@ -1411,6 +1447,43 @@ function SettingsTabContent({ clinicId }: { clinicId: string | null }) {
           {saving ? 'Сохранение...' : 'Сохранить'}
         </button>
       </div>
+
+      <section className="border-t border-[#DDE6F0] pt-8">
+        <div className="mb-5">
+          <h3 className="text-lg font-bold text-[#10264B]">Разделы рабочего пространства</h3>
+          <p className="mt-1 text-sm text-[#64748B]">Добавляйте разделы, которые не были выбраны при регистрации. Отключение скрывает раздел, но не удаляет его данные.</p>
+        </div>
+        {!canManageModules ? (
+          <p className="text-sm text-[#64748B]">Изменять разделы может только руководитель.</p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {SELECTABLE_MODULES.map(module => {
+              const active = moduleStatuses[module.key] === 'active';
+              const changing = changingModule === module.key;
+              return (
+                <div key={module.key} className="flex min-h-[116px] items-start justify-between gap-4 rounded-2xl border border-[#E2EAF3] bg-white p-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-[#10264B]">{module.label}</p>
+                      {active && <span className="rounded-full bg-[#EAF8F0] px-2 py-0.5 text-[11px] font-semibold text-[#17844B]">Подключён</span>}
+                    </div>
+                    <p className="mt-1.5 text-xs leading-5 text-[#71829D]">{module.description}</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={Boolean(changingModule)}
+                    onClick={() => void setModuleEnabled(module.key, !active)}
+                    className={active ? 'neu-btn shrink-0 text-xs' : 'neu-btn-primary shrink-0 text-xs'}
+                    data-testid={`button-module-${module.key}`}
+                  >
+                    {changing ? 'Сохранение…' : active ? 'Отключить' : 'Добавить'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
     </div>
   );

@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { trackEvent } from '@/lib/fbpixel';
 import { ArrowLeft } from 'lucide-react';
 import { VERTICALS, INDUSTRY_OPTIONS, DEFAULT_INDUSTRY, type IndustrySlug } from '@/lib/verticals/config';
-import { apiUrl } from '@/lib/api';
+import { sameOriginApiUrl } from '@/lib/api';
 import { readRegistrationResponse, registrationNetworkError } from '@/lib/registration';
 
 const registerSchema = z.object({
@@ -44,7 +44,7 @@ export default function Register() {
       };
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 25_000);
-      const response = await fetch(apiUrl('/api/auth/register'), {
+      const response = await fetch(sameOriginApiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,

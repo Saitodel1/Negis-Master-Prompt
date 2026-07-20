@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { Bell, CalendarDays, Check, ChevronDown, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,9 +10,10 @@ import { TopNav } from './TopNav';
 
 interface Notif {
   id: string;
-  kind: 'booking' | 'task' | 'automation';
+  kind: 'booking' | 'task' | 'automation' | 'wazzup';
   taskId?: string;
   leadId?: string;
+  contactId?: string;
   title?: string;
   body?: string;
   clientName: string;
@@ -169,13 +171,31 @@ export function Topbar() {
     read: Boolean(r.is_read) || readIdsRef.current.has(r.id),
   }), []);
 
+  const buildWazzupNotif = useCallback((r: any): Notif => {
+    const createdAt = r.created_at || new Date().toISOString();
+    const linkedContact = Array.isArray(r.wz_contacts) ? r.wz_contacts[0] : r.wz_contacts;
+    return {
+      id: r.id,
+      kind: 'wazzup',
+      contactId: linkedContact?.contact_id || r.contact_id || undefined,
+      title: 'Новое сообщение WhatsApp',
+      body: r.text || 'Новое входящее сообщение',
+      clientName: r.contact_name || r.chat_id || 'WhatsApp',
+      agentName: '—',
+      date: createdAt.slice(0, 10),
+      time: new Date(createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      createdAt,
+      read: readIdsRef.current.has(r.id),
+    };
+  }, []);
+
   useEffect(() => {
     if (!clinicId) return;
     readIdsRef.current = readStoredIds(readKey(clinicId));
     deletedIdsRef.current = readStoredIds(deletedKey(clinicId));
 
     const load = async () => {
-      const [{ data: agentsData }, { data: bookings }, { data: taskRows }, { data: automationRows }] = await Promise.all([
+      const [{ data: agentsData }, { data: bookings }, { data: taskRows }, { data: automationRows }, { data: wazzupRows }] = await Promise.all([
         supabase.from('agents').select('id, name, user_id, role_id').eq('clinic_id', clinicId),
         supabase
           .from('bookings')
@@ -195,6 +215,13 @@ export function Topbar() {
           .eq('clinic_id', clinicId)
           .order('created_at', { ascending: false })
           .limit(15),
+        supabase
+          .from('wz_messages')
+          .select('id, wz_contact_id, chat_id, contact_name, text, is_echo, created_at, wz_contacts(contact_id)')
+          .eq('clinic_id', clinicId)
+          .eq('is_echo', false)
+          .order('created_at', { ascending: false })
+          .limit(15),
       ]);
 
       const agentRows = (agentsData ?? []) as AgentDisplayInfo[];
@@ -211,7 +238,10 @@ export function Topbar() {
       const automationNotifs = (automationRows ?? [])
         .filter(row => !deletedIdsRef.current.has(row.id))
         .map(buildAutomationNotif);
-      setNotifs([...automationNotifs, ...taskNotifs, ...bookingNotifs].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30));
+      const wazzupNotifs = (wazzupRows ?? [])
+        .filter(row => !deletedIdsRef.current.has(row.id))
+        .map(buildWazzupNotif);
+      setNotifs([...wazzupNotifs, ...automationNotifs, ...taskNotifs, ...bookingNotifs].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30));
     };
 
     load();
@@ -252,10 +282,32 @@ export function Topbar() {
           playNotificationSound();
         }
       )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'wz_messages', filter: `clinic_id=eq.${clinicId}` },
+        async (payload) => {
+          const row = payload.new as any;
+          if (row.is_echo || deletedIdsRef.current.has(row.id)) return;
+          let linkedContact: { contact_id: string | null } | null = null;
+          for (let attempt = 0; attempt < 4 && !linkedContact?.contact_id; attempt += 1) {
+            if (attempt > 0) await new Promise(resolve => window.setTimeout(resolve, 250));
+            const { data } = await supabase
+              .from('wz_contacts')
+              .select('contact_id')
+              .eq('id', row.wz_contact_id)
+              .maybeSingle();
+            linkedContact = data;
+          }
+          const notif = buildWazzupNotif({ ...row, wz_contacts: linkedContact });
+          setNotifs(prev => [notif, ...prev.filter(n => n.id !== notif.id).slice(0, 29)]);
+          toast.message(`WhatsApp — ${notif.clientName}`, { description: notif.body });
+          playNotificationSound();
+        }
+      )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [clinicId, user?.id, buildNotif, buildTaskNotif, buildAutomationNotif]);
+  }, [clinicId, user?.id, buildNotif, buildTaskNotif, buildAutomationNotif, buildWazzupNotif]);
 
   const markRead = (id: string) => {
     const notification = notifs.find(item => item.id === id);
@@ -278,6 +330,11 @@ export function Topbar() {
 
   const openEvent = (n: Notif) => {
     markRead(n.id);
+    if (n.kind === 'wazzup') {
+      setOpen(false);
+      setLocation(n.contactId ? `/sales?tab=contacts&contact=${n.contactId}` : '/sales?tab=contacts');
+      return;
+    }
     if ((n.kind === 'task' || n.kind === 'automation') && n.taskId) {
       setOpen(false);
       setLocation(`/tasks?task=${n.taskId}`);
@@ -425,8 +482,9 @@ export function Topbar() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold" style={{ color: '#0B1220' }}>
-                        Новая запись — {n.clientName}
+                        {n.kind === 'wazzup' ? `WhatsApp — ${n.clientName}` : `Новая запись — ${n.clientName}`}
                       </p>
+                      {n.body && <p className="mt-1 line-clamp-2 text-xs" style={{ color: '#52657F' }}>{n.body}</p>}
                       <p className="text-xs mt-1" style={{ color: '#64748B' }}>
                         {fmtDate(n.date)} в {n.time}
                         {n.agentName !== '—' && <> · {n.agentName}</>}

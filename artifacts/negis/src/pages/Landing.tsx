@@ -3,7 +3,7 @@ import { useLocation } from 'wouter';
 import { ArrowRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { apiUrl } from '@/lib/api';
+import { apiUrl, sameOriginApiUrl } from '@/lib/api';
 import { readRegistrationResponse, registrationNetworkError } from '@/lib/registration';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
@@ -130,7 +130,7 @@ export default function Landing() {
     try {
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 25_000);
-      const registerRes = await fetch(apiUrl('/api/auth/register'), {
+      const registerRes = await fetch(sameOriginApiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,

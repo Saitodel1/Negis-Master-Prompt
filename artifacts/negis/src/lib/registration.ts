@@ -24,5 +24,6 @@ export async function readRegistrationResponse(response: Response): Promise<Regi
 export function registrationNetworkError(error: unknown) {
   if (error instanceof DOMException && error.name === 'AbortError') return 'Регистрация заняла слишком много времени. Проверьте интернет и попробуйте снова.'
   if (error instanceof TypeError) return 'Не удалось связаться с сервером. Проверьте интернет и повторите попытку.'
+  if (error instanceof Error && error.message.toLowerCase().includes('unauthorized')) return 'Сервер регистрации отклонил запрос. Обновите страницу и попробуйте снова или напишите в negissupport@negis.online.'
   return error instanceof Error && error.message ? error.message : 'Не удалось создать кабинет. Попробуйте ещё раз.'
 }

@@ -1,74 +1,5 @@
--- Connect inbound Wazzup contacts to the universal CRM core.
--- Run after 019_deal_pipelines_and_client_deals.sql.
-
-ALTER TABLE public.contacts
-  ADD COLUMN IF NOT EXISTS phone_normalized text;
-
-CREATE OR REPLACE FUNCTION public.negis_normalize_phone_value(
-  raw_phone text,
-  workspace_country text
-)
-RETURNS text
-LANGUAGE sql
-IMMUTABLE
-PARALLEL SAFE
-AS $$
-  SELECT CASE
-    WHEN digits = '' THEN NULL
-    WHEN upper(COALESCE(workspace_country, '')) = 'KZ' AND length(digits) = 11 AND digits LIKE '8%'
-      THEN '7' || substring(digits FROM 2)
-    WHEN upper(COALESCE(workspace_country, '')) = 'KZ' AND length(digits) = 10
-      THEN '7' || digits
-    WHEN upper(COALESCE(workspace_country, '')) = 'KG' AND length(digits) = 10 AND digits LIKE '0%'
-      THEN '996' || substring(digits FROM 2)
-    WHEN upper(COALESCE(workspace_country, '')) = 'KG' AND length(digits) = 9
-      THEN '996' || digits
-    ELSE digits
-  END
-  FROM (SELECT regexp_replace(COALESCE(raw_phone, ''), '\D', '', 'g') AS digits) normalized;
-$$;
-
-UPDATE public.contacts contact
-SET phone_normalized = public.negis_normalize_phone_value(contact.phone, workspace.country)
-FROM public.clinics workspace
-WHERE workspace.id = contact.clinic_id
-  AND contact.phone_normalized IS DISTINCT FROM public.negis_normalize_phone_value(contact.phone, workspace.country);
-
-CREATE INDEX IF NOT EXISTS contacts_clinic_phone_normalized_idx
-  ON public.contacts (clinic_id, phone_normalized)
-  WHERE phone_normalized IS NOT NULL;
-
-CREATE OR REPLACE FUNCTION public.negis_normalize_contact_phone()
-RETURNS trigger
-LANGUAGE plpgsql
-SET search_path = public
-AS $$
-DECLARE
-  workspace_country text;
-BEGIN
-  SELECT country INTO workspace_country
-  FROM public.clinics
-  WHERE id = NEW.clinic_id;
-
-  NEW.phone_normalized := public.negis_normalize_phone_value(NEW.phone, workspace_country);
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS negis_normalize_contact_phone_before_write ON public.contacts;
-CREATE TRIGGER negis_normalize_contact_phone_before_write
-  BEFORE INSERT OR UPDATE OF phone ON public.contacts
-  FOR EACH ROW EXECUTE FUNCTION public.negis_normalize_contact_phone();
-
-ALTER TABLE public.wz_contacts
-  ADD COLUMN IF NOT EXISTS contact_id uuid REFERENCES public.contacts(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS deal_id uuid REFERENCES public.deals(id) ON DELETE SET NULL;
-
-CREATE INDEX IF NOT EXISTS wz_contacts_contact_idx
-  ON public.wz_contacts (clinic_id, contact_id);
-
-CREATE INDEX IF NOT EXISTS wz_contacts_deal_idx
-  ON public.wz_contacts (clinic_id, deal_id);
+-- Fix deployed Wazzup intake function: local variable names previously
+-- collided with relation columns in PL/pgSQL and raised error 42702.
 
 CREATE OR REPLACE FUNCTION public.negis_ingest_wazzup_contact(
   target_clinic_id uuid,
@@ -130,8 +61,6 @@ BEGIN
     'Контакт Wazzup'
   );
 
-  -- Serialise one external identity/phone per workspace. This prevents two
-  -- simultaneous webhook deliveries from creating two CRM contacts.
   PERFORM pg_advisory_xact_lock(
     hashtextextended(
       target_clinic_id::text || ':' || COALESCE(normalized_phone, lower(COALESCE(target_chat_type, '')) || ':' || target_chat_id),
@@ -191,8 +120,6 @@ BEGIN
       AND clinic_id = target_clinic_id;
   END IF;
 
-  -- A contact can have many deals over time, but only one open Wazzup intake
-  -- deal is reused. Closed history is never overwritten.
   IF v_crm_deal_id IS NULL OR NOT EXISTS (
     SELECT 1
     FROM public.deals
@@ -279,6 +206,3 @@ REVOKE ALL ON FUNCTION public.negis_ingest_wazzup_contact(uuid, uuid, text, text
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.negis_ingest_wazzup_contact(uuid, uuid, text, text, text, text)
   TO service_role;
-
-REVOKE ALL ON FUNCTION public.negis_normalize_contact_phone()
-  FROM PUBLIC, anon, authenticated;

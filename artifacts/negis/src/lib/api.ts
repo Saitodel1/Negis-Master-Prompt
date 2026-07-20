@@ -9,6 +9,11 @@ export function apiUrl(path: string): string {
   return `${API_BASE_URL}${normalizedPath}`;
 }
 
+export function sameOriginApiUrl(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${appBasePath}${normalizedPath}`;
+}
+
 export function publicApiUrl(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const base = configuredApiBase || `${window.location.origin}${appBasePath}`;

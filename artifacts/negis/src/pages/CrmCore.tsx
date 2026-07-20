@@ -1,10 +1,14 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
-import { Check, Loader2, PencilLine, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'wouter';
+import { Check, Loader2, PencilLine, Plus, RefreshCw, Search, Tag, Trash2, User, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { WazzupChat } from '@/components/WazzupChat';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { ClientDealsTab } from '@/components/crm/ClientDealsTab';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { normalizeWazzupChatId } from '@/lib/wazzup';
+import type { WazzupChatType } from '@/types/wazzup';
 
 type TabKey = 'companies' | 'contacts' | 'deals' | 'products' | 'invoices' | 'payments';
 type RelationKey = TabKey | 'agents' | 'deal_pipelines' | 'deal_stages';
@@ -42,6 +46,14 @@ interface Agent {
   id: string;
   name: string;
   user_id: string | null;
+}
+
+interface WazzupContactLink {
+  id: string;
+  contact_id: string | null;
+  chat_type: WazzupChatType;
+  chat_id: string;
+  name: string | null;
 }
 
 interface SelectOption {
@@ -285,7 +297,8 @@ function validate(config: TabConfig, form: CrmForm) {
 }
 
 export default function CrmCore() {
-  const { clinicId, country, userRole } = useAuth();
+  const [location] = useLocation();
+  const { clinicId, country, userRole, user } = useAuth();
   const defaultCurrency = country === 'KG' ? 'KGS' : 'KZT';
   const [activeTab, setActiveTab] = useState<TabKey>('companies');
   const [rows, setRows] = useState<Record<TabKey, CrmRow[]>>({
@@ -297,15 +310,24 @@ export default function CrmCore() {
     payments: [],
   });
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [wazzupContacts, setWazzupContacts] = useState<WazzupContactLink[]>([]);
   const [dealPipelines, setDealPipelines] = useState<SelectOption[]>([]);
   const [dealStages, setDealStages] = useState<SelectOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
+  const [contactBulkPanel, setContactBulkPanel] = useState<'agent' | 'source' | 'delete' | null>(null);
+  const [contactBulkAgentId, setContactBulkAgentId] = useState('');
+  const [contactBulkSource, setContactBulkSource] = useState('');
+  const [contactBulkLoading, setContactBulkLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [contactDrawerTab, setContactDrawerTab] = useState<'details' | 'deals' | 'whatsapp'>('details');
   const [editing, setEditing] = useState<CrmRow | null>(null);
   const [form, setForm] = useState<CrmForm>(emptyForm(tabConfigs.companies));
+  const openedContactRef = useRef<string | null>(null);
+  const realtimeReloadRef = useRef<number | null>(null);
 
   const config = tabConfigs[activeTab];
 
@@ -317,7 +339,7 @@ export default function CrmCore() {
     setLoading(true);
     setError(null);
     try {
-      const [companies, contacts, deals, products, invoices, payments, agentRows, pipelineRows, stageRows] = await Promise.all([
+      const [companies, contacts, deals, products, invoices, payments, agentRows, pipelineRows, stageRows, wazzupRows] = await Promise.all([
         supabase.from('companies').select('*').eq('clinic_id', clinicId).order('created_at', { ascending: false }),
         supabase.from('contacts').select('*').eq('clinic_id', clinicId).order('created_at', { ascending: false }),
         supabase.from('deals').select('*').eq('clinic_id', clinicId).order('created_at', { ascending: false }),
@@ -327,6 +349,7 @@ export default function CrmCore() {
         supabase.from('agents').select('id, name, user_id').eq('clinic_id', clinicId).order('name'),
         supabase.from('deal_pipelines').select('id, name').eq('clinic_id', clinicId).eq('is_active', true).order('sort_order'),
         supabase.from('deal_stages').select('id, pipeline_id, name, probability, outcome').eq('clinic_id', clinicId).eq('is_active', true).order('sort_order'),
+        supabase.from('wz_contacts').select('id, contact_id, chat_type, chat_id, name').eq('clinic_id', clinicId).order('updated_at', { ascending: false }),
       ]);
       const failed = [companies, contacts, deals, products, invoices, payments, agentRows, pipelineRows, stageRows].find(result => result.error);
       if (failed?.error) throw failed.error;
@@ -339,6 +362,7 @@ export default function CrmCore() {
         payments: (payments.data ?? []) as CrmRow[],
       });
       setAgents((agentRows.data ?? []) as Agent[]);
+      setWazzupContacts(wazzupRows.error ? [] : (wazzupRows.data ?? []) as WazzupContactLink[]);
       setDealPipelines((pipelineRows.data ?? []).map(pipeline => ({ value: pipeline.id, label: pipeline.name })));
       setDealStages((stageRows.data ?? []).map(stage => ({
         value: stage.id,
@@ -347,6 +371,22 @@ export default function CrmCore() {
         probability: stage.probability,
         outcome: stage.outcome as SelectOption['outcome'],
       })));
+
+      const params = new URLSearchParams(location.split('?')[1] || '');
+      const requestedTab = params.get('tab');
+      if (requestedTab && tabs.some(tab => tab.key === requestedTab)) setActiveTab(requestedTab as TabKey);
+      const requestedContactId = params.get('contact');
+      if (requestedContactId && openedContactRef.current !== requestedContactId) {
+        const requestedContact = ((contacts.data ?? []) as CrmRow[]).find(row => row.id === requestedContactId);
+        if (requestedContact) {
+          openedContactRef.current = requestedContactId;
+          setActiveTab('contacts');
+          setEditing(requestedContact);
+          setForm(formFromRow(tabConfigs.contacts, requestedContact));
+          setContactDrawerTab('details');
+          setDrawerOpen(true);
+        }
+      }
     } catch (cause: unknown) {
       const message = cause instanceof Error ? cause.message : 'Не удалось загрузить CRM';
       setError(message);
@@ -356,14 +396,43 @@ export default function CrmCore() {
     }
   };
 
-  useEffect(() => { void load(); }, [clinicId]);
+  useEffect(() => { void load(); }, [clinicId, location]);
+
+  useEffect(() => {
+    if (!clinicId) return;
+    const scheduleReload = () => {
+      if (realtimeReloadRef.current) window.clearTimeout(realtimeReloadRef.current);
+      realtimeReloadRef.current = window.setTimeout(() => void load(), 180);
+    };
+    const channel = supabase
+      .channel(`crm-core-realtime:${clinicId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts', filter: `clinic_id=eq.${clinicId}` }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deals', filter: `clinic_id=eq.${clinicId}` }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wz_contacts', filter: `clinic_id=eq.${clinicId}` }, scheduleReload)
+      .subscribe();
+    return () => {
+      if (realtimeReloadRef.current) window.clearTimeout(realtimeReloadRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [clinicId, location]);
 
   useEffect(() => {
     setSearch('');
+    setSelectedContactIds(new Set());
+    setContactBulkPanel(null);
     setDrawerOpen(false);
+    setContactDrawerTab('details');
     setEditing(null);
     setForm(emptyForm(tabConfigs[activeTab], defaultCurrency));
   }, [activeTab, defaultCurrency]);
+
+  useEffect(() => {
+    const existingIds = new Set(rows.contacts.map(row => row.id));
+    setSelectedContactIds(previous => {
+      const next = new Set(Array.from(previous).filter(id => existingIds.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [rows.contacts]);
 
   const relatedOptions = useMemo<Record<RelationKey, SelectOption[]>>(() => ({
     companies: rows.companies.map(row => ({ value: row.id, label: rowTitle('companies', row) })),
@@ -391,8 +460,57 @@ export default function CrmCore() {
     }));
   }, [activeTab, config, rows, search, relatedOptions]);
 
+  const selectedContacts = useMemo(
+    () => rows.contacts.filter(row => selectedContactIds.has(row.id)),
+    [rows.contacts, selectedContactIds],
+  );
+  const linkedWazzupContact = useMemo(() => {
+    if (activeTab !== 'contacts' || !editing) return null;
+    const contactPhone = normalizeWazzupChatId(asString(editing.phone));
+    return wazzupContacts.find(contact => contact.contact_id === editing.id)
+      ?? wazzupContacts.find(contact => contactPhone && normalizeWazzupChatId(contact.chat_id) === contactPhone)
+      ?? null;
+  }, [activeTab, editing, wazzupContacts]);
+
+  useEffect(() => {
+    if (contactDrawerTab === 'whatsapp' && (!linkedWazzupContact || !user)) {
+      setContactDrawerTab('details');
+    }
+  }, [contactDrawerTab, linkedWazzupContact, user]);
+  const allFilteredContactsSelected = activeTab === 'contacts'
+    && filteredRows.length > 0
+    && filteredRows.every(row => selectedContactIds.has(row.id));
+  const someFilteredContactsSelected = activeTab === 'contacts'
+    && filteredRows.some(row => selectedContactIds.has(row.id));
+
+  const toggleContactSelection = (id: string) => {
+    setSelectedContactIds(previous => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllFilteredContacts = () => {
+    setSelectedContactIds(previous => {
+      const next = new Set(previous);
+      if (allFilteredContactsSelected) filteredRows.forEach(row => next.delete(row.id));
+      else filteredRows.forEach(row => next.add(row.id));
+      return next;
+    });
+  };
+
+  const clearContactSelection = () => {
+    setSelectedContactIds(new Set());
+    setContactBulkPanel(null);
+    setContactBulkAgentId('');
+    setContactBulkSource('');
+  };
+
   const openCreate = () => {
     setEditing(null);
+    setContactDrawerTab('details');
     const nextForm = emptyForm(config, defaultCurrency);
     if (activeTab === 'deals' && dealPipelines[0]) {
       const firstStage = dealStages.find(stage => stage.pipelineId === dealPipelines[0].value);
@@ -410,7 +528,16 @@ export default function CrmCore() {
   const openEdit = (row: CrmRow) => {
     setEditing(row);
     setForm(formFromRow(config, row));
+    setContactDrawerTab('details');
     setDrawerOpen(true);
+  };
+
+  const openSelectedContact = () => {
+    if (selectedContacts.length !== 1) {
+      toast.error('Для редактирования выберите один контакт');
+      return;
+    }
+    openEdit(selectedContacts[0]);
   };
 
   const save = async (event: FormEvent) => {
@@ -459,6 +586,52 @@ export default function CrmCore() {
     }
     setRows(previous => ({ ...previous, [activeTab]: previous[activeTab].filter(item => item.id !== row.id) }));
     toast.success('Запись удалена');
+  };
+
+  const bulkUpdateContacts = async (patch: { owner_agent_id?: string | null; source?: string }) => {
+    if (!clinicId || selectedContactIds.size === 0) return;
+    setContactBulkLoading(true);
+    const ids = Array.from(selectedContactIds);
+    const { data, error: updateError } = await supabase
+      .from('contacts')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('clinic_id', clinicId)
+      .in('id', ids)
+      .select('*');
+    setContactBulkLoading(false);
+    if (updateError) {
+      toast.error(updateError.message);
+      return;
+    }
+    const updated = new Map(((data ?? []) as CrmRow[]).map(row => [row.id, row]));
+    setRows(previous => ({
+      ...previous,
+      contacts: previous.contacts.map(row => updated.get(row.id) ?? row),
+    }));
+    toast.success(`Обновлено контактов: ${ids.length}`);
+    clearContactSelection();
+  };
+
+  const bulkDeleteContacts = async () => {
+    if (!clinicId || selectedContactIds.size === 0) return;
+    setContactBulkLoading(true);
+    const ids = Array.from(selectedContactIds);
+    const { error: deleteError } = await supabase
+      .from('contacts')
+      .delete()
+      .eq('clinic_id', clinicId)
+      .in('id', ids);
+    setContactBulkLoading(false);
+    if (deleteError) {
+      toast.error(deleteError.message);
+      return;
+    }
+    setRows(previous => ({
+      ...previous,
+      contacts: previous.contacts.filter(row => !selectedContactIds.has(row.id)),
+    }));
+    toast.success(`Удалено контактов: ${ids.length}`);
+    clearContactSelection();
   };
 
   const totalAmount = useMemo(() => {
@@ -511,6 +684,133 @@ export default function CrmCore() {
           </div>
         </section>
 
+        {activeTab === 'contacts' && (
+          <section className="crm-filter-bar flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={toggleAllFilteredContacts}
+              disabled={filteredRows.length === 0}
+              className="neu-btn flex items-center gap-2 px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Check size={15} />
+              {allFilteredContactsSelected ? 'Снять выбор' : 'Выбрать все'}
+            </button>
+            <span className={`text-sm font-semibold ${selectedContactIds.size > 0 ? 'text-[#3157DE]' : 'text-[#94A3B8]'}`}>
+              Выбрано: {selectedContactIds.size}
+            </span>
+
+            {selectedContactIds.size > 0 && (
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                {contactBulkPanel === 'agent' ? (
+                  <>
+                    <select
+                      value={contactBulkAgentId}
+                      onChange={event => setContactBulkAgentId(event.target.value)}
+                      className="neu-input min-w-[210px] text-sm"
+                      aria-label="Новый ответственный"
+                    >
+                      <option value="">Без ответственного</option>
+                      {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={contactBulkLoading}
+                      onClick={() => void bulkUpdateContacts({ owner_agent_id: contactBulkAgentId || null })}
+                      className="neu-btn-primary px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                    >
+                      {contactBulkLoading ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                      Применить
+                    </button>
+                  </>
+                ) : contactBulkPanel === 'source' ? (
+                  <>
+                    <input
+                      value={contactBulkSource}
+                      onChange={event => setContactBulkSource(event.target.value)}
+                      className="neu-input min-w-[210px] text-sm"
+                      placeholder="Новый источник"
+                      aria-label="Новый источник"
+                    />
+                    <button
+                      type="button"
+                      disabled={!contactBulkSource.trim() || contactBulkLoading}
+                      onClick={() => void bulkUpdateContacts({ source: contactBulkSource.trim() })}
+                      className="neu-btn-primary px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                    >
+                      {contactBulkLoading ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                      Применить
+                    </button>
+                  </>
+                ) : contactBulkPanel === 'delete' ? (
+                  <>
+                    <span className="text-sm font-semibold text-[#DC2626]">Удалить контактов: {selectedContactIds.size}?</span>
+                    <button
+                      type="button"
+                      disabled={contactBulkLoading}
+                      onClick={() => void bulkDeleteContacts()}
+                      className="flex items-center gap-2 rounded-xl border border-[#FECACA] bg-[#FFF5F5] px-4 py-2 text-sm font-semibold text-[#DC2626] disabled:opacity-50"
+                    >
+                      {contactBulkLoading ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                      Удалить
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled={selectedContactIds.size !== 1}
+                      onClick={openSelectedContact}
+                      className="neu-btn grid h-9 w-9 place-items-center disabled:cursor-not-allowed disabled:opacity-40"
+                      title="Редактировать выбранный контакт"
+                      aria-label="Редактировать выбранный контакт"
+                    >
+                      <PencilLine size={15} />
+                    </button>
+                    {(userRole === 'owner' || userRole === 'manager') && (
+                      <button
+                        type="button"
+                        onClick={() => setContactBulkPanel('agent')}
+                        className="neu-btn grid h-9 w-9 place-items-center"
+                        title="Сменить ответственного"
+                        aria-label="Сменить ответственного"
+                      >
+                        <User size={15} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setContactBulkPanel('source')}
+                      className="neu-btn grid h-9 w-9 place-items-center"
+                      title="Сменить источник"
+                      aria-label="Сменить источник"
+                    >
+                      <Tag size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setContactBulkPanel('delete')}
+                      className="grid h-9 w-9 place-items-center rounded-xl border border-[#FECACA] bg-[#FFF5F5] text-[#DC2626]"
+                      title="Удалить выбранные контакты"
+                      aria-label="Удалить выбранные контакты"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={clearContactSelection}
+                  className="neu-btn grid h-9 w-9 place-items-center"
+                  title="Снять выбор"
+                  aria-label="Снять выбор"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+
         <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Metric label="Раздел" value={config.label} />
           <Metric label="Записей" value={String(rows[activeTab].length)} />
@@ -529,12 +829,24 @@ export default function CrmCore() {
               <table className="w-full min-w-[980px] text-left">
                 <thead className="border-b border-[#EDF1F7] text-xs uppercase tracking-wide text-[#7C8DA7]">
                   <tr>
+                    {activeTab === 'contacts' && (
+                      <th className="w-14 px-5 py-4">
+                        <IndeterminateCheckbox
+                          checked={allFilteredContactsSelected}
+                          indeterminate={someFilteredContactsSelected && !allFilteredContactsSelected}
+                          onChange={toggleAllFilteredContacts}
+                          label="Выбрать все показанные контакты"
+                        />
+                      </th>
+                    )}
                     {config.columns.map(column => <th key={column} className="px-5 py-4 font-bold">{config.fields.find(field => field.key === column)?.label ?? column}</th>)}
                     <th className="px-5 py-4 text-right font-bold">Действия</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map(row => (
+                  {filteredRows.map(row => {
+                    const isSelected = activeTab === 'contacts' && selectedContactIds.has(row.id);
+                    return (
                     <tr
                       key={row.id}
                       role="button"
@@ -545,8 +857,20 @@ export default function CrmCore() {
                         event.preventDefault();
                         openEdit(row);
                       }}
-                      className="group cursor-pointer border-b border-[#F0F3F8] transition-colors hover:bg-[#FAFBFE] focus-visible:bg-[#F5F8FF] focus-visible:outline-none"
+                      className={`group cursor-pointer border-b border-[#F0F3F8] transition-colors focus-visible:outline-none ${isSelected ? 'bg-[#EEF4FF] hover:bg-[#E7EFFF] focus-visible:bg-[#E7EFFF]' : 'hover:bg-[#FAFBFE] focus-visible:bg-[#F5F8FF]'}`}
                     >
+                      {activeTab === 'contacts' && (
+                        <td className="w-14 px-5 py-4" onClick={event => event.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleContactSelection(row.id)}
+                            onClick={event => event.stopPropagation()}
+                            aria-label={`Выбрать контакт ${rowTitle('contacts', row)}`}
+                            className="h-4 w-4 cursor-pointer accent-[#3157DE]"
+                          />
+                        </td>
+                      )}
                       {config.columns.map(column => {
                         const field = config.fields.find(item => item.key === column);
                         const moneyField = column === 'amount' || column === 'total' || column === 'unit_price';
@@ -568,7 +892,7 @@ export default function CrmCore() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
               </table>
             </div>
@@ -579,6 +903,29 @@ export default function CrmCore() {
       {drawerOpen && (
         <Drawer title={editing ? `Редактировать: ${rowTitle(activeTab, editing)}` : `Создать: ${config.label}`} onClose={() => setDrawerOpen(false)}>
           <div className="space-y-7">
+            {activeTab === 'contacts' && editing && (
+              <div className="flex gap-1 overflow-x-auto rounded-2xl border border-[#E3EAF2] bg-[#F7F9FC] p-1">
+                <ContactDrawerTab
+                  active={contactDrawerTab === 'details'}
+                  label="Данные"
+                  onClick={() => setContactDrawerTab('details')}
+                />
+                <ContactDrawerTab
+                  active={contactDrawerTab === 'deals'}
+                  label="Сделки"
+                  onClick={() => setContactDrawerTab('deals')}
+                />
+                {linkedWazzupContact && user && (
+                  <ContactDrawerTab
+                    active={contactDrawerTab === 'whatsapp'}
+                    label="WhatsApp"
+                    onClick={() => setContactDrawerTab('whatsapp')}
+                  />
+                )}
+              </div>
+            )}
+
+            {(!editing || activeTab !== 'contacts' || contactDrawerTab === 'details') && (
             <form onSubmit={save} className="space-y-4">
               {config.fields.map(field => (
                 <FieldEditor
@@ -624,9 +971,10 @@ export default function CrmCore() {
                 </button>
               </div>
             </form>
+            )}
 
-            {activeTab === 'contacts' && editing && clinicId && (
-              <div className="border-t border-[#E5EAF2] pt-7">
+            {activeTab === 'contacts' && editing && clinicId && contactDrawerTab === 'deals' && (
+              <div>
                 <ClientDealsTab
                   clinicId={clinicId}
                   userRole={userRole}
@@ -644,10 +992,44 @@ export default function CrmCore() {
                 />
               </div>
             )}
+
+            {activeTab === 'contacts' && editing && clinicId && user && linkedWazzupContact && contactDrawerTab === 'whatsapp' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-[#E3EAF2] bg-[#F7F9FC] px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[#10264B]">Переписка Wazzup</p>
+                    <p className="mt-0.5 text-xs text-[#71829D]">Канал связан с этим контактом. Сообщения остаются внутри его карточки.</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-[#E8F8EF] px-2.5 py-1 text-xs font-semibold text-[#15803D]">Подключено</span>
+                </div>
+                <WazzupChat
+                  clinicId={clinicId}
+                  userId={user.id}
+                  userName={user.email ?? undefined}
+                  contactPhone={linkedWazzupContact.chat_id}
+                  contactName={linkedWazzupContact.name || rowTitle('contacts', editing)}
+                  chatType={linkedWazzupContact.chat_type}
+                  onDealCreate={() => setContactDrawerTab('deals')}
+                  onDealOpen={() => setContactDrawerTab('deals')}
+                />
+              </div>
+            )}
           </div>
         </Drawer>
       )}
     </PageLayout>
+  );
+}
+
+function ContactDrawerTab({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`min-w-[110px] flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${active ? 'bg-white text-[#3157DE] shadow-sm' : 'text-[#64748B] hover:bg-white/70 hover:text-[#10264B]'}`}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -722,6 +1104,30 @@ function FieldEditor({ field, value, options, onChange }: {
       />
       {field.kind === 'tags' && <p className="mt-1 text-xs text-[#8392A8]">Через запятую.</p>}
     </label>
+  );
+}
+
+function IndeterminateCheckbox({ checked, indeterminate, onChange, label }: {
+  checked: boolean;
+  indeterminate: boolean;
+  onChange: () => void;
+  label: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+
+  return (
+    <input
+      ref={inputRef}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      aria-label={label}
+      className="h-4 w-4 cursor-pointer accent-[#3157DE]"
+    />
   );
 }
 

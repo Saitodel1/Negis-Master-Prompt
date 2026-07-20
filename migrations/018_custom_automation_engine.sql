@@ -77,52 +77,75 @@ SET search_path = public
 AS $$
 DECLARE
   event_payload jsonb;
+  new_row jsonb;
+  old_row jsonb := '{}'::jsonb;
+  target_clinic_id uuid;
+  target_entity_id uuid;
+  new_stage text;
+  old_stage text;
+  new_status text;
+  old_status text;
   should_queue boolean := false;
 BEGIN
+  -- This function is shared by tables with different row shapes. Reading
+  -- optional fields through jsonb prevents PostgreSQL from resolving a field
+  -- such as NEW.stage on a leads or contacts record.
+  new_row := to_jsonb(NEW);
+  IF TG_OP <> 'INSERT' THEN
+    old_row := to_jsonb(OLD);
+  END IF;
+
+  target_clinic_id := NULLIF(new_row ->> 'clinic_id', '')::uuid;
+  target_entity_id := NULLIF(new_row ->> 'id', '')::uuid;
+  new_stage := new_row ->> 'stage';
+  old_stage := old_row ->> 'stage';
+  new_status := new_row ->> 'status';
+  old_status := old_row ->> 'status';
+
   IF TG_TABLE_NAME = 'leads' AND TG_OP = 'INSERT' THEN
-    event_payload := to_jsonb(NEW) || jsonb_build_object(
-      'owner_id', NEW.assigned_to,
-      'owner_agent_id', NEW.assigned_to
+    event_payload := new_row || jsonb_build_object(
+      'owner_id', new_row ->> 'assigned_to',
+      'owner_agent_id', new_row ->> 'assigned_to'
     );
     PERFORM public.negis_queue_automation_event(
-      NEW.clinic_id, 'lead.created', 'lead', NEW.id,
-      format('lead.created:%s', NEW.id), event_payload
+      target_clinic_id, 'lead.created', 'lead', target_entity_id,
+      format('lead.created:%s', target_entity_id), event_payload
     );
-  ELSIF TG_TABLE_NAME = 'contacts' AND TG_OP = 'INSERT' AND NEW.legacy_lead_id IS NULL THEN
-    event_payload := to_jsonb(NEW) || jsonb_build_object('owner_id', NEW.owner_agent_id);
+  ELSIF TG_TABLE_NAME = 'contacts' AND TG_OP = 'INSERT' AND new_row ->> 'legacy_lead_id' IS NULL THEN
+    event_payload := new_row || jsonb_build_object('owner_id', new_row ->> 'owner_agent_id');
     PERFORM public.negis_queue_automation_event(
-      NEW.clinic_id, 'contact.created', 'contact', NEW.id,
-      format('contact.created:%s', NEW.id), event_payload
+      target_clinic_id, 'contact.created', 'contact', target_entity_id,
+      format('contact.created:%s', target_entity_id), event_payload
     );
   ELSIF TG_TABLE_NAME = 'deals' AND TG_OP = 'UPDATE'
-    AND (NEW.stage IS DISTINCT FROM OLD.stage OR NEW.status IS DISTINCT FROM OLD.status) THEN
-    event_payload := to_jsonb(NEW) || jsonb_build_object(
-      'owner_id', NEW.owner_agent_id,
-      'old_stage', OLD.stage,
-      'new_stage', NEW.stage,
-      'old_status', OLD.status,
-      'new_status', NEW.status
+    AND (new_stage IS DISTINCT FROM old_stage OR new_status IS DISTINCT FROM old_status) THEN
+    event_payload := new_row || jsonb_build_object(
+      'owner_id', new_row ->> 'owner_agent_id',
+      'old_stage', old_stage,
+      'new_stage', new_stage,
+      'old_status', old_status,
+      'new_status', new_status
     );
     PERFORM public.negis_queue_automation_event(
-      NEW.clinic_id, 'deal.stage_changed', 'deal', NEW.id,
+      target_clinic_id, 'deal.stage_changed', 'deal', target_entity_id,
       format(
         'deal.stage_changed:%s:%s:%s:%s:%s:%s',
-        NEW.id, current_date, OLD.stage, NEW.stage, OLD.status, NEW.status
+        target_entity_id, current_date, old_stage, new_stage, old_status, new_status
       ),
       event_payload
     );
   ELSIF TG_TABLE_NAME = 'payments' THEN
     IF TG_OP = 'INSERT' THEN
-      should_queue := NEW.status = 'paid';
+      should_queue := new_status = 'paid';
     ELSE
-      should_queue := NEW.status = 'paid' AND OLD.status IS DISTINCT FROM NEW.status;
+      should_queue := new_status = 'paid' AND old_status IS DISTINCT FROM new_status;
     END IF;
 
     IF should_queue THEN
-      event_payload := to_jsonb(NEW);
+      event_payload := new_row;
       PERFORM public.negis_queue_automation_event(
-        NEW.clinic_id, 'payment.received', 'payment', NEW.id,
-        format('payment.received:%s', NEW.id), event_payload
+        target_clinic_id, 'payment.received', 'payment', target_entity_id,
+        format('payment.received:%s', target_entity_id), event_payload
       );
     END IF;
   END IF;
