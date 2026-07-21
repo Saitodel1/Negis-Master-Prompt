@@ -14,6 +14,11 @@ type Channel = {
   name?: string
 }
 type WebhookSubscription = { url?: string; event?: string }
+type HttpResponse = {
+  ok: boolean
+  status: number
+  json: () => Promise<unknown>
+}
 
 const WEBHOOK_EVENTS = [
   'message.add',
@@ -36,6 +41,10 @@ const stateSecret = process.env.WAZZUP_OAUTH_STATE_SECRET || process.env.WAZZUP_
 const credentialSecret = process.env.WAZZUP_CREDENTIALS_ENCRYPTION_KEY || process.env.WAZZUP_OAUTH_STATE_SECRET
 
 const admin = supabaseUrl && serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
+
+async function httpRequest(url: string, init?: Parameters<typeof fetch>[1]): Promise<HttpResponse> {
+  return await fetch(url, init) as unknown as HttpResponse
+}
 
 function fromBase64Url(value: string) {
   const base64 = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4)
@@ -92,7 +101,7 @@ function webhookUrl(clinicId: string) {
 }
 
 async function fetchChannels(accessToken: string) {
-  const response = await fetch('https://tech.wazzup24.com/v2/channels', {
+  const response = await httpRequest('https://tech.wazzup24.com/v2/channels', {
     headers: { Authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(15_000),
   })
@@ -127,7 +136,7 @@ async function ensureWebhookSubscriptions(clinicId: string, accessToken: string)
   const url = webhookUrl(clinicId)
   if (!url) throw new Error('WAZZUP_WEBHOOK_URL or WAZZUP_CRM_KEY is not configured')
   const headers = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
-  const listResponse = await fetch('https://tech.wazzup24.com/v2/webhooks', {
+  const listResponse = await httpRequest('https://tech.wazzup24.com/v2/webhooks', {
     headers,
     signal: AbortSignal.timeout(15_000),
   })
@@ -138,7 +147,7 @@ async function ensureWebhookSubscriptions(clinicId: string, accessToken: string)
   const missing = WEBHOOK_EVENTS.filter(event => !existing.has(event))
 
   if (missing.length > 0) {
-    const response = await fetch('https://tech.wazzup24.com/v2/webhooks', {
+    const response = await httpRequest('https://tech.wazzup24.com/v2/webhooks', {
       method: 'POST',
       headers,
       body: JSON.stringify({ data: missing.map(event => ({ url, event })) }),
@@ -171,9 +180,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .maybeSingle()
   if (!membership) return redirect(res, req, 'oauth-forbidden')
 
-  let tokenResponse: Response
+  let tokenResponse: HttpResponse
   try {
-    tokenResponse = await fetch('https://tech.wazzup24.com/v2/oauth/token', {
+    tokenResponse = await httpRequest('https://tech.wazzup24.com/v2/oauth/token', {
       method: 'POST',
       headers: {
         Authorization: `Basic ${Buffer.from(`${partnerEmail}:${partnerPassword}`).toString('base64')}`,
