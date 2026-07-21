@@ -1,123 +1,102 @@
-# Wazzup integration setup
+# Wazzup Label integration
 
-## 0. Partner link for Marketplace
+Each organization connects its own Wazzup account from Negis Marketplace. Tokens and channels are isolated by `clinic_id`; no Wazzup credential is exposed to the browser.
 
-Add your Wazzup partner/referral URL to the frontend environment:
+## 1. Callback allowlist
 
-```powershell
-VITE_WAZZUP_PARTNER_URL="https://wazzup24.ru/?utm_p=5sFySX"
+The Wazzup partner account must allow this exact redirect URI:
+
+```text
+https://crm.negis.online/api/integrations/wazzup/oauth/callback
 ```
 
-When this variable is set, the Wazzup card in `Маркет` opens the partner link from the `Подключить` button.
+## 2. Apply database migrations
 
-Development client id received from Wazzup:
+Apply these migrations in order:
 
-```powershell
-VITE_WAZZUP_CLIENT_ID="a287e21e-b169-4c28-9470-9846a13fede2"
+```text
+migrations/014_external_integrations.sql
+migrations/020_wazzup_crm_intake.sql
+migrations/021_fix_wazzup_crm_intake_ambiguity.sql
+migrations/024_wazzup_attachments.sql
+migrations/025_wazzup_oauth_lifecycle.sql
+migrations/026_wazzup_refresh_schedule.sql
 ```
 
-This id is not enough for production OAuth by itself. Use it only when Wazzup provides the full partner/OAuth flow: redirect URI, client secret, and token exchange rules.
-
-## 0.1. Ready without Wazzup API key
-
-These parts can work before Wazzup gives the production API key:
-
-- `Маркет` opens the Wazzup partner link from the `Подключить` button.
-- Vercel webhook `/api/leads/webhook/{clinicId}` can receive leads from forms, bots, ads, or automation tools.
-- The webhook puts leads into the `booking` pipeline by default and fills the default status automatically.
-- The Sales client card already has the `WhatsApp` tab and shows a friendly "API key is still needed" state until `WAZZUP_API_KEY` is configured.
-
-Lead webhook example:
-
-```bash
-curl -X POST "https://crm.negis.online/api/leads/webhook/<clinic_id>" \
-  -H "Content-Type: application/json" \
-  -d '{"full_name":"Laura","phone":"+77000000000","source":"wazzup-partner","pipeline":"booking"}'
-```
-
-Use `"pipeline":"sales"` only when the lead must go directly into `Клиенты`.
-
-## 1. Apply database migration
-
-Run `supabase/migrations/20260612_wazzup.sql` in Supabase SQL Editor.
-
-After that, bind the Wazzup channel to a clinic:
+Migration `026` expects two encrypted Supabase Vault secrets:
 
 ```sql
-insert into wz_channels (clinic_id, channel_id, chat_type, name)
-values ('<clinic_id>', '<wazzup_channel_id>', 'whatsapp', 'Main WhatsApp')
-on conflict (channel_id) do update set
-  clinic_id = excluded.clinic_id,
-  chat_type = excluded.chat_type,
-  name = excluded.name,
-  is_active = true,
-  updated_at = now();
+select vault.create_secret('https://YOUR_PROJECT_REF.supabase.co', 'project_url');
+select vault.create_secret('YOUR_SERVICE_ROLE_KEY', 'service_role_key');
 ```
 
-For a single-clinic setup you can also set `WAZZUP_DEFAULT_CLINIC_ID` as a Supabase secret.
+The scheduled job runs every minute. The refresh RPC only claims access tokens inside Wazzup's final three-minute refresh window.
 
-## 2. Set Supabase secrets
+## 3. Vercel environment
 
-These secrets are safe to configure now:
+```text
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+WAZZUP_OAUTH_CLIENT_ID
+WAZZUP_OAUTH_REDIRECT_URI
+WAZZUP_OAUTH_STATE_SECRET
+WAZZUP_CREDENTIALS_ENCRYPTION_KEY
+WAZZUP_PARTNER_EMAIL
+WAZZUP_PARTNER_PASSWORD
+WAZZUP_CRM_KEY
+WAZZUP_OAUTH_CRM_KEY
+WAZZUP_REFRESH_SECRET
+```
+
+Use the callback URI from section 1 as `WAZZUP_OAUTH_REDIRECT_URI`. Use separate random values for the state and credential encryption secrets.
+
+`WAZZUP_WEBHOOK_URL` is optional. Without it, the OAuth callback uses the current Supabase project URL and `/functions/v1/wazzup-webhook`.
+
+## 4. Supabase Edge Function secrets
+
+Set the same server-side Wazzup values for Edge Functions:
+
+```text
+WAZZUP_OAUTH_CLIENT_ID
+WAZZUP_OAUTH_STATE_SECRET
+WAZZUP_CREDENTIALS_ENCRYPTION_KEY
+WAZZUP_PARTNER_EMAIL
+WAZZUP_PARTNER_PASSWORD
+WAZZUP_CRM_KEY
+WAZZUP_OAUTH_CRM_KEY
+WAZZUP_REFRESH_SECRET
+```
+
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are normally provided by Supabase at runtime.
+
+## 5. Deploy Edge Functions
 
 ```powershell
-npx supabase secrets set WAZZUP_CRM_KEY="<random_webhook_secret>" --project-ref dhsiloxpqwshlezgbodc
-npx supabase secrets set WAZZUP_DEFAULT_CLINIC_ID="<clinic_id>" --project-ref dhsiloxpqwshlezgbodc
+npx supabase functions deploy wazzup-iframe-url --project-ref YOUR_PROJECT_REF
+npx supabase functions deploy wazzup-send --project-ref YOUR_PROJECT_REF
+npx supabase functions deploy wazzup-refresh --project-ref YOUR_PROJECT_REF
+npx supabase functions deploy wazzup-webhook --no-verify-jwt --project-ref YOUR_PROJECT_REF
 ```
 
-Configure this one only after Wazzup gives the production API key:
+Only the external Wazzup webhook is deployed without JWT verification. It validates `WAZZUP_CRM_KEY` itself. User-facing functions require a valid Supabase session; the refresh function requires the service-role bearer token.
 
-```powershell
-npx supabase secrets set WAZZUP_API_KEY="<wazzup_api_key>" --project-ref dhsiloxpqwshlezgbodc
-```
+## 6. Customer flow
 
-`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are required by Edge Functions. Supabase usually provides them in the function runtime, but set them manually if your project requires it.
+1. An organization owner or manager clicks `Подключить` on the Wazzup card.
+2. Negis starts OAuth with PKCE and an encrypted, expiring state bound to the current organization.
+3. Wazzup returns access and refresh tokens to the Vercel callback.
+4. Negis encrypts the tokens, subscribes that organization to Label webhooks and loads its channels.
+5. If no active WhatsApp channel exists, Negis opens Wazzup's channel iframe so the customer can scan the QR code.
+6. The integration becomes `Подключено` only after an active channel and webhook subscription are confirmed.
+7. Incoming messages create or match a contact using the normalized phone number and remain inside that organization's client card.
 
-## 3. Deploy Edge Functions
+## 7. Verification
 
-```powershell
-npx supabase functions deploy wazzup-iframe-url --project-ref dhsiloxpqwshlezgbodc
-npx supabase functions deploy wazzup-send --project-ref dhsiloxpqwshlezgbodc
-npx supabase functions deploy wazzup-webhook --no-verify-jwt --project-ref dhsiloxpqwshlezgbodc
-```
+Check all of these before calling the connection complete:
 
-`wazzup-webhook` must be deployed with `--no-verify-jwt`, because Wazzup is an external service and does not send a Supabase Auth JWT. The function checks `WAZZUP_CRM_KEY` by itself.
-
-## 4. Register Wazzup webhook
-
-This step requires `WAZZUP_API_KEY`, so do it only after the API key is issued.
-
-Use the same `WAZZUP_CRM_KEY` in the webhook URL query string:
-
-```powershell
-$apiKey = "<wazzup_api_key>"
-$crmKey = "<random_webhook_secret>"
-$projectRef = "dhsiloxpqwshlezgbodc"
-$uri = "https://$projectRef.supabase.co/functions/v1/wazzup-webhook?key=$crmKey"
-
-Invoke-RestMethod `
-  -Method Patch `
-  -Uri "https://api.wazzup24.com/v3/webhooks" `
-  -Headers @{ Authorization = "Bearer $apiKey"; "Content-Type" = "application/json" } `
-  -Body (@{
-    webhooksUri = $uri
-    subscriptions = @{
-      messagesAndStatuses = $true
-      contactsAndDealsCreation = $true
-      channelsUpdates = $false
-      templateStatus = $false
-    }
-  } | ConvertTo-Json -Depth 5)
-```
-
-Wazzup sends a test POST `{ "test": true }`; the function returns `200 OK`.
-
-## 5. Frontend
-
-The Sales client card has a `WhatsApp` tab. It calls `wazzup-iframe-url` and renders Wazzup iFrame with:
-
-```tsx
-allow="microphone *; clipboard-write *"
-```
-
-The Wazzup API key is never exposed to the browser.
+- `wazzup_connections.verified_at` is not null;
+- `clinic_integrations.status = 'connected'` for `integration_id = 'wazzup'`;
+- at least one `wz_channels.is_active = true` exists for the organization;
+- a test incoming message appears in `wz_messages` and in the matched client card;
+- a text message and an attachment can be sent from Negis;
+- the cron job `negis-wazzup-token-refresh` exists in `cron.job`.

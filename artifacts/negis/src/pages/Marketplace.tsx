@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { fetchWazzupChannelSetupUrl } from '@/lib/wazzup';
 import { toast } from 'sonner';
 import {
   Bot,
@@ -469,6 +470,24 @@ export default function Marketplace() {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<MarketplaceItem | null>(null);
   const [integrationStatuses, setIntegrationStatuses] = useState<Record<string, Status>>({});
+  const [channelSetupUrl, setChannelSetupUrl] = useState<string | null>(null);
+  const [channelSetupLoading, setChannelSetupLoading] = useState(false);
+  const [needsWazzupChannel, setNeedsWazzupChannel] = useState(false);
+
+  async function openWazzupChannelSetup() {
+    if (!clinicId || channelSetupLoading) return;
+    setSelected(null);
+    setChannelSetupLoading(true);
+    try {
+      const url = await fetchWazzupChannelSetupUrl({ clinicId, transport: 'whatsapp' });
+      setChannelSetupUrl(url);
+      setNeedsWazzupChannel(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Не удалось открыть подключение канала Wazzup.');
+    } finally {
+      setChannelSetupLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!clinicId) return;
@@ -511,15 +530,42 @@ export default function Marketplace() {
     if (!result) return;
     const messages: Record<string, string> = {
       connected: 'Wazzup подключён. Каналы доступны в CRM.',
-      'channel-required': 'Авторизация завершена. Добавьте активный канал в Wazzup и повторите проверку.',
+      'channel-required': 'Авторизация завершена. Теперь подключите номер WhatsApp.',
+      'channel-sync-failed': 'Wazzup авторизован, но Negis не смог получить список каналов.',
+      'webhook-required': 'Wazzup авторизован, но подписка на новые сообщения не настроилась.',
       'oauth-cancelled': 'Подключение Wazzup отменено.',
       'oauth-forbidden': 'Подключать Wazzup может только владелец или руководитель.',
     };
     const message = messages[result] || 'Не удалось завершить подключение Wazzup.';
     if (result === 'connected') toast.success(message);
-    else toast.error(message);
+    else if (result === 'channel-required') {
+      toast.info(message);
+      setNeedsWazzupChannel(true);
+    } else toast.error(message);
     window.history.replaceState({}, document.title, window.location.pathname);
   }, []);
+
+  useEffect(() => {
+    if (needsWazzupChannel && clinicId) void openWazzupChannelSetup();
+  }, [clinicId, needsWazzupChannel]);
+
+  useEffect(() => {
+    if (!channelSetupUrl || !clinicId) return;
+    const timer = window.setInterval(async () => {
+      const { data } = await supabase
+        .from('clinic_integrations')
+        .select('status,verified_at')
+        .eq('clinic_id', clinicId)
+        .eq('integration_id', 'wazzup')
+        .maybeSingle();
+      if (data?.status === 'connected' && data.verified_at) {
+        setIntegrationStatuses(current => ({ ...current, wazzup: 'connected' }));
+        setChannelSetupUrl(null);
+        toast.success('Канал WhatsApp подключён к Negis.');
+      }
+    }, 4_000);
+    return () => window.clearInterval(timer);
+  }, [channelSetupUrl, clinicId]);
 
   const withConnection = (item: MarketplaceItem): MarketplaceItem => {
     const status = integrationStatuses[item.id];
@@ -553,7 +599,11 @@ export default function Marketplace() {
       toast.info('Интеграция ещё готовится. Не будем рисовать кнопку, которая ничего не делает.');
       return;
     }
-    if (item.status === 'connected' || item.status === 'pending') return;
+    if (item.status === 'connected') return;
+    if (item.status === 'pending') {
+      if (item.id === 'wazzup') await openWazzupChannelSetup();
+      return;
+    }
     if (NEGIS_MODULES.has(item.id)) {
       await requestNegisModule(item);
       return;
@@ -571,7 +621,11 @@ export default function Marketplace() {
     try {
       const response = await fetch('/api/integrations/wazzup/oauth/start', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ clinicId }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.authorizeUrl) throw new Error(payload.error || 'OAuth недоступен');
@@ -702,6 +756,30 @@ export default function Marketplace() {
       </div>
 
       {selected && <IntegrationModal item={selected} onClose={() => setSelected(null)} onConnect={() => void startConnection(selected)} />}
+      {channelSetupUrl && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/25 p-4 backdrop-blur-sm"
+          onClick={event => { if (event.target === event.currentTarget) setChannelSetupUrl(null); }}
+        >
+          <div className="flex h-[min(760px,92vh)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-[#DDE7F0] bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#E7ECF3] px-6 py-4">
+              <div>
+                <h3 className="text-lg font-black text-[#0B1220]">Подключение WhatsApp</h3>
+                <p className="mt-1 text-sm text-[#64748B]">Отсканируйте QR-код своим номером WhatsApp.</p>
+              </div>
+              <button type="button" className="neu-icon-btn h-9 w-9" onClick={() => setChannelSetupUrl(null)} aria-label="Закрыть">
+                <X size={16} />
+              </button>
+            </div>
+            <iframe
+              title="Подключение канала Wazzup"
+              src={channelSetupUrl}
+              className="min-h-0 flex-1 border-0 bg-white"
+              allow="camera; microphone"
+            />
+          </div>
+        </div>
+      )}
     </PageLayout>
   );
 }
@@ -717,7 +795,7 @@ function Metric({ value, label }: { value: number; label: string }) {
 
 function IntegrationCard({ item, onOpen, onConnect }: { item: MarketplaceItem; onOpen: () => void; onConnect: () => void }) {
   const canConnect = item.id === 'wazzup' || NEGIS_MODULES.has(item.id);
-  const inactive = item.status === 'soon' || item.status === 'connected' || item.status === 'pending' || !canConnect;
+  const inactive = item.status === 'soon' || item.status === 'connected' || (item.status === 'pending' && item.id !== 'wazzup') || !canConnect;
   return (
     <article className="rounded-[24px] border border-[#DDE7F0] bg-white/78 p-5 shadow-[8px_12px_28px_rgba(116,135,154,0.10)] transition hover:-translate-y-0.5 hover:shadow-[10px_18px_34px_rgba(116,135,154,0.16)]">
       <div className="flex items-start justify-between gap-3">
@@ -807,7 +885,7 @@ function BrandLogo({ item }: { item: MarketplaceItem }) {
 
 function IntegrationModal({ item, onClose, onConnect }: { item: MarketplaceItem; onClose: () => void; onConnect: () => void }) {
   const canConnect = item.id === 'wazzup' || NEGIS_MODULES.has(item.id);
-  const inactive = item.status === 'soon' || item.status === 'connected' || item.status === 'pending' || !canConnect;
+  const inactive = item.status === 'soon' || item.status === 'connected' || (item.status === 'pending' && item.id !== 'wazzup') || !canConnect;
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/25 p-4 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-[#DDE7F0] bg-white shadow-2xl">
@@ -886,7 +964,7 @@ function connectionLabel(status: Status) {
 
 function connectionButtonLabel(item: MarketplaceItem, canConnect: boolean) {
   if (item.status === 'connected') return 'Подключено';
-  if (item.status === 'pending') return 'Настраивается';
+  if (item.status === 'pending') return item.id === 'wazzup' ? 'Подключить канал' : 'Настраивается';
   if (item.status === 'soon' || !canConnect) return 'Скоро';
   return 'Подключить';
 }

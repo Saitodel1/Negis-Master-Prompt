@@ -1,6 +1,6 @@
 import { assertClinicAccess, requireUser } from '../_shared/auth.ts';
 import { handleOptions, jsonResponse } from '../_shared/cors.ts';
-import { normalizeChatId, wazzupFetch } from '../_shared/wazzup.ts';
+import { normalizeChatId, wazzupFetch, wazzupTechFetch } from '../_shared/wazzup.ts';
 
 Deno.serve(async req => {
   const options = handleOptions(req);
@@ -15,9 +15,33 @@ Deno.serve(async req => {
     const chatId = normalizeChatId(body.contactPhone || body.chatId);
     const contactName = String(body.contactName || chatId);
     const scope = body.scope === 'global' ? 'global' : 'card';
+    const purpose = body.purpose === 'channel' ? 'channel' : 'chat';
 
     if (!clinicId) return jsonResponse({ error: 'clinicId is required' }, { status: 400 });
     await assertClinicAccess(supabase, user.id, clinicId);
+
+    if (purpose === 'channel') {
+      const { data: managerRole, error: roleError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('clinic_id', clinicId)
+        .eq('user_id', user.id)
+        .in('role', ['owner', 'manager'])
+        .maybeSingle();
+      if (roleError) throw roleError;
+      if (!managerRole) return jsonResponse({ error: 'Only an owner or manager can connect a Wazzup channel' }, { status: 403 });
+
+      const transport = String(body.transport || 'whatsapp');
+      const options: Record<string, string> = { transport };
+      if (body.channelId) options.channel_id = String(body.channelId);
+      const data = await wazzupTechFetch(clinicId, '/iframe-links/channels', {
+        method: 'POST',
+        body: JSON.stringify({ options }),
+      });
+      const url = data?.data?.link || data?.link;
+      if (!url) return jsonResponse({ error: 'Wazzup channel setup URL is missing', data }, { status: 502 });
+      return jsonResponse({ url });
+    }
 
     if (scope === 'card' && !chatId) {
       return jsonResponse({ error: 'contactPhone/chatId is required' }, { status: 400 });
@@ -41,7 +65,7 @@ Deno.serve(async req => {
       payload.activeChat = { chatType, chatId };
     }
 
-    const data = await wazzupFetch('/iframe', {
+    const data = await wazzupFetch(clinicId, '/iframe', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

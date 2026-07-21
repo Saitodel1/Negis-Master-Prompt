@@ -61,19 +61,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const user = await userResponse.json().catch(() => null) as { id?: string } | null
   if (!userResponse.ok || !user?.id) return res.status(401).json({ error: 'Session is invalid' })
 
+  const requestedClinicId = typeof req.body?.clinicId === 'string' ? req.body.clinicId : ''
+  if (!requestedClinicId) return res.status(400).json({ error: 'clinicId is required' })
+
   const { data: membership } = await admin
     .from('user_roles')
     .select('clinic_id,role')
+    .eq('clinic_id', requestedClinicId)
     .eq('user_id', user.id)
     .in('role', ['owner', 'manager'])
-    .limit(1)
     .maybeSingle()
   if (!membership?.clinic_id) return res.status(403).json({ error: 'Only an owner or manager can connect Wazzup' })
 
   const codeVerifier = toBase64Url(randomBytes(64))
   const codeChallenge = toBase64Url(createHash('sha256').update(codeVerifier).digest())
   const state = encryptState({
-    clinicId: membership.clinic_id,
+    clinicId: requestedClinicId,
     userId: user.id,
     codeVerifier,
     expiresAt: Date.now() + 10 * 60 * 1000,

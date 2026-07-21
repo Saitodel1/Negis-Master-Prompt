@@ -77,10 +77,23 @@ export interface WazzupIframeUrlRequest {
   scope?: 'card' | 'global';
 }
 
+export interface WazzupChannelSetupRequest {
+  clinicId: string;
+  transport?: 'whatsapp' | 'telegram';
+  channelId?: string;
+}
+
 export interface WazzupSendMessageRequest {
   clinicId: string;
   channelId: string;
   chatId: string;
   chatType?: WazzupChatType;
-  text: string;
+  text?: string;
+  attachment?: {
+    storagePath: string;
+    fileName: string;
+    mimeType: string;
+    fileSize: number;
+    messageType: Extract<WazzupMessageType, 'image' | 'audio' | 'video' | 'document'>;
+  };
 }
