@@ -3,6 +3,11 @@ import { createDecipheriv, createHash } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 
 type AuthUserResponse = { ok: boolean; json(): Promise<unknown> }
+type HttpResponse = {
+  ok: boolean
+  status: number
+  json(): Promise<unknown>
+}
 type StoredConnection = {
   api_key_ciphertext: string | null
   api_key_iv: string | null
@@ -70,7 +75,7 @@ async function removeWazzupWebhooks(connection: StoredConnection) {
   const listResponse = await fetch('https://tech.wazzup24.com/v2/webhooks', {
     headers,
     signal: AbortSignal.timeout(15_000),
-  })
+  }) as unknown as HttpResponse
   if (!listResponse.ok) return `Wazzup webhook list returned ${listResponse.status}`
 
   const payload = await listResponse.json().catch(() => ({})) as { data?: WazzupWebhook[] }
@@ -85,7 +90,7 @@ async function removeWazzupWebhooks(connection: StoredConnection) {
     headers,
     body: JSON.stringify({ data: subscriptions }),
     signal: AbortSignal.timeout(15_000),
-  })
+  }) as unknown as HttpResponse
   return deleteResponse.ok ? null : `Wazzup webhook delete returned ${deleteResponse.status}`
 }
 
