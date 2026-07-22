@@ -1,15 +1,23 @@
 import { adminClient, bearerToken } from '../_shared/auth.ts';
 import { handleOptions, jsonResponse } from '../_shared/cors.ts';
 import { wazzupTechFetch } from '../_shared/wazzup.ts';
+import {
+  cleanWazzupContactName,
+  isPhoneLikeContactName,
+  WAZZUP_FALLBACK_CONTACT_NAME,
+} from '../_shared/wazzup-contact.ts';
 
 type AdminClient = ReturnType<typeof adminClient>;
+
+const ATTACHMENT_BUCKET = 'wazzup-attachments';
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 
 type NormalizedMessage = {
   messageId: string;
   channelId: string;
   chatType: string;
   chatId: string;
-  contactName: string;
+  contactName: string | null;
   contactPhone: string | null;
   avatarUri: string | null;
   text: string | null;
@@ -28,22 +36,19 @@ type NormalizedMessage = {
 };
 
 function webhookKeyMatches(req: Request) {
-  const expected = [
-    Deno.env.get('WAZZUP_CRM_KEY'),
-    Deno.env.get('WAZZUP_OAUTH_CRM_KEY'),
-  ].filter((value): value is string => Boolean(value));
-  if (expected.length === 0) return false;
+  const expected = Deno.env.get('WAZZUP_OAUTH_CRM_KEY');
+  if (!expected) return false;
   const url = new URL(req.url);
   const provided = [
     bearerToken(req),
     req.headers.get('x-wazzup-crm-key'),
     url.searchParams.get('key'),
   ].filter((value): value is string => Boolean(value));
-  return provided.some(value => expected.includes(value));
+  return provided.includes(expected);
 }
 
 function fallbackClinicId(req: Request) {
-  return new URL(req.url).searchParams.get('clinic_id') || Deno.env.get('WAZZUP_DEFAULT_CLINIC_ID') || null;
+  return new URL(req.url).searchParams.get('clinic_id');
 }
 
 async function clinicIdForChannel(supabase: AdminClient, channelId: string, fallback: string | null) {
@@ -85,32 +90,89 @@ function messageType(mimeType: string | null, explicitType?: unknown) {
   return mimeType ? 'document' : 'text';
 }
 
-function normalizeLegacyMessage(message: any): NormalizedMessage {
-  const attachment = message.attachment || {};
-  const mimeType = attachment.mimetype || message.mimeType || null;
-  const chatId = String(message.chatId || '');
-  return {
-    messageId: String(message.messageId || ''),
-    channelId: String(message.channelId || ''),
-    chatType: String(message.chatType || 'whatsapp'),
-    chatId,
-    contactName: String(message.contact?.name || message.contact?.phone || chatId),
-    contactPhone: message.contact?.phone || null,
-    avatarUri: message.contact?.avatarUri || null,
-    text: message.text || null,
-    contentUri: message.contentUri || attachment.url || null,
-    fileName: message.fileName || attachment.name || null,
-    mimeType,
-    fileSize: Number(message.fileSize || attachment.size) || null,
-    messageType: messageType(mimeType, message.type),
-    isEcho: Boolean(message.isEcho),
-    status: message.status || (message.isEcho ? 'sent' : 'inbound'),
-    authorId: message.authorId || null,
-    authorName: message.authorName || null,
-    error: message.error || null,
-    createdAt: timestampToIso(message.dateTime),
-    rawPayload: message,
+function safeStorageSegment(value: string) {
+  return value
+    .normalize('NFKD')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .slice(-180) || 'attachment';
+}
+
+function extensionForMimeType(mimeType: string | null) {
+  const normalized = mimeType?.split(';', 1)[0]?.trim().toLowerCase();
+  const extensions: Record<string, string> = {
+    'audio/aac': '.aac',
+    'audio/m4a': '.m4a',
+    'audio/mp4': '.m4a',
+    'audio/mpeg': '.mp3',
+    'audio/ogg': '.ogg',
+    'audio/opus': '.opus',
+    'audio/webm': '.webm',
+    'image/gif': '.gif',
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'video/mp4': '.mp4',
+    'video/webm': '.webm',
   };
+  return normalized ? extensions[normalized] || '' : '';
+}
+
+async function archiveIncomingAttachment(
+  supabase: AdminClient,
+  clinicId: string,
+  message: NormalizedMessage,
+) {
+  if (!message.contentUri || message.isEcho || message.messageType === 'text') return null;
+
+  let sourceUrl: URL;
+  try {
+    sourceUrl = new URL(message.contentUri);
+  } catch {
+    return 'attachment URL is invalid';
+  }
+  if (sourceUrl.protocol !== 'https:') return 'attachment URL must use HTTPS';
+
+  try {
+    const response = await fetch(sourceUrl, { redirect: 'follow' });
+    if (!response.ok) return `attachment download failed with HTTP ${response.status}`;
+
+    const declaredSize = Number(response.headers.get('content-length') || message.fileSize || 0);
+    if (declaredSize > MAX_ATTACHMENT_SIZE) return 'attachment exceeds the 10 MB limit';
+
+    const content = await response.arrayBuffer();
+    if (content.byteLength <= 0) return 'attachment is empty';
+    if (content.byteLength > MAX_ATTACHMENT_SIZE) return 'attachment exceeds the 10 MB limit';
+
+    const mimeType = message.mimeType || response.headers.get('content-type')?.split(';', 1)[0] || 'application/octet-stream';
+    const fallbackName = `${message.messageType}-${message.messageId}${extensionForMimeType(mimeType)}`;
+    const fileName = safeStorageSegment(message.fileName || fallbackName);
+    const storagePath = [
+      safeStorageSegment(clinicId),
+      safeStorageSegment(message.chatType),
+      safeStorageSegment(message.chatId),
+      `${safeStorageSegment(message.messageId)}-${fileName}`,
+    ].join('/');
+
+    const { error: uploadError } = await supabase.storage
+      .from(ATTACHMENT_BUCKET)
+      .upload(storagePath, content, { contentType: mimeType, upsert: true });
+    if (uploadError) return `attachment upload failed: ${uploadError.message}`;
+
+    const { error: updateError } = await supabase
+      .from('wz_messages')
+      .update({
+        storage_path: storagePath,
+        file_name: message.fileName || fileName,
+        mime_type: mimeType,
+        file_size: content.byteLength,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('message_id', message.messageId);
+    return updateError ? `attachment metadata update failed: ${updateError.message}` : null;
+  } catch (cause) {
+    return cause instanceof Error ? `attachment archive failed: ${cause.message}` : 'attachment archive failed';
+  }
 }
 
 function normalizeLabelMessage(message: any): NormalizedMessage {
@@ -119,14 +181,22 @@ function normalizeLabelMessage(message: any): NormalizedMessage {
   const attachment = message.attachment || {};
   const mimeType = attachment.mimetype || null;
   const chatId = String(recipient.chat_id || message.chat_id || recipient.phone || '');
+  const chatType = String(recipient.chat_type || message.chat_type || 'whatsapp');
+  const contactPhone = recipient.phone || (['whatsapp', 'whatsgroup'].includes(chatType) ? chatId : null);
+  const contactName = cleanWazzupContactName([
+    recipient.name,
+    recipient.crm_contact_name,
+    message.contact_name,
+    message.contactName,
+  ], [contactPhone, chatId]);
   const isEcho = message.direction === 'outbound';
   return {
     messageId: String(message.message_id || ''),
     channelId: String(message.channel_id || ''),
-    chatType: String(recipient.chat_type || message.chat_type || 'whatsapp'),
+    chatType,
     chatId,
-    contactName: String(recipient.name || recipient.phone || chatId),
-    contactPhone: recipient.phone || null,
+    contactName,
+    contactPhone,
     avatarUri: recipient.avatar || recipient.avatar_uri || null,
     text: message.text || null,
     contentUri: attachment.url || null,
@@ -144,6 +214,85 @@ function normalizeLabelMessage(message: any): NormalizedMessage {
   };
 }
 
+async function applyProfileNameToCrm(
+  supabase: AdminClient,
+  clinicId: string,
+  wzContactId: string,
+  chatType: string,
+  chatId: string,
+  phone: string | null,
+  profileName: string | null,
+  crmLink: any,
+) {
+  if (!profileName) return;
+
+  const [contactUpdate, messageUpdate] = await Promise.all([
+    supabase
+      .from('wz_contacts')
+      .update({ name: profileName, updated_at: new Date().toISOString() })
+      .eq('id', wzContactId)
+      .eq('clinic_id', clinicId),
+    supabase
+      .from('wz_messages')
+      .update({ contact_name: profileName, updated_at: new Date().toISOString() })
+      .eq('clinic_id', clinicId)
+      .eq('chat_type', chatType)
+      .eq('chat_id', chatId),
+  ]);
+  if (contactUpdate.error) throw contactUpdate.error;
+  if (messageUpdate.error) throw messageUpdate.error;
+
+  const contactId = crmLink?.contact_id ? String(crmLink.contact_id) : '';
+  if (!contactId) return;
+
+  const { data: crmContact, error: contactError } = await supabase
+    .from('contacts')
+    .select('first_name, phone')
+    .eq('id', contactId)
+    .eq('clinic_id', clinicId)
+    .maybeSingle();
+  if (contactError) throw contactError;
+
+  const currentName = String(crmContact?.first_name || '').trim();
+  const shouldReplace = !currentName
+    || currentName === 'Без имени'
+    || currentName === WAZZUP_FALLBACK_CONTACT_NAME
+    || isPhoneLikeContactName(currentName, [crmContact?.phone, phone, chatId]);
+
+  if (shouldReplace && currentName !== profileName) {
+    const { error } = await supabase
+      .from('contacts')
+      .update({ first_name: profileName, updated_at: new Date().toISOString() })
+      .eq('id', contactId)
+      .eq('clinic_id', clinicId);
+    if (error) throw error;
+  }
+
+  const dealId = crmLink?.deal_id ? String(crmLink.deal_id) : '';
+  if (!dealId) return;
+
+  const { data: deal, error: dealError } = await supabase
+    .from('deals')
+    .select('title, source')
+    .eq('id', dealId)
+    .eq('clinic_id', clinicId)
+    .maybeSingle();
+  if (dealError) throw dealError;
+
+  const title = String(deal?.title || '').trim();
+  const titleBase = title.replace(/\s+[—-]\s+Wazzup$/i, '').trim();
+  const placeholderTitle = deal?.source === 'Wazzup'
+    && (titleBase === WAZZUP_FALLBACK_CONTACT_NAME || isPhoneLikeContactName(titleBase, [phone, chatId]));
+  if (placeholderTitle) {
+    const { error } = await supabase
+      .from('deals')
+      .update({ title: `${profileName} — Wazzup`, updated_at: new Date().toISOString() })
+      .eq('id', dealId)
+      .eq('clinic_id', clinicId);
+    if (error) throw error;
+  }
+}
+
 async function saveMessage(supabase: AdminClient, message: NormalizedMessage, fallback: string | null) {
   if (!message.messageId || !message.channelId || !message.chatId) {
     return { saved: false as const, reason: 'missing messageId/channelId/chatId' };
@@ -153,16 +302,18 @@ async function saveMessage(supabase: AdminClient, message: NormalizedMessage, fa
   if (!clinicId) return { saved: false as const, reason: 'workspace not resolved for channelId' };
 
   const now = new Date().toISOString();
+  const contactPayload: Record<string, unknown> = {
+    clinic_id: clinicId,
+    chat_type: message.chatType,
+    chat_id: message.chatId,
+    updated_at: now,
+  };
+  if (message.contactName) contactPayload.name = message.contactName;
+  if (message.avatarUri) contactPayload.avatar_uri = message.avatarUri;
+
   const { data: contact, error: contactError } = await supabase
     .from('wz_contacts')
-    .upsert({
-      clinic_id: clinicId,
-      chat_type: message.chatType,
-      chat_id: message.chatId,
-      name: message.contactName,
-      avatar_uri: message.avatarUri,
-      updated_at: now,
-    }, { onConflict: 'clinic_id,chat_type,chat_id' })
+    .upsert(contactPayload, { onConflict: 'clinic_id,chat_type,chat_id' })
     .select('id, contact_id, deal_id')
     .single();
 
@@ -198,6 +349,8 @@ async function saveMessage(supabase: AdminClient, message: NormalizedMessage, fa
 
   if (messageError) return { saved: false as const, reason: messageError.message };
 
+  const archiveError = await archiveIncomingAttachment(supabase, clinicId, message);
+
   let crmLink: any = null;
   let crmError: string | null = null;
   if (!message.isEcho) {
@@ -206,14 +359,98 @@ async function saveMessage(supabase: AdminClient, message: NormalizedMessage, fa
       target_wz_contact_id: contact.id,
       target_chat_type: message.chatType,
       target_chat_id: message.chatId,
-      target_name: message.contactName,
+      target_name: message.contactName || WAZZUP_FALLBACK_CONTACT_NAME,
       target_phone: message.contactPhone,
     });
     crmLink = result.data;
     crmError = result.error?.message || null;
+    if (!crmError) {
+      await applyProfileNameToCrm(
+        supabase,
+        clinicId,
+        contact.id,
+        message.chatType,
+        message.chatId,
+        message.contactPhone,
+        message.contactName,
+        crmLink,
+      );
+    }
   }
 
-  return { saved: true as const, clinicId, crmLink, crmError };
+  return { saved: true as const, clinicId, crmLink, crmError, archiveError };
+}
+
+function normalizeContactRecipients(value: unknown) {
+  const recipients = Array.isArray(value) ? value : value ? [value] : [];
+  return recipients
+    .filter(recipient => recipient && typeof recipient === 'object')
+    .map((recipient: any) => ({
+      chat_type: String(recipient.chat_type || 'whatsapp'),
+      chat_id: String(recipient.chat_id || recipient.phone || recipient.username || ''),
+      username: recipient.username ? String(recipient.username) : '',
+      phone: recipient.phone ? String(recipient.phone) : '',
+    }))
+    .filter(recipient => recipient.chat_id);
+}
+
+async function saveRequestedContact(supabase: AdminClient, item: any, clinicId: string) {
+  const recipients = normalizeContactRecipients(item?.recipient);
+  const primary = recipients[0];
+  if (!primary) throw new Error('Wazzup contact does not contain a recipient');
+
+  const phone = primary.phone || (['whatsapp', 'whatsgroup'].includes(primary.chat_type) ? primary.chat_id : '');
+  const profileName = cleanWazzupContactName([item?.name], [phone, primary.chat_id]);
+  const now = new Date().toISOString();
+  const contactPayload: Record<string, unknown> = {
+    clinic_id: clinicId,
+    chat_type: primary.chat_type,
+    chat_id: primary.chat_id,
+    updated_at: now,
+  };
+  if (profileName) contactPayload.name = profileName;
+
+  const { data: wzContact, error: contactError } = await supabase
+    .from('wz_contacts')
+    .upsert(contactPayload, { onConflict: 'clinic_id,chat_type,chat_id' })
+    .select('id, contact_id, deal_id')
+    .single();
+  if (contactError || !wzContact?.id) {
+    throw contactError || new Error('Wazzup contact was not saved');
+  }
+
+  const { data: crmLink, error: crmError } = await supabase.rpc('negis_ingest_wazzup_contact', {
+    target_clinic_id: clinicId,
+    target_wz_contact_id: wzContact.id,
+    target_chat_type: primary.chat_type,
+    target_chat_id: primary.chat_id,
+    target_name: profileName || WAZZUP_FALLBACK_CONTACT_NAME,
+    target_phone: phone || null,
+  });
+  if (crmError) throw crmError;
+
+  await applyProfileNameToCrm(
+    supabase,
+    clinicId,
+    wzContact.id,
+    primary.chat_type,
+    primary.chat_id,
+    phone || null,
+    profileName,
+    crmLink,
+  );
+
+  const crmContactId = String(crmLink?.contact_id || wzContact.contact_id || '');
+  if (!crmContactId) throw new Error('CRM contact was not created');
+  const appUrl = (Deno.env.get('APP_URL') || 'https://crm.negis.online').replace(/\/+$/, '');
+
+  return {
+    id: crmContactId,
+    responsible_user_id: String(item?.responsible_user_id || ''),
+    name: profileName || WAZZUP_FALLBACK_CONTACT_NAME,
+    recipient: recipients,
+    uri: `${appUrl}/sales?tab=contacts&contact=${encodeURIComponent(crmContactId)}`,
+  };
 }
 
 async function syncChannels(supabase: AdminClient, clinicId: string) {
@@ -299,8 +536,12 @@ async function handleLabelEvent(supabase: AdminClient, body: any, fallback: stri
   const savedMessages: string[] = [];
   const skippedMessages: Array<{ messageId?: string; reason: string }> = [];
   const crmLinks: Array<{ messageId: string; contactId: string | null; dealId: string | null; duplicateMatched: boolean }> = [];
+  const contacts: Array<Record<string, unknown>> = [];
 
-  if (event === 'message.add') {
+  if (event === 'crm_entities.contact_add') {
+    if (!fallback) throw new Error('clinic_id is required for Wazzup contact creation');
+    for (const item of items) contacts.push(await saveRequestedContact(supabase, item, fallback));
+  } else if (event === 'message.add') {
     for (const item of items) {
       const message = normalizeLabelMessage(item);
       const result = await saveMessage(supabase, message, fallback);
@@ -309,6 +550,7 @@ async function handleLabelEvent(supabase: AdminClient, body: any, fallback: stri
         continue;
       }
       savedMessages.push(message.messageId);
+      if (result.archiveError) skippedMessages.push({ messageId: message.messageId, reason: result.archiveError });
       if (result.crmError) skippedMessages.push({ messageId: message.messageId, reason: `CRM intake: ${result.crmError}` });
       if (result.crmLink) crmLinks.push({
         messageId: message.messageId,
@@ -359,78 +601,7 @@ async function handleLabelEvent(supabase: AdminClient, body: any, fallback: stri
     for (const item of items) await handleChannelEvent(supabase, event, item, fallback);
   }
 
-  return { event, savedMessages, skippedMessages, crmLinks };
-}
-
-async function handleLegacyPayload(supabase: AdminClient, body: any, fallback: string | null) {
-  const savedMessages: string[] = [];
-  const skippedMessages: Array<{ messageId?: string; reason: string }> = [];
-  const crmLinks: Array<{ messageId: string; contactId: string | null; dealId: string | null; duplicateMatched: boolean }> = [];
-
-  if (Array.isArray(body?.messages)) {
-    for (const item of body.messages) {
-      const message = normalizeLegacyMessage(item);
-      const result = await saveMessage(supabase, message, fallback);
-      if (!result.saved) {
-        skippedMessages.push({ messageId: message.messageId, reason: result.reason });
-        continue;
-      }
-      savedMessages.push(message.messageId);
-      if (result.crmError) skippedMessages.push({ messageId: message.messageId, reason: `CRM intake: ${result.crmError}` });
-      if (result.crmLink) crmLinks.push({
-        messageId: message.messageId,
-        contactId: result.crmLink.contact_id || null,
-        dealId: result.crmLink.deal_id || null,
-        duplicateMatched: Boolean(result.crmLink.duplicate_matched),
-      });
-    }
-  }
-
-  if (body?.createContact) {
-    const contact = body.createContact;
-    const clinicId = await clinicIdForChannel(supabase, String(contact.channelId || body.channelId || ''), fallback);
-    if (clinicId) {
-      const { data, error } = await supabase.from('wz_contacts').upsert({
-        clinic_id: clinicId,
-        chat_type: contact.chatType || 'whatsapp',
-        chat_id: String(contact.chatId || contact.phone || ''),
-        name: contact.name || contact.phone || contact.chatId || null,
-        avatar_uri: contact.avatarUri || null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'clinic_id,chat_type,chat_id' })
-        .select('id, clinic_id, chat_type, chat_id, name, avatar_uri, contact_id, deal_id')
-        .single();
-      if (error || !data?.id) throw new Error(error?.message || 'Wazzup contact was not saved');
-      const { data: crm, error: crmError } = await supabase.rpc('negis_ingest_wazzup_contact', {
-        target_clinic_id: clinicId,
-        target_wz_contact_id: data.id,
-        target_chat_type: data.chat_type,
-        target_chat_id: data.chat_id,
-        target_name: data.name,
-        target_phone: contact.phone || null,
-      });
-      if (crmError) throw crmError;
-      return { savedMessages, skippedMessages, crmLinks, contact: data, crm };
-    }
-  }
-
-  if (body?.createDeal) {
-    const deal = body.createDeal;
-    const clinicId = await clinicIdForChannel(supabase, String(deal.channelId || body.channelId || ''), fallback);
-    if (clinicId) {
-      const { data, error } = await supabase.from('wz_deals').insert({
-        clinic_id: clinicId,
-        wz_contact_id: deal.wzContactId || null,
-        crm_deal_id: deal.crmDealId || null,
-        title: deal.title || 'WhatsApp',
-        status: deal.status || 'open',
-      }).select().single();
-      if (error) throw error;
-      return { savedMessages, skippedMessages, crmLinks, deal: data };
-    }
-  }
-
-  return { savedMessages, skippedMessages, crmLinks };
+  return { event, savedMessages, skippedMessages, crmLinks, contacts };
 }
 
 Deno.serve(async req => {
@@ -444,11 +615,24 @@ Deno.serve(async req => {
     const supabase = adminClient();
     const body = await req.json();
     if (body?.test === true) return jsonResponse({ ok: true });
+    if (!body?.event) return jsonResponse({ error: 'Unsupported Wazzup webhook payload' }, { status: 400 });
 
     const fallback = fallbackClinicId(req);
-    const result = body?.event
-      ? await handleLabelEvent(supabase, body, fallback)
-      : await handleLegacyPayload(supabase, body, fallback);
+    if (!fallback) return jsonResponse({ error: 'clinic_id is required' }, { status: 400 });
+    const { data: integration } = await supabase
+      .from('clinic_integrations')
+      .select('status')
+      .eq('clinic_id', fallback)
+      .eq('integration_id', 'wazzup')
+      .in('status', ['pending', 'connected'])
+      .maybeSingle();
+    if (!integration) return jsonResponse({ ok: true, ignored: 'Wazzup integration is disabled' });
+    const result = await handleLabelEvent(supabase, body, fallback);
+    if (body.event === 'crm_entities.contact_add') {
+      const contact = result.contacts[0];
+      if (!contact) return jsonResponse({ error: 'Wazzup contact was not created' }, { status: 422 });
+      return jsonResponse(contact);
+    }
     return jsonResponse({ ok: true, ...result });
   } catch (error) {
     return jsonResponse({ error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 });

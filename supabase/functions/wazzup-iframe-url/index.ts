@@ -1,4 +1,4 @@
-import { assertClinicAccess, requireUser } from '../_shared/auth.ts';
+import { assertClinicAccess, assertClinicManagerAccess, requireUser } from '../_shared/auth.ts';
 import { handleOptions, jsonResponse } from '../_shared/cors.ts';
 import { normalizeChatId, wazzupFetch, wazzupTechFetch } from '../_shared/wazzup.ts';
 
@@ -18,18 +18,19 @@ Deno.serve(async req => {
     const purpose = body.purpose === 'channel' ? 'channel' : 'chat';
 
     if (!clinicId) return jsonResponse({ error: 'clinicId is required' }, { status: 400 });
-    await assertClinicAccess(supabase, user.id, clinicId);
 
     if (purpose === 'channel') {
-      const { data: managerRole, error: roleError } = await supabase
-        .from('user_roles')
-        .select('role')
+      await assertClinicManagerAccess(supabase, user.id, clinicId);
+
+      const { data: connection, error: connectionError } = await supabase
+        .from('wazzup_connections')
+        .select('api_key_ciphertext,refresh_token_ciphertext')
         .eq('clinic_id', clinicId)
-        .eq('user_id', user.id)
-        .in('role', ['owner', 'manager'])
         .maybeSingle();
-      if (roleError) throw roleError;
-      if (!managerRole) return jsonResponse({ error: 'Only an owner or manager can connect a Wazzup channel' }, { status: 403 });
+      if (connectionError) throw connectionError;
+      if (!connection?.api_key_ciphertext && !connection?.refresh_token_ciphertext) {
+        return jsonResponse({ error: 'WAZZUP_AUTHORIZATION_REQUIRED' }, { status: 409 });
+      }
 
       const transport = String(body.transport || 'whatsapp');
       const options: Record<string, string> = { transport };
@@ -42,6 +43,8 @@ Deno.serve(async req => {
       if (!url) return jsonResponse({ error: 'Wazzup channel setup URL is missing', data }, { status: 502 });
       return jsonResponse({ url });
     }
+
+    await assertClinicAccess(supabase, user.id, clinicId);
 
     if (scope === 'card' && !chatId) {
       return jsonResponse({ error: 'contactPhone/chatId is required' }, { status: 400 });

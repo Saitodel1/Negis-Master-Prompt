@@ -122,14 +122,6 @@ export default function Dashboard() {
     setLoadingData(false);
   };
 
-  const getLoadColor = (booked: number) => {
-    const pct = booked / MAX_PER_SLOT;
-    if (pct >= 1) return 'bg-destructive shadow-[0_0_8px_rgba(239,68,68,0.5)]';
-    if (pct >= 0.5) return 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.5)]';
-    if (pct > 0) return 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]';
-    return 'bg-[#CBD5E1]';
-  };
-
   const bookingsToday = metrics?.bookingsToday ?? slots.reduce((sum, slot) => sum + slot.booked, 0);
   const loadPercent = metrics?.loadPercent != null
     ? metrics.loadPercent
@@ -142,7 +134,9 @@ export default function Dashboard() {
   return (
     <PageLayout>
       <div className="dashboard-workspace">
-        <div className="dashboard-overview">
+        {hasReports && <ReportsOverview />}
+
+        <div className="dashboard-operational-grid">
           <section className="dashboard-attention">
             <div className="dashboard-section-heading">
               <div>
@@ -175,43 +169,55 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <section className="dashboard-kpi-grid">
-            <article className="dashboard-kpi-card">
-              <div className="dashboard-kpi-title"><span>{hasBooking ? <Calendar size={18} /> : <Users size={18} />}</span><p>{hasBooking ? 'Записи на сегодня' : 'Контакты'}</p></div>
-              <div className="dashboard-kpi-value">{isLoading ? '...' : hasBooking ? bookingsToday : coreSummary.contacts}</div>
-              <div className="dashboard-kpi-foot"><span>{hasBooking ? 'Запланировано' : 'В CRM'}</span><strong>{hasBooking ? `${SLOT_HOURS.length * MAX_PER_SLOT} мест` : `${coreSummary.openDeals} активных сделок`}</strong></div>
-            </article>
-            <article className="dashboard-kpi-card">
-              <div className="dashboard-kpi-title"><span><DollarSign size={18} /></span><p>Выручка сегодня</p></div>
-              <div className="dashboard-kpi-value">{isLoading ? '...' : `${(hasBooking ? revenueToday : coreSummary.paidAmount).toLocaleString('ru-RU')} ${currency}`}</div>
-              <div className="dashboard-kpi-foot"><span>{hasBooking ? 'Пришло клиентов' : 'Получено оплат'}</span><strong>{hasBooking ? visitedToday : 'сегодня'}</strong></div>
-            </article>
-            <article className="dashboard-chart-card">
-              <div className="dashboard-chart-header"><div><h3>{hasBooking ? 'Нагрузка по часам' : 'Рабочая сводка'}</h3><p>Текущий день</p></div><strong>{hasBooking ? `${loadPercent}%` : `${coreSummary.openDeals}`}</strong></div>
-              {hasBooking ? <>
-                <div className="dashboard-bars" aria-label="Загрузка по часам">
-                  {slots.map(slot => <span key={slot.time} style={{ height: `${Math.max(12, (slot.booked / maxSlotLoad) * 100)}%` }} title={`${slot.time}: ${slot.booked} записей`} />)}
-                </div>
-                <div className="dashboard-chart-labels"><span>{slots[0]?.time}</span><span>{slots[slots.length - 1]?.time}</span></div>
-              </> : <div className="grid grid-cols-3 gap-4 pt-8 text-center">
-                <div><strong className="block text-2xl">{coreSummary.contacts}</strong><span className="text-xs text-[#64748B]">контактов</span></div>
-                <div><strong className="block text-2xl">{coreSummary.openDeals}</strong><span className="text-xs text-[#64748B]">сделок</span></div>
-                <div><strong className="block text-2xl">{coreSummary.openTasks}</strong><span className="text-xs text-[#64748B]">задач</span></div>
-              </div>}
-            </article>
+          <section className="dashboard-today">
+            <div className="dashboard-section-heading">
+              <div>
+                <p>Текущий день</p>
+                <h2>Сегодня</h2>
+              </div>
+            </div>
+            <div className="dashboard-today-grid">
+              <article className="dashboard-today-metric">
+                <span><Calendar size={18} /></span>
+                <div><small>{hasBooking ? 'Записи' : 'Контакты'}</small><strong>{isLoading ? '...' : hasBooking ? bookingsToday : coreSummary.contacts}</strong></div>
+                <p>{hasBooking ? `${SLOT_HOURS.length * MAX_PER_SLOT} мест доступно` : `${coreSummary.openDeals} активных сделок`}</p>
+              </article>
+              <article className="dashboard-today-metric">
+                <span><DollarSign size={18} /></span>
+                <div><small>{hasBooking ? 'Выручка' : 'Оплаты'}</small><strong>{isLoading ? '...' : `${(hasBooking ? revenueToday : coreSummary.paidAmount).toLocaleString('ru-RU')} ${currency}`}</strong></div>
+                <p>{hasBooking ? 'за текущий день' : 'получено сегодня'}</p>
+              </article>
+              <article className="dashboard-today-metric">
+                <span><Users size={18} /></span>
+                <div><small>{hasBooking ? 'Пришли' : 'Активные сделки'}</small><strong>{isLoading ? '...' : hasBooking ? visitedToday : coreSummary.openDeals}</strong></div>
+                <p>{hasBooking ? 'клиентов сегодня' : 'требуют работы'}</p>
+              </article>
+              <article className="dashboard-today-metric is-alert">
+                <span><CircleAlert size={18} /></span>
+                <div><small>Задачи</small><strong>{isLoading ? '...' : coreSummary.openTasks}</strong></div>
+                <p>не завершено</p>
+              </article>
+            </div>
           </section>
         </div>
 
-        {hasBooking && <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* AGENT RACE */}
-          <div className="dashboard-panel lg:col-span-2 flex flex-col">
+        {hasBooking && <div className="dashboard-insights-grid">
+          <article className="dashboard-chart-card">
+            <div className="dashboard-chart-header"><div><h3>Нагрузка по часам</h3><p>Текущий день</p></div><strong>{loadPercent}%</strong></div>
+            <div className="dashboard-bars" aria-label="Загрузка по часам">
+              {slots.map(slot => <span key={slot.time} style={{ height: `${Math.max(12, (slot.booked / maxSlotLoad) * 100)}%` }} title={`${slot.time}: ${slot.booked} записей`} />)}
+            </div>
+            <div className="dashboard-chart-labels"><span>{slots[0]?.time}</span><span>{slots[slots.length - 1]?.time}</span></div>
+          </article>
+
+          <div className="dashboard-panel dashboard-team-panel">
             <div className="dashboard-panel-header"><div><p>Эффективность</p><h3>Гонка агентов</h3></div><span>{agents.length} сотрудников</span></div>
             {loadingData ? (
               <p className="text-sm text-[#94A3B8]">Загрузка...</p>
             ) : agents.length === 0 ? (
               <p className="text-sm text-[#94A3B8]">Букинг-менеджеры не найдены</p>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="dashboard-agent-list">
                 {agents.map((agent, index) => {
                   const pct = Math.min(Math.round((agent.bookings / agent.weekly_target) * 100), 100);
                   const isLeader = index === 0 && agent.bookings > 0;
@@ -242,29 +248,7 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-
-          {/* HOURLY LOAD */}
-          <div className="dashboard-panel">
-            <div className="dashboard-panel-header"><div><p>Расписание</p><h3>Загрузка по часам</h3></div><span>{loadPercent}%</span></div>
-            {loadingData ? (
-              <p className="text-sm text-[#94A3B8]">Загрузка...</p>
-            ) : (
-              <div className="space-y-3">
-                {slots.map((slot) => (
-                  <div key={slot.time} className="dashboard-slot-row">
-                    <span className="font-medium text-sm">{slot.time}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-semibold text-[#64748B]">{slot.booked} / {MAX_PER_SLOT}</span>
-                      <div className={`h-3 w-3 rounded-full ${getLoadColor(slot.booked)}`} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>}
-
-        {hasReports && <ReportsOverview />}
 
       </div>
     </PageLayout>

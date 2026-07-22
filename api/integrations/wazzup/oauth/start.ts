@@ -37,6 +37,24 @@ function bearerToken(request: VercelRequest) {
   return header.startsWith('Bearer ') ? header.slice(7) : ''
 }
 
+async function canManageClinic(clinicId: string, userId: string) {
+  if (!admin) return false
+  const [clinicResult, roleResult] = await Promise.all([
+    admin.from('clinics').select('id').eq('id', clinicId).eq('owner_id', userId).maybeSingle(),
+    admin
+      .from('user_roles')
+      .select('clinic_id')
+      .eq('clinic_id', clinicId)
+      .eq('user_id', userId)
+      .in('role', ['owner', 'manager'])
+      .limit(1)
+      .maybeSingle(),
+  ])
+  if (clinicResult.error) throw clinicResult.error
+  if (roleResult.error) throw roleResult.error
+  return Boolean(clinicResult.data || roleResult.data)
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   if (!admin || !supabaseUrl || !serviceRoleKey || !clientId || !redirectUri || !secret) {
@@ -64,14 +82,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestedClinicId = typeof req.body?.clinicId === 'string' ? req.body.clinicId : ''
   if (!requestedClinicId) return res.status(400).json({ error: 'clinicId is required' })
 
-  const { data: membership } = await admin
-    .from('user_roles')
-    .select('clinic_id,role')
-    .eq('clinic_id', requestedClinicId)
-    .eq('user_id', user.id)
-    .in('role', ['owner', 'manager'])
-    .maybeSingle()
-  if (!membership?.clinic_id) return res.status(403).json({ error: 'Only an owner or manager can connect Wazzup' })
+  let canManage = false
+  try {
+    canManage = await canManageClinic(requestedClinicId, user.id)
+  } catch {
+    return res.status(503).json({ error: 'Не удалось проверить права на рабочее пространство' })
+  }
+  if (!canManage) {
+    return res.status(403).json({ error: 'Подключать Wazzup может только владелец или руководитель этой организации' })
+  }
 
   const codeVerifier = toBase64Url(randomBytes(64))
   const codeChallenge = toBase64Url(createHash('sha256').update(codeVerifier).digest())
@@ -90,6 +109,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   authorizeUrl.searchParams.set('state', state)
   authorizeUrl.searchParams.set('code_challenge', codeChallenge)
   authorizeUrl.searchParams.set('code_challenge_method', 'S256')
+
+  const now = new Date().toISOString()
+  await Promise.all([
+    admin.from('clinic_integrations').upsert({
+      clinic_id: requestedClinicId,
+      integration_id: 'wazzup',
+      status: 'pending',
+      verified_at: null,
+      updated_at: now,
+    }, { onConflict: 'clinic_id,integration_id' }),
+    admin.from('integration_requests').upsert({
+      clinic_id: requestedClinicId,
+      integration_id: 'wazzup',
+      requested_by: user.id,
+      status: 'in_review',
+      admin_note: 'Wazzup OAuth started by workspace owner or manager.',
+      reviewed_at: null,
+      updated_at: now,
+    }, { onConflict: 'clinic_id,integration_id' }),
+  ])
 
   return res.status(200).json({ authorizeUrl: authorizeUrl.toString() })
 }

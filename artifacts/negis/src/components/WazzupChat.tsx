@@ -139,7 +139,7 @@ export function WazzupChat({
           .eq('clinic_id', clinicId)
           .eq('chat_type', chatType)
           .eq('chat_id', chatId)
-          .order('created_at', { ascending: true })
+          .order('created_at', { ascending: false })
           .limit(200),
         supabase
           .from('wz_channels')
@@ -153,7 +153,7 @@ export function WazzupChat({
       ]);
 
       if (messageResult.error) throw messageResult.error;
-      const nextMessages = (messageResult.data ?? []) as StoredMessage[];
+      const nextMessages = ((messageResult.data ?? []) as StoredMessage[]).reverse();
       setMessages(nextMessages);
       setChannelId(nextMessages.at(-1)?.channel_id || channelResult.data?.channel_id || '');
     } catch (cause: unknown) {

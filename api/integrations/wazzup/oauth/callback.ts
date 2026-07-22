@@ -20,6 +20,21 @@ type HttpResponse = {
   json: () => Promise<unknown>
 }
 
+const OAUTH_RESULT_BY_CODE: Record<string, string> = {
+  VALIDATION_FAILED: 'oauth-validation-failed',
+  OAUTH_REDIRECT_URI_INVALID: 'oauth-redirect-invalid',
+  OAUTH_PARTNER_NOT_FOUND: 'oauth-partner-not-found',
+  OAUTH_PARTNER_NOT_ACTIVE: 'oauth-partner-inactive',
+  OAUTH_SCOPE_FORBIDDEN: 'oauth-scope-forbidden',
+  OAUTH_INVALID_GRANT_TYPE: 'oauth-invalid-grant',
+  OAUTH_AUTHORIZATION_CODE_INVALID: 'oauth-code-invalid',
+  OAUTH_CODE_VERIFIER_INVALID: 'oauth-code-verifier-invalid',
+  OAUTH_CLIENT_ID_MISMATCH: 'oauth-client-id-mismatch',
+  OAUTH_CLIENT_NOT_CHILD_OF_PARTNER: 'oauth-client-not-child',
+  OAUTH_MISSING_GRANT: 'oauth-missing-grant',
+  OAUTH_AUTHORIZATION_HEADER_INVALID: 'oauth-partner-auth-invalid',
+}
+
 const WEBHOOK_EVENTS = [
   'message.add',
   'message.status_update',
@@ -29,6 +44,7 @@ const WEBHOOK_EVENTS = [
   'channel.create',
   'channel.delete',
   'channel.qr_update',
+  'crm_entities.contact_add',
 ]
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
@@ -41,6 +57,24 @@ const stateSecret = process.env.WAZZUP_OAUTH_STATE_SECRET || process.env.WAZZUP_
 const credentialSecret = process.env.WAZZUP_CREDENTIALS_ENCRYPTION_KEY || process.env.WAZZUP_OAUTH_STATE_SECRET
 
 const admin = supabaseUrl && serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
+
+async function canManageClinic(clinicId: string, userId: string) {
+  if (!admin) return false
+  const [clinicResult, roleResult] = await Promise.all([
+    admin.from('clinics').select('id').eq('id', clinicId).eq('owner_id', userId).maybeSingle(),
+    admin
+      .from('user_roles')
+      .select('clinic_id')
+      .eq('clinic_id', clinicId)
+      .eq('user_id', userId)
+      .in('role', ['owner', 'manager'])
+      .limit(1)
+      .maybeSingle(),
+  ])
+  if (clinicResult.error) throw clinicResult.error
+  if (roleResult.error) throw roleResult.error
+  return Boolean(clinicResult.data || roleResult.data)
+}
 
 async function httpRequest(url: string, init?: Parameters<typeof fetch>[1]): Promise<HttpResponse> {
   return await fetch(url, init) as unknown as HttpResponse
@@ -77,6 +111,40 @@ function redirect(res: VercelResponse, req: VercelRequest, result: string) {
   return res.redirect(302, `${origin}/marketplace?wazzup=${encodeURIComponent(result)}`)
 }
 
+function oauthErrorResult(payload: unknown, fallback = 'oauth-failed') {
+  let serialized = ''
+  try {
+    serialized = typeof payload === 'string' ? payload : JSON.stringify(payload)
+  } catch {
+    return fallback
+  }
+  const code = serialized.toUpperCase().match(/(?:OAUTH|VALIDATION)_[A-Z_]+/)?.[0]
+  return code ? (OAUTH_RESULT_BY_CODE[code] || fallback) : fallback
+}
+
+async function recordOAuthFailure(clinicId: string, userId: string, result: string) {
+  if (!admin) return
+  const now = new Date().toISOString()
+  await Promise.all([
+    admin.from('clinic_integrations').upsert({
+      clinic_id: clinicId,
+      integration_id: 'wazzup',
+      status: 'failed',
+      verified_at: null,
+      updated_at: now,
+    }, { onConflict: 'clinic_id,integration_id' }),
+    admin.from('integration_requests').upsert({
+      clinic_id: clinicId,
+      integration_id: 'wazzup',
+      requested_by: userId,
+      status: 'in_review',
+      admin_note: `Wazzup OAuth failed: ${result}`,
+      reviewed_at: now,
+      updated_at: now,
+    }, { onConflict: 'clinic_id,integration_id' }),
+  ])
+}
+
 function isActiveChannel(channel: Channel) {
   const values = [channel.status, channel.state].filter(Boolean).map(value => String(value).toLowerCase())
   return values.some(value => ['active', 'ready', 'connected'].includes(value))
@@ -91,7 +159,7 @@ function chatTypeForTransport(transport: string | undefined) {
 
 function webhookUrl(clinicId: string) {
   const configured = process.env.WAZZUP_WEBHOOK_URL
-  const crmKey = process.env.WAZZUP_OAUTH_CRM_KEY || process.env.WAZZUP_CRM_KEY
+  const crmKey = process.env.WAZZUP_OAUTH_CRM_KEY
   const base = configured || (supabaseUrl ? `${supabaseUrl}/functions/v1/wazzup-webhook` : '')
   if (!base || !crmKey) return null
   const url = new URL(base)
@@ -134,7 +202,7 @@ async function syncChannels(clinicId: string, channels: Channel[]) {
 
 async function ensureWebhookSubscriptions(clinicId: string, accessToken: string) {
   const url = webhookUrl(clinicId)
-  if (!url) throw new Error('WAZZUP_WEBHOOK_URL or WAZZUP_CRM_KEY is not configured')
+  if (!url) throw new Error('WAZZUP_WEBHOOK_URL or WAZZUP_OAUTH_CRM_KEY is not configured')
   const headers = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
   const listResponse = await httpRequest('https://tech.wazzup24.com/v2/webhooks', {
     headers,
@@ -168,17 +236,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const code = typeof req.query.code === 'string' ? req.query.code : ''
   const state = typeof req.query.state === 'string' ? decryptState(req.query.state, stateSecret) : null
-  if (typeof req.query.error === 'string' || !code) return redirect(res, req, 'oauth-cancelled')
   if (!state) return redirect(res, req, 'oauth-expired')
 
-  const { data: membership } = await admin
-    .from('user_roles')
-    .select('role')
-    .eq('clinic_id', state.clinicId)
-    .eq('user_id', state.userId)
-    .in('role', ['owner', 'manager'])
-    .maybeSingle()
-  if (!membership) return redirect(res, req, 'oauth-forbidden')
+  if (typeof req.query.error === 'string' || !code) {
+    const result = oauthErrorResult(
+      [req.query.error, req.query.error_description, req.query.description].filter(Boolean),
+      'oauth-cancelled',
+    )
+    if (result !== 'oauth-cancelled') {
+      await recordOAuthFailure(state.clinicId, state.userId, result)
+    }
+    return redirect(res, req, result)
+  }
+
+  if (!await canManageClinic(state.clinicId, state.userId)) {
+    return redirect(res, req, 'oauth-forbidden')
+  }
 
   let tokenResponse: HttpResponse
   try {
@@ -202,7 +275,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     data?: { access_token?: string; refresh_token?: string; expires_in?: number; refresh_expires_in?: number }
   }
   const tokens = tokenPayload.data
-  if (!tokenResponse.ok || !tokens?.access_token || !tokens.refresh_token) return redirect(res, req, 'oauth-failed')
+  if (!tokenResponse.ok || !tokens?.access_token || !tokens.refresh_token) {
+    const result = oauthErrorResult(tokenPayload)
+    await recordOAuthFailure(state.clinicId, state.userId, result)
+    return redirect(res, req, result)
+  }
 
   let channels: Channel[] = []
   let channelSyncError: string | null = null

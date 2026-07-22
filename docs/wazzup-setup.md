@@ -43,7 +43,6 @@ WAZZUP_OAUTH_STATE_SECRET
 WAZZUP_CREDENTIALS_ENCRYPTION_KEY
 WAZZUP_PARTNER_EMAIL
 WAZZUP_PARTNER_PASSWORD
-WAZZUP_CRM_KEY
 WAZZUP_OAUTH_CRM_KEY
 WAZZUP_REFRESH_SECRET
 ```
@@ -62,7 +61,6 @@ WAZZUP_OAUTH_STATE_SECRET
 WAZZUP_CREDENTIALS_ENCRYPTION_KEY
 WAZZUP_PARTNER_EMAIL
 WAZZUP_PARTNER_PASSWORD
-WAZZUP_CRM_KEY
 WAZZUP_OAUTH_CRM_KEY
 WAZZUP_REFRESH_SECRET
 ```
@@ -78,7 +76,9 @@ npx supabase functions deploy wazzup-refresh --project-ref YOUR_PROJECT_REF
 npx supabase functions deploy wazzup-webhook --no-verify-jwt --project-ref YOUR_PROJECT_REF
 ```
 
-Only the external Wazzup webhook is deployed without JWT verification. It validates `WAZZUP_CRM_KEY` itself. User-facing functions require a valid Supabase session; the refresh function requires the service-role bearer token.
+Only the external Wazzup webhook is deployed without JWT verification. It validates `WAZZUP_OAUTH_CRM_KEY` itself and accepts only Label OAuth events bound to an explicit organization. User-facing functions require a valid Supabase session; the refresh function requires the service-role bearer token.
+
+There is no global Wazzup API key or default organization fallback. Every organization, including older workspaces, must complete the same Label OAuth flow before its channels can be used in Negis.
 
 ## 6. Customer flow
 
@@ -89,6 +89,8 @@ Only the external Wazzup webhook is deployed without JWT verification. It valida
 5. If no active WhatsApp channel exists, Negis opens Wazzup's channel iframe so the customer can scan the QR code.
 6. The integration becomes `Подключено` only after an active channel and webhook subscription are confirmed.
 7. Incoming messages create or match a contact using the normalized phone number and remain inside that organization's client card.
+8. Before OAuth, Negis warns that Wazzup may reuse the account already open in the browser and provides a direct link for switching accounts.
+9. `Отключить` removes the organization's server-side tokens and Negis webhook subscriptions, disables local channels, and preserves the existing CRM message history.
 
 ## 7. Verification
 

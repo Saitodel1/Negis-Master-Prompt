@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { fetchWazzupChannelSetupUrl } from '@/lib/wazzup';
+import { fetchWazzupChannelSetupUrl, WAZZUP_AUTHORIZATION_REQUIRED } from '@/lib/wazzup';
 import { toast } from 'sonner';
 import {
   Bot,
   CheckCircle2,
   CreditCard,
+  ExternalLink,
   Headphones,
   Info,
   MessageCircle,
@@ -17,12 +18,14 @@ import {
   Sparkles,
   Star,
   Store,
+  Unplug,
   X,
 } from 'lucide-react';
 
 type CategoryKey = 'negis' | 'messengers' | 'bots' | 'telephony' | 'ai' | 'payments' | 'sms' | 'reputation';
 type Status = 'recommended' | 'available' | 'request' | 'soon' | 'pending' | 'connected';
 type LogoMeta = { domain?: string; text: string; bg: string };
+type WazzupDialogMode = 'connect' | 'switch' | 'disconnect';
 
 interface MarketplaceItem {
   id: string;
@@ -473,6 +476,75 @@ export default function Marketplace() {
   const [channelSetupUrl, setChannelSetupUrl] = useState<string | null>(null);
   const [channelSetupLoading, setChannelSetupLoading] = useState(false);
   const [needsWazzupChannel, setNeedsWazzupChannel] = useState(false);
+  const [wazzupDialog, setWazzupDialog] = useState<WazzupDialogMode | null>(null);
+  const [wazzupActionLoading, setWazzupActionLoading] = useState(false);
+
+  async function beginWazzupOAuth() {
+    if (!clinicId) {
+      toast.error('Не удалось определить рабочее пространство.');
+      return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      toast.error('Войдите в систему заново, чтобы подключить Wazzup.');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/integrations/wazzup/oauth/start', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ clinicId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.authorizeUrl) throw new Error(payload.error || 'OAuth недоступен');
+      window.location.assign(payload.authorizeUrl);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Не удалось начать подключение Wazzup.');
+    }
+  }
+
+  async function disconnectWazzup() {
+    if (!clinicId || wazzupActionLoading) return false;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      toast.error('Войдите в систему заново, чтобы отключить Wazzup.');
+      return false;
+    }
+
+    setWazzupActionLoading(true);
+    try {
+      const response = await fetch('/api/integrations/wazzup/disconnect', {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ clinicId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Не удалось отключить Wazzup');
+      setIntegrationStatuses(current => ({ ...current, wazzup: 'available' }));
+      setChannelSetupUrl(null);
+      setSelected(null);
+      setWazzupDialog(null);
+      if (payload.warning) toast.warning('Связь с Negis отключена. Подписка Wazzup будет очищена при следующем подключении.');
+      else toast.success('Wazzup отключён от этого рабочего пространства.');
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Не удалось отключить Wazzup.');
+      return false;
+    } finally {
+      setWazzupActionLoading(false);
+    }
+  }
+
+  function openWazzupAccount() {
+    window.open('https://app.wazzup24.com', '_blank', 'noopener,noreferrer');
+  }
 
   async function openWazzupChannelSetup() {
     if (!clinicId || channelSetupLoading) return;
@@ -483,7 +555,11 @@ export default function Marketplace() {
       setChannelSetupUrl(url);
       setNeedsWazzupChannel(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Не удалось открыть подключение канала Wazzup.');
+      if (error instanceof Error && error.message === WAZZUP_AUTHORIZATION_REQUIRED) {
+        await beginWazzupOAuth();
+      } else {
+        toast.error(error instanceof Error ? error.message : 'Не удалось открыть подключение канала Wazzup.');
+      }
     } finally {
       setChannelSetupLoading(false);
     }
@@ -509,7 +585,8 @@ export default function Marketplace() {
       const next: Record<string, Status> = {};
       for (const row of data ?? []) {
         if (row.integration_id === 'wazzup' && (row.status !== 'connected' || !row.verified_at)) {
-          next[row.integration_id] = 'pending';
+          // A stale pending row is not proof that OAuth was completed.
+          next[row.integration_id] = 'available';
         } else if (row.status === 'connected' || row.status === 'pending') {
           next[row.integration_id] = row.status;
         }
@@ -535,6 +612,21 @@ export default function Marketplace() {
       'webhook-required': 'Wazzup авторизован, но подписка на новые сообщения не настроилась.',
       'oauth-cancelled': 'Подключение Wazzup отменено.',
       'oauth-forbidden': 'Подключать Wazzup может только владелец или руководитель.',
+      'oauth-client-not-child': 'Этот аккаунт Wazzup ещё не привязан к партнёрскому кабинету Negis. Попросите поддержку Wazzup прикрепить существующий аккаунт к партнёру Negis и повторите подключение.',
+      'oauth-missing-grant': 'Wazzup не получил разрешение на доступ. Запустите подключение ещё раз и подтвердите запрошенные права.',
+      'oauth-partner-inactive': 'Партнёрский аккаунт Negis в Wazzup не активирован. Подключение временно недоступно всем организациям.',
+      'oauth-partner-not-found': 'Wazzup не распознал партнёрский аккаунт Negis. Нужна проверка client_id у поддержки Negis.',
+      'oauth-redirect-invalid': 'Wazzup отклонил callback URL Negis. Нужна проверка redirect_uri у поддержки Negis.',
+      'oauth-scope-forbidden': 'Wazzup не разрешил запрошенные права интеграции. Нужна проверка партнёрской настройки Negis.',
+      'oauth-client-id-mismatch': 'Wazzup отклонил client_id интеграции Negis.',
+      'oauth-code-invalid': 'Код авторизации Wazzup истёк. Запустите подключение ещё раз.',
+      'oauth-code-verifier-invalid': 'Wazzup отклонил защищённый код авторизации. Запустите подключение ещё раз.',
+      'oauth-partner-auth-invalid': 'Wazzup отклонил авторизацию партнёра Negis.',
+      'oauth-validation-failed': 'Wazzup отклонил параметры подключения. Нужна проверка настройки интеграции Negis.',
+      'oauth-invalid-grant': 'Wazzup отклонил тип авторизации. Нужна проверка настройки интеграции Negis.',
+      'oauth-not-configured': 'Wazzup OAuth не настроен на сервере Negis.',
+      'oauth-unavailable': 'Сервис авторизации Wazzup временно недоступен. Повторите подключение позже.',
+      'oauth-expired': 'Сессия подключения Wazzup истекла. Запустите подключение ещё раз.',
     };
     const message = messages[result] || 'Не удалось завершить подключение Wazzup.';
     if (result === 'connected') toast.success(message);
@@ -601,7 +693,7 @@ export default function Marketplace() {
     }
     if (item.status === 'connected') return;
     if (item.status === 'pending') {
-      if (item.id === 'wazzup') await openWazzupChannelSetup();
+      if (item.id === 'wazzup') setWazzupDialog('connect');
       return;
     }
     if (NEGIS_MODULES.has(item.id)) {
@@ -613,26 +705,7 @@ export default function Marketplace() {
       return;
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      toast.error('Войдите в систему заново, чтобы подключить Wazzup.');
-      return;
-    }
-    try {
-      const response = await fetch('/api/integrations/wazzup/oauth/start', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ clinicId }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.authorizeUrl) throw new Error(payload.error || 'OAuth недоступен');
-      window.location.assign(payload.authorizeUrl);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Не удалось начать подключение Wazzup.');
-    }
+    setWazzupDialog('connect');
   };
 
   const filtered = useMemo(() => {
@@ -749,13 +822,40 @@ export default function Marketplace() {
                 item={item}
                 onOpen={() => setSelected(item)}
                 onConnect={() => void startConnection(item)}
+                onSwitch={() => setWazzupDialog('switch')}
+                onDisconnect={() => setWazzupDialog('disconnect')}
               />
             ))}
           </div>
         </section>
       </div>
 
-      {selected && <IntegrationModal item={selected} onClose={() => setSelected(null)} onConnect={() => void startConnection(selected)} />}
+      {selected && (
+        <IntegrationModal
+          item={selected}
+          onClose={() => setSelected(null)}
+          onConnect={() => void startConnection(selected)}
+          onSwitch={() => setWazzupDialog('switch')}
+          onDisconnect={() => setWazzupDialog('disconnect')}
+        />
+      )}
+      {wazzupDialog && (
+        <WazzupConnectionDialog
+          mode={wazzupDialog}
+          loading={wazzupActionLoading}
+          onClose={() => setWazzupDialog(null)}
+          onOpenAccount={openWazzupAccount}
+          onContinue={async () => {
+            if (wazzupDialog === 'disconnect') {
+              await disconnectWazzup();
+              return;
+            }
+            if (wazzupDialog === 'switch' && !await disconnectWazzup()) return;
+            setWazzupDialog(null);
+            await beginWazzupOAuth();
+          }}
+        />
+      )}
       {channelSetupUrl && (
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center bg-black/25 p-4 backdrop-blur-sm"
@@ -793,7 +893,13 @@ function Metric({ value, label }: { value: number; label: string }) {
   );
 }
 
-function IntegrationCard({ item, onOpen, onConnect }: { item: MarketplaceItem; onOpen: () => void; onConnect: () => void }) {
+function IntegrationCard({ item, onOpen, onConnect, onSwitch, onDisconnect }: {
+  item: MarketplaceItem;
+  onOpen: () => void;
+  onConnect: () => void;
+  onSwitch: () => void;
+  onDisconnect: () => void;
+}) {
   const canConnect = item.id === 'wazzup' || NEGIS_MODULES.has(item.id);
   const inactive = item.status === 'soon' || item.status === 'connected' || (item.status === 'pending' && item.id !== 'wazzup') || !canConnect;
   return (
@@ -832,17 +938,24 @@ function IntegrationCard({ item, onOpen, onConnect }: { item: MarketplaceItem; o
           <Info size={14} />
           Подробнее
         </button>
-        <button
-          type="button"
-          className={`rounded-xl px-4 py-2.5 text-sm font-bold ${
-            inactive
-              ? 'bg-[#F1F5F9] text-[#94A3B8]'
-              : 'bg-[#4F7BFF] text-white shadow-lg shadow-[#4F7BFF]/15'
-          }`}
-          onClick={inactive ? onOpen : onConnect}
-        >
-          {connectionButtonLabel(item, canConnect)}
-        </button>
+        {item.id === 'wazzup' && item.status === 'connected' ? (
+          <>
+            <button type="button" className="neu-btn px-3 text-sm" onClick={onSwitch}>Сменить аккаунт</button>
+            <button type="button" className="neu-btn px-3 text-sm text-red-600" onClick={onDisconnect}>Отключить</button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className={`rounded-xl px-4 py-2.5 text-sm font-bold ${
+              inactive
+                ? 'bg-[#F1F5F9] text-[#94A3B8]'
+                : 'bg-[#4F7BFF] text-white shadow-lg shadow-[#4F7BFF]/15'
+            }`}
+            onClick={inactive ? onOpen : onConnect}
+          >
+            {connectionButtonLabel(item, canConnect)}
+          </button>
+        )}
       </div>
     </article>
   );
@@ -883,7 +996,13 @@ function BrandLogo({ item }: { item: MarketplaceItem }) {
   );
 }
 
-function IntegrationModal({ item, onClose, onConnect }: { item: MarketplaceItem; onClose: () => void; onConnect: () => void }) {
+function IntegrationModal({ item, onClose, onConnect, onSwitch, onDisconnect }: {
+  item: MarketplaceItem;
+  onClose: () => void;
+  onConnect: () => void;
+  onSwitch: () => void;
+  onDisconnect: () => void;
+}) {
   const canConnect = item.id === 'wazzup' || NEGIS_MODULES.has(item.id);
   const inactive = item.status === 'soon' || item.status === 'connected' || (item.status === 'pending' && item.id !== 'wazzup') || !canConnect;
   return (
@@ -939,13 +1058,22 @@ function IntegrationModal({ item, onClose, onConnect }: { item: MarketplaceItem;
 
           <div className="flex flex-wrap justify-end gap-3">
             <button type="button" className="neu-btn px-5" onClick={onClose}>Закрыть</button>
-            <button
-              type="button"
-              className="neu-btn-primary flex items-center gap-2 px-5"
-              onClick={inactive ? onClose : onConnect}
-            >
-              {connectionButtonLabel(item, canConnect)}
-            </button>
+            {item.id === 'wazzup' && item.status === 'connected' ? (
+              <>
+                <button type="button" className="neu-btn px-5" onClick={onSwitch}>Сменить аккаунт</button>
+                <button type="button" className="neu-btn flex items-center gap-2 px-5 text-red-600" onClick={onDisconnect}>
+                  <Unplug size={16} /> Отключить
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="neu-btn-primary flex items-center gap-2 px-5"
+                onClick={inactive ? onClose : onConnect}
+              >
+                {connectionButtonLabel(item, canConnect)}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -962,9 +1090,63 @@ function connectionLabel(status: Status) {
   return 'В очереди';
 }
 
+function WazzupConnectionDialog({ mode, loading, onClose, onOpenAccount, onContinue }: {
+  mode: WazzupDialogMode;
+  loading: boolean;
+  onClose: () => void;
+  onOpenAccount: () => void;
+  onContinue: () => void | Promise<void>;
+}) {
+  const disconnecting = mode === 'disconnect';
+  const switching = mode === 'switch';
+  const title = disconnecting ? 'Отключить Wazzup?' : switching ? 'Подключить другой аккаунт Wazzup' : 'Подключить Wazzup';
+  const description = disconnecting
+    ? 'Negis удалит серверные токены и перестанет получать новые сообщения. История переписки в CRM и каналы в самом Wazzup останутся.'
+    : 'Wazzup может использовать аккаунт, который уже открыт в этом браузере. Проверьте его перед продолжением, чтобы не привязать чужой или старый кабинет.';
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/25 p-4 backdrop-blur-sm" onClick={event => { if (event.target === event.currentTarget && !loading) onClose(); }}>
+      <div className="w-full max-w-lg rounded-3xl border border-[#DDE7F0] bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-xl font-black text-[#0B1220]">{title}</h3>
+            <p className="mt-2 text-sm leading-6 text-[#64748B]">{description}</p>
+          </div>
+          <button type="button" className="neu-icon-btn h-9 w-9" onClick={onClose} disabled={loading} aria-label="Закрыть">
+            <X size={16} />
+          </button>
+        </div>
+
+        {!disconnecting && (
+          <div className="mt-5 rounded-2xl border border-[#E7ECF3] bg-[#F8FAFC] p-4 text-sm leading-6 text-[#475569]">
+            Откройте Wazzup, выйдите из текущего аккаунта или войдите в нужный. Затем вернитесь сюда и продолжите подключение.
+          </div>
+        )}
+
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <button type="button" className="neu-btn px-5" onClick={onClose} disabled={loading}>Отмена</button>
+          {!disconnecting && (
+            <button type="button" className="neu-btn flex items-center gap-2 px-5" onClick={onOpenAccount}>
+              <ExternalLink size={16} /> Открыть Wazzup
+            </button>
+          )}
+          <button
+            type="button"
+            className={disconnecting ? 'neu-btn flex items-center gap-2 px-5 text-red-600' : 'neu-btn-primary px-5'}
+            onClick={() => void onContinue()}
+            disabled={loading}
+          >
+            {loading ? 'Подождите…' : disconnecting ? 'Отключить' : switching ? 'Аккаунт сменён — подключить' : 'Продолжить подключение'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function connectionButtonLabel(item: MarketplaceItem, canConnect: boolean) {
   if (item.status === 'connected') return 'Подключено';
-  if (item.status === 'pending') return item.id === 'wazzup' ? 'Подключить канал' : 'Настраивается';
+  if (item.status === 'pending') return item.id === 'wazzup' ? 'Подключить' : 'Настраивается';
   if (item.status === 'soon' || !canConnect) return 'Скоро';
   return 'Подключить';
 }

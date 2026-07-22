@@ -199,9 +199,11 @@ body { background: var(--app-page) !important; color: var(--app-ink) !important;
 }
 
 /* Dashboard: compact two-column operational layout from the supplied screen. */
-.dashboard-workspace { display: grid !important; gap: 20px !important; max-width: 1440px; }
-.dashboard-overview { display: grid !important; grid-template-columns: minmax(270px,.82fr) minmax(0,2.18fr) !important; gap: 18px !important; }
+.dashboard-workspace { display: grid !important; width: 100%; max-width: none; gap: 20px !important; }
+.dashboard-overview,
+.dashboard-operational-grid { display: grid !important; grid-template-columns: minmax(320px,5fr) minmax(0,7fr) !important; gap: 18px !important; }
 .dashboard-attention,
+.dashboard-today,
 .dashboard-panel,
 .dashboard-kpi-card,
 .dashboard-chart-card {
@@ -210,7 +212,8 @@ body { background: var(--app-page) !important; color: var(--app-ink) !important;
   border-radius: 26px !important;
   box-shadow: var(--app-shadow) !important;
 }
-.dashboard-attention { padding: 22px !important; min-height: 398px; }
+.dashboard-attention,
+.dashboard-today { padding: 22px !important; min-height: 0; }
 .dashboard-kpi-grid { grid-template-columns: repeat(2,minmax(0,1fr)) !important; gap: 16px !important; }
 .dashboard-kpi-card { min-height: 172px !important; padding: 22px !important; }
 .dashboard-chart-card { grid-column: 1 / -1 !important; min-height: 210px !important; padding: 22px !important; }
@@ -263,7 +266,7 @@ body { background: var(--app-page) !important; color: var(--app-ink) !important;
   .ng-content,.ng-topbar { margin-left: 0 !important; }
   .ng-topbar { padding: 0 16px !important; }
   .ng-content { padding: 18px 14px 30px !important; }
-  .dashboard-overview,.dashboard-kpi-grid { grid-template-columns: 1fr !important; }
+  .dashboard-overview,.dashboard-operational-grid,.dashboard-kpi-grid { grid-template-columns: 1fr !important; }
   .dashboard-chart-card { grid-column: auto !important; }
   .ng-route-chat .grid[class*="xl:grid-cols"] { grid-template-columns: 1fr !important; }
   .ng-route-chat .grid[class*="xl:grid-cols"] > aside { display: none !important; }
@@ -959,8 +962,11 @@ textarea {
 .topbar-profile.dashboard-profile-trigger { min-width: 0 !important; width: 42px; height: 42px; padding: 3px; border: 2px solid rgba(255,255,255,.86) !important; border-radius: 13px; box-shadow: 5px 7px 14px rgba(16,26,53,.08) !important; }
 .dashboard-profile-trigger .topbar-profile-avatar { width: 100%; height: 100%; border-radius: 10px; }
 .ng-content:has(.dashboard-workspace) { padding-top: 28px !important; }
-.dashboard-overview { display: grid; grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.6fr); gap: 24px; }
+.dashboard-overview,
+.dashboard-operational-grid { display: grid; grid-template-columns: minmax(320px, 5fr) minmax(0, 7fr); gap: 20px; align-items: stretch; }
+.dashboard-insights-grid { display: grid; grid-template-columns: minmax(0, 8fr) minmax(300px, 4fr); gap: 20px; align-items: stretch; }
 .dashboard-attention,
+.dashboard-today,
 .dashboard-panel,
 .dashboard-kpi-card,
 .dashboard-chart-card {
@@ -970,6 +976,7 @@ textarea {
   backdrop-filter: blur(24px);
 }
 .dashboard-attention,
+.dashboard-today,
 .dashboard-panel { border-radius: 28px; padding: 24px; }
 .dashboard-section-heading,
 .dashboard-panel-header,
@@ -990,6 +997,15 @@ textarea {
 .dashboard-attention-card > svg { color: rgba(16, 26, 53, .35); }
 .dashboard-attention-icon { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 14px; color: var(--ng-primary); background: rgba(255, 255, 255, 0.72); box-shadow: inset 2px 2px 5px rgba(16, 26, 53, .05), inset -2px -2px 5px rgba(255, 255, 255, .9); }
 .dashboard-attention-card.is-alert .dashboard-attention-icon { color: #ba1a1a; background: rgba(255, 218, 214, .7); }
+.dashboard-today-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 20px; border: 1px solid rgba(255, 255, 255, .68); border-radius: 20px; overflow: hidden; background: rgba(255, 255, 255, .28); }
+.dashboard-today-metric { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 4px 12px; align-items: center; min-height: 104px; padding: 18px; border-right: 1px solid rgba(16, 26, 53, .07); border-bottom: 1px solid rgba(16, 26, 53, .07); }
+.dashboard-today-metric:nth-child(2n) { border-right: 0; }
+.dashboard-today-metric:nth-last-child(-n + 2) { border-bottom: 0; }
+.dashboard-today-metric > span { display: grid; grid-row: span 2; width: 40px; height: 40px; place-items: center; border-radius: 14px; color: var(--ng-primary); background: rgba(255, 255, 255, .72); }
+.dashboard-today-metric small { display: block; color: var(--ng-text-2); font-size: 11px; font-weight: 700; }
+.dashboard-today-metric strong { display: block; margin-top: 3px; color: var(--ng-primary); font-size: 24px; line-height: 1.05; letter-spacing: -.035em; }
+.dashboard-today-metric p { grid-column: 2; margin: 2px 0 0; color: var(--ng-muted); font-size: 11px; }
+.dashboard-today-metric.is-alert > span { color: #ba1a1a; background: rgba(255, 218, 214, .7); }
 .dashboard-kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .dashboard-kpi-card,
 .dashboard-chart-card { border-radius: 28px; padding: 24px; min-height: 180px; }
@@ -1000,6 +1016,7 @@ textarea {
 .dashboard-kpi-foot { display: flex; justify-content: space-between; margin-top: 24px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, .62); color: var(--ng-muted); font-size: 11px; }
 .dashboard-kpi-foot strong { color: var(--ng-text); font-weight: 700; }
 .dashboard-chart-card { grid-column: span 2; min-height: 230px; }
+.dashboard-insights-grid .dashboard-chart-card { grid-column: auto !important; min-height: 270px !important; }
 .dashboard-chart-header p { margin: 5px 0 0; color: var(--ng-muted); font-size: 12px; }
 .dashboard-chart-header > strong { color: var(--ng-primary); font-size: 22px; }
 .dashboard-bars { display: flex; align-items: end; gap: 10px; height: 112px; margin-top: 24px; padding: 0 6px; }
@@ -1008,13 +1025,15 @@ textarea {
 .dashboard-chart-labels { display: flex; justify-content: space-between; margin-top: 8px; color: var(--ng-muted); font: 600 10px/1 Inter, sans-serif; }
 .dashboard-agent-card { position: relative; padding: 16px; border: 1px solid rgba(255, 255, 255, .66); border-radius: 20px; background: rgba(255, 255, 255, .34); }
 .dashboard-agent-card.is-leader { border-color: rgba(16, 26, 53, .24); box-shadow: 0 10px 22px rgba(16, 26, 53, .10); }
+.dashboard-agent-list { display: grid; gap: 12px; margin-top: 20px; }
+.dashboard-team-panel { min-width: 0; }
 .dashboard-agent-avatar { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 14px; background: rgba(255, 255, 255, .72); color: var(--ng-primary); font-weight: 800; box-shadow: inset 2px 2px 5px rgba(16, 26, 53, .05); }
 .dashboard-agent-avatar.is-leader { background: var(--ng-primary); color: #fff; }
 .dashboard-progress { height: 9px; overflow: hidden; border-radius: 999px; background: rgba(16, 26, 53, .09); }
 .dashboard-progress > div { background: var(--ng-primary) !important; }
 .dashboard-slot-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 13px; border: 1px solid rgba(255, 255, 255, .62); border-radius: 15px; background: rgba(255, 255, 255, .32); }
-@media (max-width: 1024px) { .dashboard-overview { grid-template-columns: 1fr; } }
-@media (max-width: 640px) { .dashboard-topbar { min-height: 76px !important; padding: 0 16px !important; } .dashboard-topbar-welcome h1 { font-size: 18px; } .dashboard-branch { display: none; } .dashboard-kpi-grid { grid-template-columns: 1fr; } .dashboard-chart-card { grid-column: span 1; } .dashboard-attention, .dashboard-panel, .dashboard-kpi-card, .dashboard-chart-card { padding: 18px; border-radius: 22px; } }
+@media (max-width: 1024px) { .dashboard-overview, .dashboard-operational-grid, .dashboard-insights-grid { grid-template-columns: 1fr !important; } }
+@media (max-width: 640px) { .dashboard-topbar { min-height: 76px !important; padding: 0 16px !important; } .dashboard-topbar-welcome h1 { font-size: 18px; } .dashboard-branch { display: none; } .dashboard-kpi-grid, .dashboard-today-grid { grid-template-columns: 1fr; } .dashboard-today-metric { border-right: 0; border-bottom: 1px solid rgba(16, 26, 53, .07) !important; } .dashboard-today-metric:last-child { border-bottom: 0 !important; } .dashboard-chart-card { grid-column: span 1; } .dashboard-attention, .dashboard-today, .dashboard-panel, .dashboard-kpi-card, .dashboard-chart-card { padding: 18px; border-radius: 22px; } }
 
 :root {
   /* NEGIS Design System */

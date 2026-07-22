@@ -5,6 +5,8 @@ import type {
   WazzupSendMessageRequest,
 } from '@/types/wazzup';
 
+export const WAZZUP_AUTHORIZATION_REQUIRED = 'WAZZUP_AUTHORIZATION_REQUIRED';
+
 export function normalizeWazzupChatId(value: string | null | undefined) {
   return (value ?? '').replace(/\D/g, '');
 }
@@ -17,7 +19,7 @@ async function invokeWazzupFunction<T>(name: string, body: Record<string, any>):
 
 async function readFunctionError(error: any) {
   const response = error?.context;
-  if (response instanceof Response) {
+  if (response && typeof response.clone === 'function') {
     try {
       const payload = await response.clone().json();
       if (typeof payload?.error === 'string') return payload.error;
@@ -35,6 +37,9 @@ async function readFunctionError(error: any) {
 }
 
 function formatWazzupError(message: string) {
+  if (message.includes(WAZZUP_AUTHORIZATION_REQUIRED) || message.includes('OAuth token is unavailable')) {
+    return WAZZUP_AUTHORIZATION_REQUIRED;
+  }
   if (message.includes('SIZE_EXCEEDED') || message.includes('10 MB') || message.includes('10 МБ')) {
     return 'Файл слишком большой. Wazzup принимает вложения до 10 МБ.';
   }
@@ -49,6 +54,9 @@ function formatWazzupError(message: string) {
   }
   if (message.includes('WAZZUP_API_KEY')) {
     return 'Wazzup почти готов. Осталось добавить API-ключ Wazzup на сервере.';
+  }
+  if (message.includes('Only an owner or manager')) {
+    return 'Подключить Wazzup может только владелец или руководитель.';
   }
   if (message.includes('FunctionsHttpError') || message.includes('Edge Function')) {
     return 'Wazzup почти готов. Нужно проверить Supabase Edge Function для Wazzup.';
