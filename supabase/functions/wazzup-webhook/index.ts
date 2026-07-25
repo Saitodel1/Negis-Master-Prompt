@@ -321,7 +321,7 @@ async function saveMessage(supabase: AdminClient, message: NormalizedMessage, fa
     return { saved: false as const, reason: contactError?.message || 'Wazzup contact was not saved' };
   }
 
-  const { error: messageError } = await supabase
+  const { data: savedMessage, error: messageError } = await supabase
     .from('wz_messages')
     .upsert({
       clinic_id: clinicId,
@@ -345,14 +345,19 @@ async function saveMessage(supabase: AdminClient, message: NormalizedMessage, fa
       raw_payload: message.rawPayload,
       created_at: message.createdAt,
       updated_at: now,
-    }, { onConflict: 'message_id' });
+    }, { onConflict: 'message_id' })
+    .select('id')
+    .single();
 
-  if (messageError) return { saved: false as const, reason: messageError.message };
+  if (messageError || !savedMessage?.id) {
+    return { saved: false as const, reason: messageError?.message || 'Wazzup message was not saved' };
+  }
 
   const archiveError = await archiveIncomingAttachment(supabase, clinicId, message);
 
   let crmLink: any = null;
   let crmError: string | null = null;
+  let notificationError: string | null = null;
   if (!message.isEcho) {
     const result = await supabase.rpc('negis_ingest_wazzup_contact', {
       target_clinic_id: clinicId,
@@ -375,10 +380,25 @@ async function saveMessage(supabase: AdminClient, message: NormalizedMessage, fa
         message.contactName,
         crmLink,
       );
+
+      if (crmLink?.contact_id) {
+        const notificationResult = await supabase.rpc('negis_create_message_notifications', {
+          target_message_id: savedMessage.id,
+          target_contact_id: crmLink.contact_id,
+        });
+        notificationError = notificationResult.error?.message || null;
+      }
     }
   }
 
-  return { saved: true as const, clinicId, crmLink, crmError, archiveError };
+  return {
+    saved: true as const,
+    clinicId,
+    crmLink,
+    crmError,
+    archiveError,
+    notificationError,
+  };
 }
 
 function normalizeContactRecipients(value: unknown) {
@@ -449,7 +469,7 @@ async function saveRequestedContact(supabase: AdminClient, item: any, clinicId: 
     responsible_user_id: String(item?.responsible_user_id || ''),
     name: profileName || WAZZUP_FALLBACK_CONTACT_NAME,
     recipient: recipients,
-    uri: `${appUrl}/sales?tab=contacts&contact=${encodeURIComponent(crmContactId)}`,
+    uri: `${appUrl}/sales/contacts/${encodeURIComponent(crmContactId)}?view=whatsapp`,
   };
 }
 
@@ -552,6 +572,9 @@ async function handleLabelEvent(supabase: AdminClient, body: any, fallback: stri
       savedMessages.push(message.messageId);
       if (result.archiveError) skippedMessages.push({ messageId: message.messageId, reason: result.archiveError });
       if (result.crmError) skippedMessages.push({ messageId: message.messageId, reason: `CRM intake: ${result.crmError}` });
+      if (result.notificationError) {
+        skippedMessages.push({ messageId: message.messageId, reason: `Notification routing: ${result.notificationError}` });
+      }
       if (result.crmLink) crmLinks.push({
         messageId: message.messageId,
         contactId: result.crmLink.contact_id || null,

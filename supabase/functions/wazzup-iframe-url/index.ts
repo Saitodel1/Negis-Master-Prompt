@@ -24,11 +24,15 @@ Deno.serve(async req => {
 
       const { data: connection, error: connectionError } = await supabase
         .from('wazzup_connections')
-        .select('api_key_ciphertext,refresh_token_ciphertext')
+        .select('connection_mode,api_key_ciphertext,refresh_token_ciphertext')
         .eq('clinic_id', clinicId)
         .maybeSingle();
       if (connectionError) throw connectionError;
-      if (!connection?.api_key_ciphertext && !connection?.refresh_token_ciphertext) {
+      if (
+        connection?.connection_mode !== 'oauth'
+        || !connection.api_key_ciphertext
+        || !connection.refresh_token_ciphertext
+      ) {
         return jsonResponse({ error: 'WAZZUP_AUTHORIZATION_REQUIRED' }, { status: 409 });
       }
 

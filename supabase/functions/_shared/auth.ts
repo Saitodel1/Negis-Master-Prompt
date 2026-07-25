@@ -24,14 +24,23 @@ export async function requireUser(req: Request) {
 }
 
 export async function assertClinicAccess(supabase: ReturnType<typeof adminClient>, userId: string, clinicId: string) {
-  const { data, error } = await supabase
-    .from('user_roles')
-    .select('clinic_id')
-    .eq('user_id', userId)
-    .eq('clinic_id', clinicId)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) throw new Response('Forbidden', { status: 403 });
+  const [clinicResult, roleResult] = await Promise.all([
+    supabase
+      .from('clinics')
+      .select('id')
+      .eq('id', clinicId)
+      .eq('owner_id', userId)
+      .maybeSingle(),
+    supabase
+      .from('user_roles')
+      .select('clinic_id')
+      .eq('user_id', userId)
+      .eq('clinic_id', clinicId)
+      .maybeSingle(),
+  ]);
+  if (clinicResult.error) throw clinicResult.error;
+  if (roleResult.error) throw roleResult.error;
+  if (!clinicResult.data && !roleResult.data) throw new Response('Forbidden', { status: 403 });
 }
 
 export async function assertClinicManagerAccess(

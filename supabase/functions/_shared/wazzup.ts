@@ -11,6 +11,7 @@ type EncryptedValue = {
 
 type WazzupConnection = {
   clinic_id: string;
+  connection_mode: string | null;
   api_key_ciphertext: string | null;
   api_key_iv: string | null;
   api_key_tag: string | null;
@@ -36,6 +37,16 @@ type RefreshPayload = {
   error?: string;
   description?: string;
 };
+
+class WazzupApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'WazzupApiError';
+    this.status = status;
+  }
+}
 
 function requiredEnv(name: string) {
   const value = Deno.env.get(name);
@@ -102,7 +113,10 @@ async function parseResponse(response: Response) {
     data = { raw: text };
   }
   if (!response.ok) {
-    throw new Error(data?.description || data?.error || data?.message || `Wazzup API error ${response.status}`);
+    throw new WazzupApiError(
+      response.status,
+      data?.description || data?.error || data?.message || `Wazzup API error ${response.status}`,
+    );
   }
   return data;
 }
@@ -110,7 +124,7 @@ async function parseResponse(response: Response) {
 async function readConnection(clinicId: string) {
   const { data, error } = await adminClient()
     .from('wazzup_connections')
-    .select('clinic_id,api_key_ciphertext,api_key_iv,api_key_tag,access_token_expires_at')
+    .select('clinic_id,connection_mode,api_key_ciphertext,api_key_iv,api_key_tag,access_token_expires_at')
     .eq('clinic_id', clinicId)
     .maybeSingle();
   if (error) throw error;
@@ -127,6 +141,16 @@ function tokenIsUnexpired(connection: WazzupConnection | null) {
   if (!connection?.api_key_ciphertext || !connection.api_key_iv || !connection.api_key_tag) return false;
   if (!connection.access_token_expires_at) return false;
   return new Date(connection.access_token_expires_at).getTime() > Date.now();
+}
+
+async function waitForUsableConnection(clinicId: string, attempts = 30) {
+  let connection: WazzupConnection | null = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    connection = await readConnection(clinicId);
+    if (tokenIsUsable(connection)) return connection;
+  }
+  return connection;
 }
 
 async function connectionToken(connection: WazzupConnection) {
@@ -226,6 +250,9 @@ export async function refreshNextDueWazzupConnection(targetClinicId?: string) {
 
 export async function tenantAccessToken(clinicId: string) {
   let connection = await readConnection(clinicId);
+  if (connection?.connection_mode !== 'oauth') {
+    throw new Error('WAZZUP_AUTHORIZATION_REQUIRED: reconnect Wazzup for this workspace');
+  }
   if (tokenIsUsable(connection)) return connectionToken(connection!);
 
   const refreshedClinicId = await refreshNextDueWazzupConnection(clinicId);
@@ -234,25 +261,69 @@ export async function tenantAccessToken(clinicId: string) {
     if (tokenIsUsable(connection)) return connectionToken(connection!);
   }
 
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    connection = await readConnection(clinicId);
-    if (tokenIsUsable(connection)) return connectionToken(connection!);
-  }
+  connection = await waitForUsableConnection(clinicId);
+  if (tokenIsUsable(connection)) return connectionToken(connection!);
   if (tokenIsUnexpired(connection)) return connectionToken(connection!);
   throw new Error('Wazzup OAuth token is unavailable; reconnect this workspace');
 }
 
+export async function forceTenantTokenRefresh(clinicId: string) {
+  const connection = await readConnection(clinicId);
+  if (connection?.connection_mode !== 'oauth') {
+    throw new Error('WAZZUP_AUTHORIZATION_REQUIRED: reconnect Wazzup for this workspace');
+  }
+
+  const { error } = await adminClient()
+    .from('wazzup_connections')
+    .update({
+      access_token_expires_at: new Date(0).toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('clinic_id', clinicId);
+  if (error) throw error;
+
+  let refreshedClinicId = await refreshNextDueWazzupConnection(clinicId);
+  if (refreshedClinicId) return;
+
+  let latestConnection = await waitForUsableConnection(clinicId);
+  if (tokenIsUsable(latestConnection)) return;
+
+  refreshedClinicId = await refreshNextDueWazzupConnection(clinicId);
+  if (refreshedClinicId) return;
+
+  latestConnection = await readConnection(clinicId);
+  if (tokenIsUsable(latestConnection)) return;
+  throw new Error('WAZZUP_AUTHORIZATION_REQUIRED: reconnect Wazzup for this workspace');
+}
+
 async function tenantFetch(baseUrl: string, clinicId: string, path: string, init: RequestInit) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${await tenantAccessToken(clinicId)}`,
-      ...(init.headers ?? {}),
-    },
-  });
-  return parseResponse(response);
+  const execute = async () => {
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${await tenantAccessToken(clinicId)}`,
+        ...(init.headers ?? {}),
+      },
+    });
+    return parseResponse(response);
+  };
+
+  try {
+    return await execute();
+  } catch (error) {
+    if (!(error instanceof WazzupApiError) || error.status !== 401) throw error;
+
+    try {
+      await forceTenantTokenRefresh(clinicId);
+      return await execute();
+    } catch (refreshError) {
+      if (refreshError instanceof WazzupApiError && refreshError.status === 401) {
+        throw new Error('WAZZUP_AUTHORIZATION_REQUIRED: reconnect Wazzup for this workspace');
+      }
+      throw refreshError;
+    }
+  }
 }
 
 export function wazzupFetch(clinicId: string, path: string, init: RequestInit) {
