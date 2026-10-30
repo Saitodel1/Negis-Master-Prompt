@@ -1,6 +1,6 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
-import { Check, Loader2, PencilLine, Plus, RefreshCw, Search, Tag, Trash2, User, X } from 'lucide-react';
+import { Check, ListChecks, Loader2, PencilLine, Plus, RefreshCw, Search, Tag, Trash2, User, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { WazzupChat } from '@/components/WazzupChat';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -321,12 +321,14 @@ export default function CrmCore() {
   const [wazzupContacts, setWazzupContacts] = useState<WazzupContactLink[]>([]);
   const [dealPipelines, setDealPipelines] = useState<SelectOption[]>([]);
   const [dealStages, setDealStages] = useState<SelectOption[]>([]);
+  const [leadStatuses, setLeadStatuses] = useState<SelectOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
-  const [contactBulkPanel, setContactBulkPanel] = useState<'agent' | 'source' | 'delete' | null>(null);
+  const [contactBulkPanel, setContactBulkPanel] = useState<'status' | 'agent' | 'source' | 'delete' | null>(null);
+  const [contactBulkStatusId, setContactBulkStatusId] = useState('');
   const [contactBulkAgentId, setContactBulkAgentId] = useState('');
   const [contactBulkSource, setContactBulkSource] = useState('');
   const [contactBulkLoading, setContactBulkLoading] = useState(false);
@@ -347,7 +349,7 @@ export default function CrmCore() {
     setLoading(true);
     setError(null);
     try {
-      const [companies, contacts, deals, products, invoices, payments, agentRows, pipelineRows, stageRows, wazzupRows] = await Promise.all([
+      const [companies, contacts, deals, products, invoices, payments, agentRows, pipelineRows, stageRows, leadStatusRows, wazzupRows] = await Promise.all([
         supabase.from('companies').select('*').eq('clinic_id', clinicId).order('created_at', { ascending: false }),
         supabase.from('contacts').select('*').eq('clinic_id', clinicId).order('created_at', { ascending: false }),
         supabase.from('deals').select('*').eq('clinic_id', clinicId).order('created_at', { ascending: false }),
@@ -357,9 +359,10 @@ export default function CrmCore() {
         supabase.from('agents').select('id, name, user_id').eq('clinic_id', clinicId).order('name'),
         supabase.from('deal_pipelines').select('id, name').eq('clinic_id', clinicId).eq('is_active', true).order('sort_order'),
         supabase.from('deal_stages').select('id, pipeline_id, name, probability, outcome').eq('clinic_id', clinicId).eq('is_active', true).order('sort_order'),
+        supabase.from('lead_statuses').select('id, name').eq('clinic_id', clinicId).order('sort_order'),
         supabase.from('wz_contacts').select('id, contact_id, chat_type, chat_id, name').eq('clinic_id', clinicId).order('updated_at', { ascending: false }),
       ]);
-      const failed = [companies, contacts, deals, products, invoices, payments, agentRows, pipelineRows, stageRows].find(result => result.error);
+      const failed = [companies, contacts, deals, products, invoices, payments, agentRows, pipelineRows, stageRows, leadStatusRows].find(result => result.error);
       if (failed?.error) throw failed.error;
       setRows({
         companies: (companies.data ?? []) as CrmRow[],
@@ -379,6 +382,7 @@ export default function CrmCore() {
         probability: stage.probability,
         outcome: stage.outcome as SelectOption['outcome'],
       })));
+      setLeadStatuses((leadStatusRows.data ?? []).map(status => ({ value: status.id, label: status.name })));
 
       const params = new URLSearchParams(location.split('?')[1] || '');
       const requestedTab = params.get('tab');
@@ -512,6 +516,7 @@ export default function CrmCore() {
   const clearContactSelection = () => {
     setSelectedContactIds(new Set());
     setContactBulkPanel(null);
+    setContactBulkStatusId('');
     setContactBulkAgentId('');
     setContactBulkSource('');
   };
@@ -627,6 +632,46 @@ export default function CrmCore() {
     clearContactSelection();
   };
 
+  const bulkUpdateContactLeadStatus = async () => {
+    if (!clinicId || !contactBulkStatusId || selectedContacts.length === 0) return;
+
+    const leadIds = selectedContacts
+      .map(contact => asString(contact.legacy_lead_id))
+      .filter(Boolean);
+
+    if (leadIds.length === 0) {
+      toast.error('У выбранных контактов нет связанных лидов, поэтому статус изменить нельзя');
+      return;
+    }
+
+    setContactBulkLoading(true);
+    let updatedCount = 0;
+    try {
+      for (const chunk of splitIntoChunks(leadIds)) {
+        const { data, error: updateError } = await supabase
+          .from('leads')
+          .update({ status_id: contactBulkStatusId, updated_at: new Date().toISOString() })
+          .eq('clinic_id', clinicId)
+          .in('id', chunk)
+          .select('id');
+        if (updateError) throw updateError;
+        updatedCount += data?.length ?? 0;
+      }
+    } catch (cause: unknown) {
+      const message = cause instanceof Error ? cause.message : 'Не удалось изменить статус выбранных лидов';
+      toast.error(updatedCount > 0 ? `Статус изменён у ${updatedCount}. Остальные не обновлены: ${message}` : message);
+      return;
+    } finally {
+      setContactBulkLoading(false);
+    }
+
+    const skippedCount = selectedContacts.length - leadIds.length;
+    toast.success(skippedCount > 0
+      ? `Статус изменён у ${updatedCount}; без связанного лида: ${skippedCount}`
+      : `Статус изменён у ${updatedCount} лидов`);
+    clearContactSelection();
+  };
+
   const bulkDeleteContacts = async () => {
     if (!clinicId || selectedContactIds.size === 0) return;
     setContactBulkLoading(true);
@@ -732,7 +777,28 @@ export default function CrmCore() {
 
             {selectedContactIds.size > 0 && (
               <div className="ml-auto flex flex-wrap items-center gap-2">
-                {contactBulkPanel === 'agent' ? (
+                {contactBulkPanel === 'status' ? (
+                  <>
+                    <select
+                      value={contactBulkStatusId}
+                      onChange={event => setContactBulkStatusId(event.target.value)}
+                      className="neu-input min-w-[210px] text-sm"
+                      aria-label="Новый статус лида"
+                    >
+                      <option value="">Выберите статус</option>
+                      {leadStatuses.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!contactBulkStatusId || contactBulkLoading}
+                      onClick={() => void bulkUpdateContactLeadStatus()}
+                      className="neu-btn-primary px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                    >
+                      {contactBulkLoading ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                      Применить
+                    </button>
+                  </>
+                ) : contactBulkPanel === 'agent' ? (
                   <>
                     <select
                       value={contactBulkAgentId}
@@ -796,6 +862,16 @@ export default function CrmCore() {
                       aria-label="Редактировать выбранный контакт"
                     >
                       <PencilLine size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={leadStatuses.length === 0}
+                      onClick={() => setContactBulkPanel('status')}
+                      className="neu-btn grid h-9 w-9 place-items-center disabled:cursor-not-allowed disabled:opacity-40"
+                      title="Сменить статус лида"
+                      aria-label="Сменить статус лида"
+                    >
+                      <ListChecks size={15} />
                     </button>
                     {(userRole === 'owner' || userRole === 'manager') && (
                       <button
